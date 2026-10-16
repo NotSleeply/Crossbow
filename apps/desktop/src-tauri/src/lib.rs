@@ -23,7 +23,6 @@ mod scheduler;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
-#[cfg(target_os = "macos")]
 mod tray_state;
 #[cfg(target_os = "macos")]
 mod tun;
