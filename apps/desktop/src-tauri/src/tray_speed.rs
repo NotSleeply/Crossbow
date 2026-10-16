@@ -5,6 +5,7 @@
 //! 精确基线偏移把两行垂直居中在按钮内，并按内容宽度设定 status item 长度以避免
 //! 每秒抖动。仅 macOS，其余平台为空操作。
 
+use crate::tray_state::TrayNodeRow;
 use tauri::{AppHandle, Manager};
 
 use objc2::rc::Retained;
@@ -198,18 +199,6 @@ pub fn display_width(s: &str) -> usize {
 // 不调用 set_menu——菜单打开时刷新可见、不关闭。
 
 // 单个节点行数据（lib.rs 组装，tray_speed 负责原生渲染与原地刷新）。
-#[derive(Clone)]
-pub struct TrayNodeRow {
-    /// 节点名
-    pub name: String,
-    /// 延迟文本：`448 ms` / `失败` / `—`
-    pub badge: String,
-    /// 延迟毫秒数（失败或未测为 None）
-    pub ms: Option<u64>,
-    /// 是否当前选中（菜单勾选态）
-    pub selected: bool,
-}
-
 fn delay_color(ms: Option<u64>, badge: &str) -> Retained<NSColor> {
     if badge == "失败" {
         return NSColor::systemRedColor();

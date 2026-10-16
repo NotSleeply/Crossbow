@@ -14,8 +14,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::tray_speed::TrayNodeRow;
-
 /// 测速显示看门狗：超过该时长强制恢复「延迟测速」可点态。
 pub const TESTING_VISIBLE_SECS: u64 = 20;
 
@@ -41,6 +39,19 @@ pub struct TrayState {
     testing_since: Option<Instant>,
     /// 测速代次：看门狗与完成回调竞争结束权时，迟到的旧结果以此失效
     generation: u64,
+}
+
+/// 托盘节点子菜单的节点行数据。
+#[derive(Clone)]
+pub struct TrayNodeRow {
+    /// 节点名
+    pub name: String,
+    /// 延迟徽标文本：`448 ms` / `失败` / `—`
+    pub badge: String,
+    /// 延迟毫秒数（失败或未测为 None）
+    pub ms: Option<u64>,
+    /// 是否当前选中（菜单勾选态）
+    pub selected: bool,
 }
 
 /// 渲染托盘节点子菜单所需的纯数据快照。
