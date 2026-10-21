@@ -114,6 +114,15 @@ fn apply(status_item: &NSStatusItem, text: &str, show_speed: bool) {
         }
     }
     button.setAttributedTitle(&attr_str);
+
+    // tray-icon routes status-item clicks through a transparent TrayTarget
+    // subview created at the button's original icon-only size. Changing the
+    // NSStatusItem length does not resize that subview, so the added title area
+    // looks clickable but misses menu events. Keep the hit target covering the
+    // full button whenever its title/length changes.
+    if let Some(target) = button.subviews().firstObject() {
+        target.setFrame(button.bounds());
+    }
 }
 
 // 更新托盘速率双行显示。
