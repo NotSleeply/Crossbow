@@ -1523,13 +1523,14 @@ fn refresh_tray_nodes(handle: &AppHandle) {
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
 #[cfg(target_os = "macos")]
-fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
+fn run_tray_delay_test(handle: &AppHandle, from_menu_event: bool) {
     let Some(state) = handle.try_state::<AppState>() else { return };
+    let reopen_menu = from_menu_event && !tray_speed::node_menu_is_open(handle);
     let generation = {
         let mut tray = state.node_menu.lock().unwrap();
         if !tray.begin_test() {
             drop(tray);
-            if keep_menu_open {
+            if reopen_menu {
                 tray_speed::keep_menu_open(handle);
             }
             return; // 已在测速
@@ -1556,9 +1557,10 @@ fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else { return };
-        if keep_menu_open {
-            std::thread::sleep(std::time::Duration::from_millis(35));
+        if reopen_menu {
+            std::thread::sleep(std::time::Duration::from_millis(50));
             update_tray_node_menu(&h, true);
+            tray_speed::open_node_submenu(&h);
         }
         let (group, members) = {
             let tray = state.node_menu.lock().unwrap();
@@ -1588,8 +1590,8 @@ fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
         tray_speed::update_node_items(&h, &data.rows, data.testing);
     });
 
-    if keep_menu_open {
-        // 等测量任务启动后，再进入原生托盘菜单的嵌套跟踪循环。
+    if reopen_menu {
+        // 首次菜单行仍是标准 AppKit 项时，由自定义行初始化并恢复节点子菜单。
         tray_speed::keep_menu_open(handle);
     }
 }
