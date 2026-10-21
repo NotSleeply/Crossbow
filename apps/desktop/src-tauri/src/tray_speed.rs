@@ -10,18 +10,18 @@ use tauri::{AppHandle, Manager};
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{AllocAnyThread, MainThreadMarker};
-use objc2_app_kit::{NSAttributedStringNSStringDrawing as _, NSStringDrawing as _};
+use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSBaselineOffsetAttributeName, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
-    NSFontWeightMedium, NSFontWeightRegular, NSForegroundColorAttributeName, NSImage,
-    NSLineBreakMode, NSMenu, NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSEvent,
-    NSEventModifierFlags, NSEventType, NSStatusBarButton, NSStatusItem, NSTextAlignment,
-    NSTextAttachment,
+    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSEventModifierFlags,
+    NSEventType, NSFont, NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
+    NSForegroundColorAttributeName, NSLineBreakMode, NSMenu,
+    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem,
+    NSTextAlignment, NSTextField, NSView,
 };
-use objc2_app_kit::NSAttachmentAttributeName;
-use objc2_foundation::{NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSString};
-use objc2_foundation::NSMutableAttributedString;
+use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
+use objc2_foundation::{
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSObjectProtocol, NSNumber, NSString,
+};
 
 const FONT_SIZE: f64 = 9.5;
 const LINE_HEIGHT: f64 = 10.0;
@@ -168,7 +168,6 @@ impl TrayExt for AppHandle {
     }
 }
 
-
 // ---------- 托盘节点子菜单：固定宽度、右对齐测速列 ----------
 
 // 近似显示宽度：CJK/全角/emoji 记 2，其余记 1。
@@ -194,7 +193,6 @@ pub fn display_width(s: &str) -> usize {
         .sum()
 }
 
-
 // 递归遍历托盘主菜单与子菜单，对测速可用态、节点富文本和勾选态做原地更新。
 // 不调用 set_menu——菜单打开时刷新可见、不关闭。
 
@@ -210,96 +208,149 @@ fn delay_color(ms: Option<u64>, badge: &str) -> Retained<NSColor> {
     }
 }
 
-// 生成带圆角底色的原生菜单徽标。使用附件图像而非 NSBackgroundColorAttributeName，
-// 后者只能画方形字符底色，而且菜单重绘时容易被系统样式覆盖。
-fn delay_badge_image(badge: &str, color: &NSColor) -> Retained<NSImage> {
-    let width = (display_width(badge) as f64 * 5.6 + 11.0).max(28.0);
-    let height = 15.0;
-    unsafe {
-        let image = NSImage::initWithSize(
-            NSImage::alloc(),
-            objc2_foundation::NSSize::new(width, height),
-        );
-        image.lockFocus();
+const ROW_VIEW_NAME_TAG: isize = 101;
+const ROW_VIEW_CHECK_TAG: isize = 102;
+const ROW_VIEW_BADGE_TAG: isize = 103;
+const NODE_MENU_WIDTH: f64 = 340.0;
+const NODE_ROW_HEIGHT: f64 = 23.0;
 
-        color.setFill();
-        let path = NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
-            objc2_foundation::NSRect::new(
-                objc2_foundation::NSPoint::new(0.0, 0.0),
-                objc2_foundation::NSSize::new(width, height),
-            ),
-            3.5,
-            3.5,
-        );
-        path.fill();
+// NSMenuItem custom views do not automatically dispatch the menu item's action.
+// Forward the click to the original target/action so Tauri still receives the
+// same menu event as it does for a standard check-menu item.
+define_class!(
+    #[unsafe(super(NSView))]
+    #[name = "CrossbowTrayNodeRowView"]
+    #[thread_kind = MainThreadOnly]
+    struct TrayNodeRowView;
 
-        let font = NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular);
-        let white = NSColor::whiteColor();
-        let keys: &[&NSString] = &[NSFontAttributeName, NSForegroundColorAttributeName];
-        let values: &[&AnyObject] = &[&font, &white];
-        let attrs = NSDictionary::from_slices(keys, values);
-        NSString::from_str(badge).drawAtPoint_withAttributes(
-            objc2_foundation::NSPoint::new(5.5, 2.5),
-            Some(&attrs),
-        );
-        image.unlockFocus();
-        image
+    unsafe impl NSObjectProtocol for TrayNodeRowView {}
+
+    impl TrayNodeRowView {
+        #[unsafe(method(mouseDown:))]
+        fn on_mouse_down(&self, _event: &NSEvent) {
+            let Some(item) = self.enclosingMenuItem() else { return };
+            if let Some(action) = item.action() {
+                let mtm = MainThreadMarker::new().expect("menu click runs on the main thread");
+                let app = NSApplication::sharedApplication(mtm);
+                let target = item.target();
+                unsafe {
+                    app.sendAction_to_from(action, target.as_deref(), Some(&*item));
+                }
+            }
+            if let Some(menu) = unsafe { item.menu() } {
+                menu.cancelTracking();
+            }
+        }
     }
+);
+
+fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
+    let frame = objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(NODE_MENU_WIDTH, NODE_ROW_HEIGHT),
+    );
+    let view: Retained<TrayNodeRowView> = unsafe {
+        let allocated = TrayNodeRowView::alloc(mtm);
+        msg_send![allocated, initWithFrame: frame]
+    };
+    view.setWantsLayer(true);
+
+    let check = NSTextField::labelWithString(&NSString::from_str("✓"), mtm);
+    check.setTag(ROW_VIEW_CHECK_TAG);
+    check.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(4.0, 0.0),
+        objc2_foundation::NSSize::new(16.0, NODE_ROW_HEIGHT),
+    ));
+    check.setFont(Some(&NSFont::menuBarFontOfSize(12.0)));
+    check.setAlignment(NSTextAlignment::Center);
+
+    let name = NSTextField::labelWithString(&NSString::new(), mtm);
+    name.setTag(ROW_VIEW_NAME_TAG);
+    name.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(25.0, 0.0),
+        objc2_foundation::NSSize::new(220.0, NODE_ROW_HEIGHT),
+    ));
+    name.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
+    name.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+
+    let badge = NSTextField::labelWithString(&NSString::new(), mtm);
+    badge.setTag(ROW_VIEW_BADGE_TAG);
+    badge.setAlignment(NSTextAlignment::Center);
+    let badge_font = unsafe {
+        NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular)
+    };
+    badge.setFont(Some(&badge_font));
+    badge.setTextColor(Some(&NSColor::whiteColor()));
+    badge.setWantsLayer(true);
+    if let Some(layer) = layer_for(&badge) {
+        unsafe {
+            let _: () = msg_send![&*layer, setCornerRadius: 3.0f64];
+            let _: () = msg_send![&*layer, setMasksToBounds: true];
+        }
+    }
+
+    view.addSubview(&check);
+    view.addSubview(&name);
+    view.addSubview(&badge);
+    view
 }
 
-// 按 ClashX 的菜单排版：略小的系统菜单字体显示名称，右侧制表位对齐彩色延迟徽标。
-fn node_row_attributed(
-    name: &str,
-    badge: &str,
+fn update_node_row_view(
+    view: &TrayNodeRowView,
+    row: &TrayNodeRow,
     ms: Option<u64>,
-    badge_tab: f64,
-) -> Retained<NSMutableAttributedString> {
-    unsafe {
-        let display_name = truncate_display_name(name, 202.0);
-        let line = format!("{display_name}\t\u{FFFC}");
-        let font = NSFont::menuBarFontOfSize(12.5);
-        let para = NSMutableParagraphStyle::new();
-        let empty_options = NSDictionary::<objc2_app_kit::NSTextTabOptionKey, AnyObject>::new();
-        let tab = objc2_app_kit::NSTextTab::initWithTextAlignment_location_options(
-            objc2_app_kit::NSTextTab::alloc(),
-            NSTextAlignment::Right,
-            badge_tab,
-            &empty_options,
-        );
-        let stops = NSArray::from_slice(&[&*tab]);
-        para.setTabStops(Some(&stops));
+    menu_width: f64,
+    mtm: MainThreadMarker,
+) {
+    let Some(name) = view
+        .viewWithTag(ROW_VIEW_NAME_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    else {
+        return;
+    };
+    let Some(check) = view
+        .viewWithTag(ROW_VIEW_CHECK_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    else {
+        return;
+    };
+    let Some(badge) = view
+        .viewWithTag(ROW_VIEW_BADGE_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    else {
+        return;
+    };
 
-        let base_keys: &[&NSString] = &[NSFontAttributeName, NSParagraphStyleAttributeName];
-        let base_values: &[&AnyObject] = &[&font, &para];
-        let base_attrs = NSDictionary::from_slices(base_keys, base_values);
-        let main = NSMutableAttributedString::initWithString_attributes(
-            NSMutableAttributedString::alloc(),
-            &NSString::from_str(&line),
-            Some(&base_attrs),
-        );
+    let display_name = truncate_display_name(&row.name, 196.0);
+    name.setStringValue(&NSString::from_str(&display_name));
+    name.setToolTip(Some(&NSString::from_str(&row.name)));
+    check.setStringValue(&NSString::from_str(if row.selected { "✓" } else { "" }));
 
-        let color = delay_color(ms, badge);
-        let badge_image = delay_badge_image(badge, &color);
-        let attachment = NSTextAttachment::new();
-        attachment.setImage(Some(&badge_image));
-        // NSTextAttachment aligns to the text baseline; lower it slightly so
-        // the smaller badge sits centered in the menu row.
-        attachment.setBounds(objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(0.0, -1.5),
-            objc2_foundation::NSSize::new(
-                (display_width(badge) as f64 * 5.6 + 11.0).max(28.0),
-                15.0,
-            ),
-        ));
-        let badge_range =
-            objc2_foundation::NSRange::new(display_name.encode_utf16().count() + 1, 1);
-        let badge_attrs = NSDictionary::from_slices(
-            &[NSAttachmentAttributeName],
-            &[&*attachment as &AnyObject],
-        );
-        main.addAttributes_range(&badge_attrs, badge_range);
-        main
+    let badge_width = (display_width(&row.badge) as f64 * 5.7 + 10.0).max(27.0);
+    let badge_x = menu_width - badge_width - 10.0;
+    name.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(25.0, 0.0),
+        objc2_foundation::NSSize::new((badge_x - 34.0).max(80.0), NODE_ROW_HEIGHT),
+    ));
+    badge.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(badge_x, 3.0),
+        objc2_foundation::NSSize::new(badge_width, 17.0),
+    ));
+    badge.setStringValue(&NSString::from_str(&row.badge));
+    let color = delay_color(ms, &row.badge);
+    if let Some(layer) = layer_for(&badge) {
+        let cg_color = color.CGColor();
+        unsafe {
+            let _: () = msg_send![&*layer, setBackgroundColor: &*cg_color];
+            let _: () = msg_send![&*layer, setCornerRadius: 3.0f64];
+            let _: () = msg_send![&*layer, setMasksToBounds: true];
+        }
     }
+    let _ = mtm;
+}
+
+fn layer_for(view: &NSView) -> Option<Retained<AnyObject>> {
+    unsafe { msg_send![view, layer] }
 }
 
 pub fn display_name(name: &str) -> String {
@@ -332,9 +383,15 @@ pub fn update_node_items(handle: &AppHandle, rows: &[TrayNodeRow], testing: bool
     let rows_owned: Vec<TrayNodeRow> = rows.to_vec();
     let testing_owned = testing;
     let _ = tray.with_inner_tray_icon(move |inner| {
-        let Some(status_item) = inner.ns_status_item() else { return };
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(menu) = status_item.menu(mtm) else { return };
+        let Some(status_item) = inner.ns_status_item() else {
+            return;
+        };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(menu) = status_item.menu(mtm) else {
+            return;
+        };
         let (menu_width, badge_tab) = node_menu_layout(&rows_owned);
         update_menu_items(&menu, &rows_owned, testing_owned, menu_width, badge_tab);
     });
@@ -344,7 +401,9 @@ pub fn update_node_items(handle: &AppHandle, rows: &[TrayNodeRow], testing: bool
 /// NSStatusItem.menu 已经被清空。向该子视图发送一次合成点击，会沿用 Tauri 保存的
 /// 同一个菜单并进入原生菜单跟踪循环，让测速期间菜单保持可见，而不是调用失效的 menu 属性。
 pub fn keep_menu_open(handle: &AppHandle) {
-    let Some(state) = handle.try_state::<crate::AppState>() else { return };
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
     let tray = state.tray.lock().unwrap().clone();
     let Some(tray) = tray else { return };
     let _ = tray.with_inner_tray_icon(move |inner| {
@@ -390,7 +449,7 @@ pub fn keep_menu_open(handle: &AppHandle) {
 fn node_menu_layout(_rows: &[TrayNodeRow]) -> (f64, f64) {
     // Fixed menu width and right edge for the badge column. Long node names are
     // truncated to keep this width stable after every benchmark result.
-    (340.0, 310.0)
+    (NODE_MENU_WIDTH, NODE_MENU_WIDTH - 30.0)
 }
 
 fn update_menu_items(
@@ -402,7 +461,10 @@ fn update_menu_items(
 ) {
     let is_node_menu = (0..menu.numberOfItems()).any(|index| {
         menu.itemAtIndex(index).is_some_and(|item| {
-            matches!(item.title().to_string().as_str(), "延迟测速" | "延迟测速中…" | "Test latency" | "Testing latency…")
+            matches!(
+                item.title().to_string().as_str(),
+                "延迟测速" | "延迟测速中…" | "Test latency" | "Testing latency…"
+            )
         })
     });
     if is_node_menu {
@@ -411,7 +473,9 @@ fn update_menu_items(
 
     let mut row_index = 0;
     for index in 0..menu.numberOfItems() {
-        let Some(item) = menu.itemAtIndex(index) else { continue };
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
         let title = item.title().to_string();
         if matches!(
             title.as_str(),
@@ -440,8 +504,14 @@ fn update_menu_items(
                 unsafe {
                     item.setRepresentedObject(Some(&NSString::from_str(&row.name)));
                 }
-                let attr = node_row_attributed(&row.name, &row.badge, row.ms, badge_tab);
-                item.setAttributedTitle(Some(&attr));
+                let mtm =
+                    MainThreadMarker::new().expect("tray menu updates run on the main thread");
+                let row_view = item
+                    .view()
+                    .and_then(|view| view.downcast::<TrayNodeRowView>().ok())
+                    .unwrap_or_else(|| make_node_row_view(mtm));
+                update_node_row_view(&row_view, row, row.ms, menu_width, mtm);
+                item.setView(Some(&row_view));
                 item.setState(if row.selected { 1 } else { 0 });
             }
         }

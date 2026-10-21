@@ -10,6 +10,7 @@ export default function ProxiesPage() {
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
   const [selecting, setSelecting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -31,26 +32,55 @@ export default function ProxiesPage() {
   }, [load]);
 
   const testGroup = async (name: string) => {
+    if (testing) return;
+    const group = groups.find((g) => g.name === name);
+    if (!group) return;
+
     setTesting(name);
     setError(null);
+    setTestingNodes((current) => new Set([
+      ...current,
+      ...group.nodes.map((node) => nodeTestKey(name, node.name)),
+    ]));
+
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < group.nodes.length) {
+        const node = group.nodes[nextIndex++];
+        try {
+          const delay = await ipc.testNodeDelay(node.name);
+          setGroups((current) => current.map((g) =>
+            g.name !== name ? g : {
+              ...g,
+              nodes: g.nodes.map((n) => n.name === node.name
+                ? { ...n, delay_ms: delay, alive: true }
+                : n),
+            },
+          ));
+        } catch {
+          setGroups((current) => current.map((g) =>
+            g.name !== name ? g : {
+              ...g,
+              nodes: g.nodes.map((n) => n.name === node.name
+                ? { ...n, delay_ms: 0, alive: false }
+                : n),
+            },
+          ));
+        } finally {
+          setTestingNodes((current) => {
+            const next = new Set(current);
+            next.delete(nodeTestKey(name, node.name));
+            return next;
+          });
+        }
+      }
+    };
+
     try {
-      const delays = await ipc.testGroupDelay(name);
-      setGroups((gs) =>
-        gs.map((g) =>
-          g.name !== name
-            ? g
-            : {
-                ...g,
-                nodes: g.nodes.map((n) => ({
-                  ...n,
-                  delay_ms: delays[n.name] ?? null,
-                  alive: delays[n.name] !== undefined,
-                })),
-              },
-        ),
-      );
-    } catch (e) {
-      setError(String(e));
+      await Promise.all(Array.from(
+        { length: Math.min(10, group.nodes.length) },
+        () => worker(),
+      ));
     } finally {
       setTesting(null);
     }
@@ -97,6 +127,8 @@ export default function ProxiesPage() {
             key={g.name}
             group={g}
             testing={testing === g.name}
+            busy={testing !== null}
+            testingNodes={testingNodes}
             selecting={selecting}
             onTest={() => testGroup(g.name)}
             onSelect={(n) => select(g.name, n)}
@@ -110,12 +142,16 @@ export default function ProxiesPage() {
 function GroupCard({
   group,
   testing,
+  busy,
+  testingNodes,
   selecting,
   onTest,
   onSelect,
 }: {
   group: GroupView;
   testing: boolean;
+  busy: boolean;
+  testingNodes: Set<string>;
   selecting: string | null;
   onTest: () => void;
   onSelect: (node: string) => void;
@@ -129,7 +165,17 @@ function GroupCard({
         <span className="cb-mono ml-auto text-[11px]" style={{ color: "var(--cb-accent)" }}>
           {t("proxies.now")} → {group.now ?? "—"}
         </span>
-        <button className="cb-btn" onClick={onTest} disabled={testing}>
+        <button
+          className={`cb-btn flex items-center gap-1.5 ${testing ? "opacity-60" : ""}`}
+          onClick={onTest}
+          disabled={busy}
+        >
+          <svg
+            className={`h-3 w-3 ${testing ? "animate-spin" : ""}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          >
+            <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+          </svg>
           {testing ? t("proxies.testing") : t("proxies.testAll")}
         </button>
       </div>
@@ -137,6 +183,7 @@ function GroupCard({
         {group.nodes.map((n) => {
           const sel = group.now === n.name;
           const cls = delayClass(n.delay_ms);
+          const nodeTesting = testingNodes.has(nodeTestKey(group.name, n.name));
           return (
             <button
               key={n.name}
@@ -155,7 +202,15 @@ function GroupCard({
                 {n.name}
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
-                <i
+                {nodeTesting ? (
+                  <svg
+                    className="h-3 w-3 flex-none animate-spin"
+                    viewBox="0 0 24 24" fill="none" stroke="var(--cb-accent)" strokeWidth="2"
+                    aria-label={t("proxies.testing")}
+                  >
+                    <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+                  </svg>
+                ) : <i
                   className="h-[5px] w-[5px] flex-none rounded-full"
                   style={{
                     background:
@@ -167,9 +222,12 @@ function GroupCard({
                             ? "var(--cb-warn)"
                             : "var(--cb-bad)",
                   }}
-                />
-                <span className="cb-mono text-[10.5px]" style={{ color: "var(--cb-text-dim)" }}>
-                  {delayText(n.delay_ms)}
+                />}
+                <span
+                  className="cb-mono text-[10.5px]"
+                  style={{ color: nodeTesting ? "var(--cb-accent)" : "var(--cb-text-dim)" }}
+                >
+                  {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
                 </span>
               </div>
             </button>
@@ -178,6 +236,10 @@ function GroupCard({
       </div>
     </section>
   );
+}
+
+function nodeTestKey(group: string, node: string): string {
+  return `${group}\u0000${node}`;
 }
 
 function delayText(ms: number | null): string {

@@ -88,7 +88,7 @@ export default function HomePage() {
       {error && <ErrorBar msg={error} />}
 
       {/* 状态卡 */}
-      <section className="cb-card flex items-center gap-4 px-5 py-[18px]">
+      <section className="cb-card flex h-[88px] items-center gap-4 px-5 py-3">
         <span
           className={`cb-dot ${
             core.state === "Crashed" || (proxy.enabled && !running)
@@ -98,11 +98,11 @@ export default function HomePage() {
                 : "idle"
           }`}
         />
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">
             {proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff")}
           </div>
-          <div className="mt-0.5 text-[11.5px]" style={{ color: "var(--cb-text-dim)" }}>
+          <div className="mt-0.5 truncate text-[11.5px]" style={{ color: "var(--cb-text-dim)" }} title={`${coreText(t, core)} · ${t("home.activeProfile")} ${active ? active.name : t("home.none")}`}>
             {coreText(t, core)} · {t("home.activeProfile")}{" "}
             {active ? active.name : t("home.none")}
           </div>
@@ -125,11 +125,11 @@ export default function HomePage() {
           title={activeId ? undefined : t("home.noProfiles")}
         />
         <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />
-        <div className="min-w-[170px] text-right">
+        <div className="min-w-0 w-[220px] shrink-0 text-right">
           <div className="cb-micro">{t("home.outbound")}</div>
           {outbound ? (
             <>
-              <div className="cb-mono mt-0.5 text-[13.5px] font-semibold">
+              <div className="cb-mono mt-0.5 truncate text-[13.5px] font-semibold" title={outbound.node}>
                 {outbound.node}
                 {outbound.delay_ms != null && (
                   <span
@@ -148,7 +148,7 @@ export default function HomePage() {
                 )}
               </div>
               <div
-                className="cb-mono mt-0.5 truncate text-[11px]"
+              className="cb-mono mt-0.5 truncate text-[11px]"
                 style={{ color: "var(--cb-faint)" }}
                 title={outbound.chain.join(" → ")}
               >
