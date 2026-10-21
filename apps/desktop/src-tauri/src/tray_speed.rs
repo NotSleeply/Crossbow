@@ -11,16 +11,16 @@ use tauri::{AppHandle, Manager};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
 use objc2_app_kit::{
     NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSEventModifierFlags,
     NSEventType, NSFont, NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
-    NSForegroundColorAttributeName, NSLineBreakMode, NSMenu,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem,
-    NSTextAlignment, NSTextField, NSView,
+    NSForegroundColorAttributeName, NSLineBreakMode, NSMenu, NSMenuItem, NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem, NSTextAlignment, NSTextField,
+    NSView,
 };
-use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
 use objc2_foundation::{
-    NSAttributedString, NSAttributedStringKey, NSDictionary, NSObjectProtocol, NSNumber, NSString,
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSObjectProtocol, NSString,
 };
 
 const FONT_SIZE: f64 = 9.5;
@@ -220,8 +220,13 @@ fn delay_color(ms: Option<u64>, badge: &str) -> Retained<NSColor> {
 const ROW_VIEW_NAME_TAG: isize = 101;
 const ROW_VIEW_CHECK_TAG: isize = 102;
 const ROW_VIEW_BADGE_TAG: isize = 103;
+const ACTION_ROW_VIEW_LABEL_TAG: isize = 104;
+const SUBMENU_ROW_LABEL_TAG: isize = 105;
+const SUBMENU_ROW_CHEVRON_TAG: isize = 106;
 const NODE_MENU_WIDTH: f64 = 340.0;
 const NODE_ROW_HEIGHT: f64 = 23.0;
+const ACTION_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
+const SUBMENU_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
 
 // NSMenuItem custom views do not automatically dispatch the menu item's action.
 // Forward the click to the original target/action so Tauri still receives the
@@ -252,6 +257,126 @@ define_class!(
         }
     }
 );
+
+// Unlike node selection, triggering latency testing should leave the whole
+// menu hierarchy open. A custom action row forwards the action itself without
+// cancelling NSMenu tracking, allowing the same submenu to refresh in place.
+define_class!(
+    #[unsafe(super(NSView))]
+    #[name = "CrossbowTrayActionRowView"]
+    #[thread_kind = MainThreadOnly]
+    struct TrayActionRowView;
+
+    unsafe impl NSObjectProtocol for TrayActionRowView {}
+
+    impl TrayActionRowView {
+        #[unsafe(method(mouseDown:))]
+        fn on_mouse_down(&self, _event: &NSEvent) {
+            let Some(item) = self.enclosingMenuItem() else { return };
+            if let Some(action) = item.action() {
+                let mtm = MainThreadMarker::new().expect("menu click runs on the main thread");
+                let app = NSApplication::sharedApplication(mtm);
+                let target = item.target();
+                unsafe {
+                    app.sendAction_to_from(action, target.as_deref(), Some(&*item));
+                }
+            }
+        }
+    }
+);
+
+fn make_action_row_view(mtm: MainThreadMarker) -> Retained<TrayActionRowView> {
+    let frame = objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(NODE_MENU_WIDTH, ACTION_ROW_HEIGHT),
+    );
+    let view: Retained<TrayActionRowView> = unsafe {
+        let allocated = TrayActionRowView::alloc(mtm);
+        msg_send![allocated, initWithFrame: frame]
+    };
+    let label = NSTextField::labelWithString(&NSString::new(), mtm);
+    label.setTag(ACTION_ROW_VIEW_LABEL_TAG);
+    label.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(18.0, 0.0),
+        objc2_foundation::NSSize::new(NODE_MENU_WIDTH - 36.0, ACTION_ROW_HEIGHT),
+    ));
+    label.setFont(Some(&NSFont::menuBarFontOfSize(13.0)));
+    view.addSubview(&label);
+    view
+}
+
+fn update_action_row_view(view: &TrayActionRowView, text: &str, enabled: bool, menu_width: f64) {
+    let Some(label) = view
+        .viewWithTag(ACTION_ROW_VIEW_LABEL_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    else {
+        return;
+    };
+    label.setStringValue(&NSString::from_str(text));
+    let color = if enabled {
+        NSColor::labelColor()
+    } else {
+        NSColor::disabledControlTextColor()
+    };
+    label.setTextColor(Some(&color));
+    label.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(18.0, 0.0),
+        objc2_foundation::NSSize::new((menu_width - 36.0).max(100.0), ACTION_ROW_HEIGHT),
+    ));
+}
+
+define_class!(
+    #[unsafe(super(NSView))]
+    #[name = "CrossbowTraySubmenuRowView"]
+    #[thread_kind = MainThreadOnly]
+    struct TraySubmenuRowView;
+
+    unsafe impl NSObjectProtocol for TraySubmenuRowView {}
+);
+
+fn make_submenu_row_view(mtm: MainThreadMarker) -> Retained<TraySubmenuRowView> {
+    let frame = objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(240.0, SUBMENU_ROW_HEIGHT),
+    );
+    let view: Retained<TraySubmenuRowView> = unsafe {
+        let allocated = TraySubmenuRowView::alloc(mtm);
+        msg_send![allocated, initWithFrame: frame]
+    };
+    let title = NSTextField::labelWithString(&NSString::new(), mtm);
+    title.setTag(SUBMENU_ROW_LABEL_TAG);
+    title.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
+    title.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+    let chevron = NSTextField::labelWithString(&NSString::from_str("›"), mtm);
+    chevron.setTag(SUBMENU_ROW_CHEVRON_TAG);
+    chevron.setAlignment(NSTextAlignment::Center);
+    chevron.setFont(Some(&NSFont::menuBarFontOfSize(16.0)));
+    view.addSubview(&title);
+    view.addSubview(&chevron);
+    view
+}
+
+fn update_submenu_row_view(view: &TraySubmenuRowView, text: &str, menu_width: f64) {
+    if let Some(title) = view
+        .viewWithTag(SUBMENU_ROW_LABEL_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    {
+        title.setStringValue(&NSString::from_str(text));
+        title.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(25.0, 0.0),
+            objc2_foundation::NSSize::new((menu_width - 54.0).max(80.0), SUBMENU_ROW_HEIGHT),
+        ));
+    }
+    if let Some(chevron) = view
+        .viewWithTag(SUBMENU_ROW_CHEVRON_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    {
+        chevron.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(menu_width - 26.0, 0.0),
+            objc2_foundation::NSSize::new(18.0, SUBMENU_ROW_HEIGHT),
+        ));
+    }
+}
 
 fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
     let frame = objc2_foundation::NSRect::new(
@@ -285,9 +410,8 @@ fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
     let badge = NSTextField::labelWithString(&NSString::new(), mtm);
     badge.setTag(ROW_VIEW_BADGE_TAG);
     badge.setAlignment(NSTextAlignment::Center);
-    let badge_font = unsafe {
-        NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular)
-    };
+    let badge_font =
+        unsafe { NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular) };
     badge.setFont(Some(&badge_font));
     badge.setTextColor(Some(&NSColor::whiteColor()));
     badge.setWantsLayer(true);
@@ -406,9 +530,109 @@ pub fn update_node_items(handle: &AppHandle, rows: &[TrayNodeRow], testing: bool
     });
 }
 
-/// Tauri 的 macOS 托盘菜单存放在状态按钮的 TrayTarget 子视图中；菜单项动作返回后，
-/// NSStatusItem.menu 已经被清空。向该子视图发送一次合成点击，会沿用 Tauri 保存的
-/// 同一个菜单并进入原生菜单跟踪循环，让测速期间菜单保持可见，而不是调用失效的 menu 属性。
+fn is_delay_test_item(item: &NSMenuItem) -> bool {
+    matches!(
+        item.title().to_string().as_str(),
+        "延迟测速" | "延迟测速中…" | "Test latency" | "Testing latency…"
+    )
+}
+
+fn contains_delay_test(menu: &NSMenu) -> bool {
+    (0..menu.numberOfItems()).any(|index| {
+        menu.itemAtIndex(index).is_some_and(|item| {
+            is_delay_test_item(&item)
+                || item
+                    .submenu()
+                    .is_some_and(|submenu| contains_delay_test(&submenu))
+        })
+    })
+}
+
+/// True while Tauri is tracking the tray's native menu. Its status-item menu
+/// property is temporarily populated only for the duration of that tracking.
+pub fn node_menu_is_open(handle: &AppHandle) -> bool {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return false;
+    };
+    let tray = state.tray.lock().unwrap().clone();
+    let Some(tray) = tray else { return false };
+    let is_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let is_open_from_main = is_open.clone();
+    let _ = tray.with_inner_tray_icon(move |inner| {
+        let Some(status_item) = inner.ns_status_item() else {
+            return;
+        };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        is_open_from_main.store(
+            status_item
+                .menu(mtm)
+                .is_some_and(|menu| contains_delay_test(&menu)),
+            std::sync::atomic::Ordering::Release,
+        );
+    });
+    is_open.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Reopen the node submenu after the first click on a standard NSMenuItem has
+/// ended native menu tracking. A synthetic pointer move over the node-group row
+/// restores the same parent/child menu hierarchy; subsequent clicks use the
+/// custom action row and do not leave tracking in the first place.
+pub fn open_node_submenu(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
+    let tray = state.tray.lock().unwrap().clone();
+    let Some(tray) = tray else { return };
+    let _ = tray.with_inner_tray_icon(move |inner| {
+        let Some(status_item) = inner.ns_status_item() else {
+            return;
+        };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(menu) = status_item.menu(mtm) else {
+            return;
+        };
+        let parent = (0..menu.numberOfItems()).find_map(|index| {
+            menu.itemAtIndex(index).filter(|item| {
+                item.submenu()
+                    .is_some_and(|submenu| contains_delay_test(&submenu))
+            })
+        });
+        let Some(parent) = parent else { return };
+        let Some(view) = parent
+            .view()
+            .and_then(|view| view.downcast::<TraySubmenuRowView>().ok())
+        else {
+            return;
+        };
+        let Some(window) = view.window() else { return };
+        let bounds = view.bounds();
+        let location = view.convertPoint_toView(
+            objc2_foundation::NSPoint::new(bounds.size.width / 2.0, bounds.size.height / 2.0),
+            None,
+        );
+        let Some(event) = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+            NSEventType::MouseMoved,
+            location,
+            NSEventModifierFlags::empty(),
+            0.0,
+            window.windowNumber(),
+            None,
+            0,
+            0,
+            0.0,
+        ) else {
+            return;
+        };
+        NSApplication::sharedApplication(mtm).postEvent_atStart(&event, false);
+    });
+}
+
+/// Re-enter the tray's original menu tracking loop after a standard menu item
+/// closes it. This is used only until the custom latency action row is installed.
 pub fn keep_menu_open(handle: &AppHandle) {
     let Some(state) = handle.try_state::<crate::AppState>() else {
         return;
@@ -468,14 +692,8 @@ fn update_menu_items(
     menu_width: f64,
     badge_tab: f64,
 ) {
-    let is_node_menu = (0..menu.numberOfItems()).any(|index| {
-        menu.itemAtIndex(index).is_some_and(|item| {
-            matches!(
-                item.title().to_string().as_str(),
-                "延迟测速" | "延迟测速中…" | "Test latency" | "Testing latency…"
-            )
-        })
-    });
+    let is_node_menu = (0..menu.numberOfItems())
+        .any(|index| menu.itemAtIndex(index).is_some_and(|item| is_delay_test_item(&item)));
     if is_node_menu {
         menu.setMinimumWidth(menu_width);
     }
@@ -486,10 +704,7 @@ fn update_menu_items(
             continue;
         };
         let title = item.title().to_string();
-        if matches!(
-            title.as_str(),
-            "延迟测速" | "延迟测速中…" | "Test latency" | "Testing latency…"
-        ) {
+        if is_delay_test_item(&item) {
             let chinese = title.starts_with("延迟");
             let text = match (testing, chinese) {
                 (true, true) => "延迟测速中…",
@@ -499,6 +714,13 @@ fn update_menu_items(
             };
             item.setTitle(&NSString::from_str(text));
             item.setEnabled(!testing);
+            let mtm = MainThreadMarker::new().expect("tray menu updates run on the main thread");
+            let row_view = item
+                .view()
+                .and_then(|view| view.downcast::<TrayActionRowView>().ok())
+                .unwrap_or_else(|| make_action_row_view(mtm));
+            update_action_row_view(&row_view, text, !testing, menu_width);
+            item.setView(Some(&row_view));
         } else if is_node_menu && !title.is_empty() {
             let represented_name = item
                 .representedObject()
@@ -526,6 +748,16 @@ fn update_menu_items(
         }
 
         if let Some(submenu) = item.submenu() {
+            if contains_delay_test(&submenu) {
+                let mtm =
+                    MainThreadMarker::new().expect("tray menu updates run on the main thread");
+                let row_view = item
+                    .view()
+                    .and_then(|view| view.downcast::<TraySubmenuRowView>().ok())
+                    .unwrap_or_else(|| make_submenu_row_view(mtm));
+                update_submenu_row_view(&row_view, &title, menu.size().width);
+                item.setView(Some(&row_view));
+            }
             update_menu_items(&submenu, rows, testing, menu_width, badge_tab);
         }
     }

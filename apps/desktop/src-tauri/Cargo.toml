@@ -61,6 +61,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSGraphicsContext",
     "NSApplication",
     "NSTextField",
+    "NSEvent",
 ] }
 objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSArray", "NSAttributedString", "NSRange"] }
 raw-window-handle = "0.6"
