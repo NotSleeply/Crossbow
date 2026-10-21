@@ -6,7 +6,7 @@ export type Lang = "zh" | "en";
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
     "section.proxy": "代理",
-    "section.general": "一般",
+    "section.general": "通用",
         "nav.diagnostics": "诊断",
     "diag.title": "网络诊断",
     "diag.hint": "按依赖顺序逐项自检；失败项给出可执行的修复动作",

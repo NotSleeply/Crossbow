@@ -143,14 +143,14 @@ export default function App() {
         </div>
         {NAV.map((group) => (
           <div key={group.section}>
-            <div className="cb-micro px-2.5 pb-1.5 pt-3.5">{t(group.section === "proxy" ? "section.proxy" : "section.general")}</div>
+            <div className="text-[11px] font-medium tracking-wide px-2.5 pb-1.5 pt-3.5" style={{ color: "var(--cb-faint)" }}>{t(group.section === "proxy" ? "section.proxy" : "section.general")}</div>
             {group.items.map((item) => {
               const on = page === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setPage(item.id)}
-                  className="cb-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[12.5px]"
+                  className="cb-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[14px]"
                   style={{
                     color: on ? "var(--cb-text)" : "var(--cb-text-dim)",
                     background: on ? "var(--cb-surface-2)" : undefined,
@@ -169,7 +169,7 @@ export default function App() {
           </div>
         ))}
         <div
-          className="mt-auto flex items-center gap-2 border-t px-2.5 pt-3 text-[10.5px]"
+          className="mt-auto flex items-center gap-2 border-t px-2.5 pt-3 text-[11.5px]"
           style={{ borderColor: "var(--cb-line)", color: "var(--cb-faint)" }}
         >
           <span className="cb-dot idle" />
