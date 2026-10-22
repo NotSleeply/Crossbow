@@ -868,6 +868,7 @@ fn require_controller(state: &AppState) -> Result<(u16, String), String> {
 
 #[tauri::command]
 fn subscribe_traffic(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    state.ws.want_channel("traffic");
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state
@@ -885,6 +886,7 @@ fn unsubscribe_traffic(state: State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn subscribe_connections(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    state.ws.want_channel("connections");
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state
@@ -902,6 +904,7 @@ fn unsubscribe_connections(state: State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn subscribe_logs(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    state.ws.want_channel("logs");
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state
@@ -1468,12 +1471,42 @@ fn sync_tray_traffic(handle: &AppHandle) {
                 });
             #[cfg(target_os = "macos")]
             ensure_tray_speed_watchdog(handle);
+            resubscribe_page_channels(handle);
             return;
         }
     }
     state.ws.unsubscribe_tray_traffic();
     #[cfg(target_os = "macos")]
     tray_speed::clear(handle);
+}
+
+/// 内核（重）启后重订仍被页面需要的通道（traffic/connections/logs）。
+/// 页面订阅绑定挂载时的控制器地址——内核一重启端口/密钥全换，旧读线程
+/// 会在死端口上无限重连，日志页空、首页图表与连接页停摆都是这个缺口。
+/// 借 subscribe 的替换语义，这里用新地址顶替旧通道；意图集（页面挂载
+/// 即登记、卸载即移除）保证 Starting 期间挂载失败的页面 Running 后补上。
+fn resubscribe_page_channels(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    if state.core().status() != CoreStatus::Running {
+        return;
+    }
+    if !state.ws.any_page_channel_wanted() {
+        return;
+    }
+    let Some((port, secret)) = state.core().controller() else {
+        return;
+    };
+    let h = app.clone();
+    let emit = move |ev: &'static str, payload: serde_json::Value| {
+        let _ = h.emit(ev, payload);
+    };
+    let _ = state
+        .ws
+        .subscribe_traffic(port, &secret, emit.clone());
+    let _ = state.ws.subscribe_connections(port, &secret, emit.clone());
+    let _ = state.ws.subscribe_logs(port, &secret, emit);
 }
 
 /// 托盘速率看门狗（进程级单例）：内核 Running 期间 /traffic 静默超过阈值

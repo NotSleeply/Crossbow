@@ -32,6 +32,10 @@ pub struct WsHub {
     /// 重订同Channel时旧标志被置 false（读线程最迟约 2 秒退出），新读线程顶替——
     /// 「订阅还在但已死/连着旧端口」的冻结形态由此自愈。
     active: Mutex<HashMap<&'static str, (Arc<AtomicBool>, Arc<Mutex<Instant>>)>>,
+    /// 页面订阅意图集：挂载即登记、卸载即移除，与订阅是否成功无关。
+    /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
+    /// 命令失败」的窗口，保证 Running 后自动补上。
+    wanted: Mutex<std::collections::HashSet<&'static str>>,
 }
 
 impl WsHub {
@@ -54,6 +58,25 @@ impl WsHub {
         Ok(())
     }
 
+    /// 页面订阅意图登记：必须在订阅命令的最入口调用（require_controller
+    /// 之前）——内核 Starting 期间挂载的页面订阅命令会失败，意图集是
+    /// Running 后补订的唯一依据。
+    pub fn want_channel(&self, name: &'static str) {
+        self.wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(name);
+    }
+
+    /// 是否还有页面通道需要数据（有则内核 Running 后应重订）。
+    pub fn any_page_channel_wanted(&self) -> bool {
+        !self
+            .wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
     /// 指定 channel 距最近一条消息的时长；从未订阅返回 None。
     pub fn last_message_ago(&self, name: &str) -> Option<Duration> {
         self.active
@@ -68,6 +91,10 @@ impl WsHub {
     }
 
     pub fn unsubscribe(&self, name: &str) {
+        self.wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(name);
         if let Some((flag, _)) = self
             .active
             .lock()
@@ -209,7 +236,10 @@ impl WsHub {
 }
 
 fn ws_url(port: u16, secret: &str, path: &str) -> String {
-    format!("ws://127.0.0.1:{port}{path}?token={secret}")
+    // path 可能自带查询串（如 /logs?level=info）——token 必须用 & 续接，
+    // 否则 token 被吞进上一个参数值，内核 401，日志通道无限重连。
+    let sep = if path.contains('?') { "&" } else { "?" };
+    format!("ws://127.0.0.1:{port}{path}{sep}token={secret}")
 }
 
 /// 阻塞式 WS 读循环：断线自动重连，退订后于下一条消息前退出。
@@ -435,6 +465,11 @@ pub(crate) mod tests {
         assert_eq!(
             ws_url(19090, "abc", "/traffic"),
             "ws://127.0.0.1:19090/traffic?token=abc"
+        );
+        // 自带查询串的 path 用 & 续接 token（日志通道 401 死循环回归测试）
+        assert_eq!(
+            ws_url(19090, "abc", "/logs?level=info"),
+            "ws://127.0.0.1:19090/logs?level=info&token=abc"
         );
     }
 
