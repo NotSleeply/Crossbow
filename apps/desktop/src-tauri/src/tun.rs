@@ -8,7 +8,7 @@
 //! 关闭 TUN 时把 setuid 位摘掉，恢复普通权限。
 //! 仅 macOS；Windows 的 TUN 走 wintun + 服务，属 M1.5 后续。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::AppState;
 
@@ -20,24 +20,55 @@ pub fn is_setuid(bin: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// 需要提权时返回内核路径。
-fn core_bin(state: &AppState, need: &str) -> Result<PathBuf, String> {
-    let bin = crate::core_download::resolve_core_for(&state.data_dir, Some(need))
-        .ok_or_else(|| format!("内核 {need} 未安装"))?;
-    Ok(bin)
+/// 把 TUN 内核放到版本化的用户数据目录，避免更新 `.app` 时覆盖掉
+/// 已授权的 setuid 文件。只有核心版本变化时才需要重新授权。
+fn persistent_core_bin(state: &AppState, source: &Path) -> Result<PathBuf, String> {
+    let output = std::process::Command::new(source)
+        .arg(if crate::core_download::is_core_bin(source, "sing-box") {
+            "version"
+        } else {
+            "-v"
+        })
+        .output()
+        .map_err(|e| format!("读取内核版本失败：{e}"))?;
+    if !output.status.success() {
+        return Err("读取内核版本失败".into());
+    }
+    let version = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+    if version.is_empty() {
+        return Err("内核未返回版本信息".into());
+    }
+    let name = source
+        .file_name()
+        .ok_or_else(|| "内核路径缺少文件名".to_string())?;
+    let target = state.data_dir.join("tun-binaries").join(version).join(name);
+    if !target.exists() {
+        let parent = target
+            .parent()
+            .ok_or_else(|| "TUN 内核目标路径无效".to_string())?;
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::copy(source, &target).map_err(|e| format!("复制 TUN 内核失败：{e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
+                .map_err(|e| format!("设置 TUN 内核权限失败：{e}"))?;
+        }
+    }
+    Ok(target)
 }
 
-/// 确保 TUN 目标内核是 setuid root。首次会弹管理员授权（osascript
-/// with administrator privileges），成功后持久生效。
-pub fn ensure_root_binary(state: &AppState) -> Result<(), String> {
-    let is_singbox = {
-        let store = state.store.lock().unwrap();
-        store.data().engine.engine == crossbow_core::Engine::SingBox
-    };
-    let need = if is_singbox { "sing-box" } else { "mihomo" };
-    let bin = core_bin(state, need)?;
+/// 确保 TUN 目标内核是 setuid root，并返回持久化副本路径。
+pub fn ensure_root_binary(state: &AppState, source: &Path) -> Result<PathBuf, String> {
+    let bin = persistent_core_bin(state, source)?;
     if is_setuid(&bin) {
-        return Ok(());
+        return Ok(bin);
     }
     let script = format!(
         "chown root '{}'; chmod u+s '{}'",
@@ -63,17 +94,15 @@ pub fn ensure_root_binary(state: &AppState) -> Result<(), String> {
     if !is_setuid(&bin) {
         return Err("提权后 setuid 位未生效".into());
     }
-    Ok(())
+    Ok(bin)
 }
 
 /// 关闭 TUN：摘掉 setuid 位（尽力而为，失败不打断流程）。
 pub fn clear_root_binary(state: &AppState) {
-    let is_singbox = {
-        let store = state.store.lock().unwrap();
-        store.data().engine.engine == crossbow_core::Engine::SingBox
-    };
-    let need = if is_singbox { "sing-box" } else { "mihomo" };
-    let Ok(bin) = core_bin(state, need) else { return };
+    let bin = state.core().binary_path();
+    if !is_setuid(&bin) {
+        return;
+    }
     let _ = std::process::Command::new("osascript")
         .args([
             "-e",
