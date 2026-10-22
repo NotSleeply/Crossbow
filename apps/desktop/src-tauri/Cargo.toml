@@ -46,6 +46,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSStatusBarButton",
     "NSStatusItem",
     "NSView",
+    "NSTrackingArea",
     "NSMenu",
     "NSMenuItem",
     "NSAttributedString",
@@ -56,6 +57,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSControl",
     "NSBezierPath",
     "NSImage",
+    "NSImageView",
     "NSTextAttachment",
     "NSStringDrawing",
     "NSGraphicsContext",
@@ -63,7 +65,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSTextField",
     "NSEvent",
 ] }
-objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSArray", "NSAttributedString", "NSRange"] }
+objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSArray", "NSAttributedString", "NSNotification", "NSRange"] }
 raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.dependencies]
