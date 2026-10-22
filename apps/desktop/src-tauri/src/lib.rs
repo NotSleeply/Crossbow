@@ -1516,23 +1516,18 @@ fn refresh_tray_nodes(handle: &AppHandle) {
         };
         #[cfg(target_os = "macos")]
         if missing > 0 {
-            run_tray_delay_test(&h, false);
+            run_tray_delay_test(&h);
         }
     });
 }
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
 #[cfg(target_os = "macos")]
-fn run_tray_delay_test(handle: &AppHandle, from_menu_event: bool) {
+fn run_tray_delay_test(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else { return };
-    let reopen_menu = from_menu_event && !tray_speed::node_menu_is_open(handle);
     let generation = {
         let mut tray = state.node_menu.lock().unwrap();
         if !tray.begin_test() {
-            drop(tray);
-            if reopen_menu {
-                tray_speed::keep_menu_open(handle);
-            }
             return; // 已在测速
         }
         tray.generation()
@@ -1557,11 +1552,6 @@ fn run_tray_delay_test(handle: &AppHandle, from_menu_event: bool) {
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else { return };
-        if reopen_menu {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            update_tray_node_menu(&h, true);
-            tray_speed::open_node_submenu(&h);
-        }
         let (group, members) = {
             let tray = state.node_menu.lock().unwrap();
             (tray.group().to_string(), tray.node_names())
@@ -1590,10 +1580,6 @@ fn run_tray_delay_test(handle: &AppHandle, from_menu_event: bool) {
         tray_speed::update_node_items(&h, &data.rows, data.testing);
     });
 
-    if reopen_menu {
-        // 首次菜单行仍是标准 AppKit 项时，由自定义行初始化并恢复节点子菜单。
-        tray_speed::keep_menu_open(handle);
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1924,7 +1910,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "tray-delay-test" => {
             #[cfg(target_os = "macos")]
-            run_tray_delay_test(app, true);
+            run_tray_delay_test(app);
             Ok(())
         }
         other => {
@@ -2082,6 +2068,8 @@ pub fn run() {
                 .on_menu_event(handle_menu)
                 .build(app)?;
             *app.state::<AppState>().tray.lock().unwrap() = Some(tray);
+            #[cfg(target_os = "macos")]
+            tray_speed::install_menu_observer(app.handle());
 
             // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());

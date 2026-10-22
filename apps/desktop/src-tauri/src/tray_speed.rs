@@ -10,17 +10,18 @@ use tauri::{AppHandle, Manager};
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, AnyThread, DeclaredClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
 use objc2_app_kit::{
-    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSEventModifierFlags,
-    NSEventType, NSFont, NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
+    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSFont,
+    NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
     NSForegroundColorAttributeName, NSLineBreakMode, NSMenu, NSMenuItem, NSMutableParagraphStyle,
-    NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem, NSTextAlignment, NSTextField,
-    NSView,
+    NSMenuDidBeginTrackingNotification, NSParagraphStyleAttributeName, NSStatusBarButton,
+    NSStatusItem, NSTextAlignment, NSTextField, NSTrackingArea, NSTrackingAreaOptions, NSView,
 };
 use objc2_foundation::{
-    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSObjectProtocol, NSString,
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSNotification,
+    NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
 };
 
 const FONT_SIZE: f64 = 9.5;
@@ -34,6 +35,7 @@ const NS_VARIABLE_LENGTH: f64 = -1.0;
 thread_local! {
     /// 内容不变时跳过重设（每秒一次的 tick 大多数帧是无变化的）。
     static LAST: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    static MENU_OBSERVER: std::cell::RefCell<Option<Retained<TrayMenuObserver>>> = const { std::cell::RefCell::new(None) };
 }
 
 // 速率文本：上行在上、下行在下；每行 `{:>6}` 填充——等宽字体下
@@ -87,6 +89,22 @@ fn build_attrs(button_height: f64) -> Retained<NSDictionary<NSAttributedStringKe
         ];
         let values: &[&AnyObject] = &[&font, &color, &para, &baseline];
         NSDictionary::from_slices(keys, values)
+    }
+}
+
+/// NSTextField label cells in custom NSMenuItem views align their baseline too
+/// high in these compact rows. Shift glyphs down without moving the row or its
+/// background (notably the latency badge) so all text is optically centered.
+fn set_menu_label_text(label: &NSTextField, text: &str) {
+    unsafe {
+        let value = NSString::from_str(text);
+        let offset = NSNumber::new_f64(-2.0);
+        let attrs = NSDictionary::from_slices(
+            &[NSBaselineOffsetAttributeName],
+            &[&*offset as &AnyObject],
+        );
+        let attributed = NSAttributedString::new_with_attributes(&value, &attrs);
+        label.setAttributedStringValue(&attributed);
     }
 }
 
@@ -223,10 +241,12 @@ const ROW_VIEW_BADGE_TAG: isize = 103;
 const ACTION_ROW_VIEW_LABEL_TAG: isize = 104;
 const SUBMENU_ROW_LABEL_TAG: isize = 105;
 const SUBMENU_ROW_CHEVRON_TAG: isize = 106;
-const NODE_MENU_WIDTH: f64 = 340.0;
+const NODE_MENU_WIDTH: f64 = 260.0;
 const NODE_ROW_HEIGHT: f64 = 23.0;
 const ACTION_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
 const SUBMENU_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
+const HOVER_HORIZONTAL_INSET: f64 = 4.0;
+const HOVER_CORNER_RADIUS: f64 = 7.0;
 
 // NSMenuItem custom views do not automatically dispatch the menu item's action.
 // Forward the click to the original target/action so Tauri still receives the
@@ -240,6 +260,24 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayNodeRowView {}
 
     impl TrayNodeRowView {
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), updateTrackingAreas];
+            }
+            install_hover_tracking(self);
+        }
+
+        #[unsafe(method(mouseEntered:))]
+        fn on_mouse_entered(&self, _event: &NSEvent) {
+            set_row_hovered(self, true, &[ROW_VIEW_NAME_TAG, ROW_VIEW_CHECK_TAG]);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn on_mouse_exited(&self, _event: &NSEvent) {
+            set_row_hovered(self, false, &[ROW_VIEW_NAME_TAG, ROW_VIEW_CHECK_TAG]);
+        }
+
         #[unsafe(method(mouseDown:))]
         fn on_mouse_down(&self, _event: &NSEvent) {
             let Some(item) = self.enclosingMenuItem() else { return };
@@ -270,6 +308,24 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayActionRowView {}
 
     impl TrayActionRowView {
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), updateTrackingAreas];
+            }
+            install_hover_tracking(self);
+        }
+
+        #[unsafe(method(mouseEntered:))]
+        fn on_mouse_entered(&self, _event: &NSEvent) {
+            set_action_row_hovered(self, true);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn on_mouse_exited(&self, _event: &NSEvent) {
+            set_action_row_hovered(self, false);
+        }
+
         #[unsafe(method(mouseDown:))]
         fn on_mouse_down(&self, _event: &NSEvent) {
             let Some(item) = self.enclosingMenuItem() else { return };
@@ -294,6 +350,8 @@ fn make_action_row_view(mtm: MainThreadMarker) -> Retained<TrayActionRowView> {
         let allocated = TrayActionRowView::alloc(mtm);
         msg_send![allocated, initWithFrame: frame]
     };
+    view.setWantsLayer(true);
+    add_hover_background(&view, NODE_MENU_WIDTH, ACTION_ROW_HEIGHT, mtm);
     let label = NSTextField::labelWithString(&NSString::new(), mtm);
     label.setTag(ACTION_ROW_VIEW_LABEL_TAG);
     label.setFrame(objc2_foundation::NSRect::new(
@@ -312,7 +370,7 @@ fn update_action_row_view(view: &TrayActionRowView, text: &str, enabled: bool, m
     else {
         return;
     };
-    label.setStringValue(&NSString::from_str(text));
+    set_menu_label_text(&label, text);
     let color = if enabled {
         NSColor::labelColor()
     } else {
@@ -323,6 +381,7 @@ fn update_action_row_view(view: &TrayActionRowView, text: &str, enabled: bool, m
         objc2_foundation::NSPoint::new(18.0, 0.0),
         objc2_foundation::NSSize::new((menu_width - 36.0).max(100.0), ACTION_ROW_HEIGHT),
     ));
+    resize_hover_background(view, menu_width, ACTION_ROW_HEIGHT);
 }
 
 define_class!(
@@ -332,17 +391,39 @@ define_class!(
     struct TraySubmenuRowView;
 
     unsafe impl NSObjectProtocol for TraySubmenuRowView {}
+
+    impl TraySubmenuRowView {
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), updateTrackingAreas];
+            }
+            install_hover_tracking(self);
+        }
+
+        #[unsafe(method(mouseEntered:))]
+        fn on_mouse_entered(&self, _event: &NSEvent) {
+            set_row_hovered(self, true, &[SUBMENU_ROW_LABEL_TAG, SUBMENU_ROW_CHEVRON_TAG]);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn on_mouse_exited(&self, _event: &NSEvent) {
+            set_row_hovered(self, false, &[SUBMENU_ROW_LABEL_TAG, SUBMENU_ROW_CHEVRON_TAG]);
+        }
+    }
 );
 
 fn make_submenu_row_view(mtm: MainThreadMarker) -> Retained<TraySubmenuRowView> {
     let frame = objc2_foundation::NSRect::new(
         objc2_foundation::NSPoint::new(0.0, 0.0),
-        objc2_foundation::NSSize::new(240.0, SUBMENU_ROW_HEIGHT),
+        objc2_foundation::NSSize::new(NODE_MENU_WIDTH, SUBMENU_ROW_HEIGHT),
     );
     let view: Retained<TraySubmenuRowView> = unsafe {
         let allocated = TraySubmenuRowView::alloc(mtm);
         msg_send![allocated, initWithFrame: frame]
     };
+    view.setWantsLayer(true);
+    add_hover_background(&view, NODE_MENU_WIDTH, SUBMENU_ROW_HEIGHT, mtm);
     let title = NSTextField::labelWithString(&NSString::new(), mtm);
     title.setTag(SUBMENU_ROW_LABEL_TAG);
     title.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
@@ -351,20 +432,26 @@ fn make_submenu_row_view(mtm: MainThreadMarker) -> Retained<TraySubmenuRowView> 
     chevron.setTag(SUBMENU_ROW_CHEVRON_TAG);
     chevron.setAlignment(NSTextAlignment::Center);
     chevron.setFont(Some(&NSFont::menuBarFontOfSize(16.0)));
+    set_menu_label_text(&chevron, "›");
     view.addSubview(&title);
     view.addSubview(&chevron);
     view
 }
 
 fn update_submenu_row_view(view: &TraySubmenuRowView, text: &str, menu_width: f64) {
+    view.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(menu_width, SUBMENU_ROW_HEIGHT),
+    ));
+    resize_hover_background(view, menu_width, SUBMENU_ROW_HEIGHT);
     if let Some(title) = view
         .viewWithTag(SUBMENU_ROW_LABEL_TAG)
         .and_then(|view| view.downcast::<NSTextField>().ok())
     {
-        title.setStringValue(&NSString::from_str(text));
+        set_menu_label_text(&title, text);
         title.setFrame(objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(25.0, 0.0),
-            objc2_foundation::NSSize::new((menu_width - 54.0).max(80.0), SUBMENU_ROW_HEIGHT),
+            objc2_foundation::NSPoint::new(18.0, 0.0),
+            objc2_foundation::NSSize::new((menu_width - 47.0).max(80.0), SUBMENU_ROW_HEIGHT),
         ));
     }
     if let Some(chevron) = view
@@ -388,6 +475,7 @@ fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
         msg_send![allocated, initWithFrame: frame]
     };
     view.setWantsLayer(true);
+    add_hover_background(&view, NODE_MENU_WIDTH, NODE_ROW_HEIGHT, mtm);
 
     let check = NSTextField::labelWithString(&NSString::from_str("✓"), mtm);
     check.setTag(ROW_VIEW_CHECK_TAG);
@@ -454,22 +542,23 @@ fn update_node_row_view(
         return;
     };
 
-    let display_name = truncate_display_name(&row.name, 196.0);
-    name.setStringValue(&NSString::from_str(&display_name));
-    name.setToolTip(Some(&NSString::from_str(&row.name)));
-    check.setStringValue(&NSString::from_str(if row.selected { "✓" } else { "" }));
-
-    let badge_width = (display_width(&row.badge) as f64 * 5.7 + 10.0).max(27.0);
+    let badge_width = (display_width(&row.badge) as f64 * 6.0 + 14.0).max(30.0);
     let badge_x = menu_width - badge_width - 10.0;
+    let name_width = (badge_x - 34.0).max(50.0);
+    let display_name = truncate_display_name(&row.name, name_width);
+    set_menu_label_text(&name, &display_name);
+    name.setToolTip(Some(&NSString::from_str(&row.name)));
+    set_menu_label_text(&check, if row.selected { "✓" } else { "" });
     name.setFrame(objc2_foundation::NSRect::new(
         objc2_foundation::NSPoint::new(25.0, 0.0),
-        objc2_foundation::NSSize::new((badge_x - 34.0).max(80.0), NODE_ROW_HEIGHT),
+        objc2_foundation::NSSize::new(name_width, NODE_ROW_HEIGHT),
     ));
     badge.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(badge_x, 3.0),
-        objc2_foundation::NSSize::new(badge_width, 17.0),
+        objc2_foundation::NSPoint::new(badge_x, 2.5),
+        objc2_foundation::NSSize::new(badge_width, 18.0),
     ));
-    badge.setStringValue(&NSString::from_str(&row.badge));
+    badge.setAlignment(NSTextAlignment::Center);
+    set_menu_label_text(&badge, &row.badge);
     let color = delay_color(ms, &row.badge);
     if let Some(layer) = layer_for(&badge) {
         let cg_color = color.CGColor();
@@ -482,8 +571,174 @@ fn update_node_row_view(
     let _ = mtm;
 }
 
+fn install_hover_tracking(view: &NSView) {
+    unsafe {
+        for area in view.trackingAreas() {
+            view.removeTrackingArea(&area);
+        }
+        let options = NSTrackingAreaOptions::MouseEnteredAndExited
+            | NSTrackingAreaOptions::ActiveAlways
+            | NSTrackingAreaOptions::InVisibleRect;
+        let rect = objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(0.0, 0.0),
+            objc2_foundation::NSSize::new(0.0, 0.0),
+        );
+        let area = NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            rect,
+            options,
+            Some(view),
+            None,
+        );
+        view.addTrackingArea(&area);
+    }
+}
+
+fn add_hover_background(view: &NSView, width: f64, height: f64, mtm: MainThreadMarker) {
+    let frame = objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, 0.0),
+        objc2_foundation::NSSize::new(
+            (width - HOVER_HORIZONTAL_INSET * 2.0).max(0.0),
+            height,
+        ),
+    );
+    let background: Retained<NSView> = unsafe {
+        let allocated = NSView::alloc(mtm);
+        msg_send![allocated, initWithFrame: frame]
+    };
+    background.setWantsLayer(true);
+    view.addSubview(&background);
+}
+
+fn hover_background(view: &NSView) -> Option<Retained<NSView>> {
+    view.subviews().firstObject()?.downcast::<NSView>().ok()
+}
+
+fn resize_hover_background(view: &NSView, width: f64, height: f64) {
+    if let Some(background) = hover_background(view) {
+        background.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, 0.0),
+            objc2_foundation::NSSize::new(
+                (width - HOVER_HORIZONTAL_INSET * 2.0).max(0.0),
+                height,
+            ),
+        ));
+    }
+}
+
+fn set_row_hovered(view: &NSView, hovered: bool, label_tags: &[isize]) {
+    let Some(background_view) = hover_background(view) else {
+        return;
+    };
+    let Some(layer) = layer_for(&background_view) else {
+        return;
+    };
+    let background = if hovered {
+        NSColor::selectedContentBackgroundColor()
+    } else {
+        NSColor::clearColor()
+    };
+    let cg_color = background.CGColor();
+    unsafe {
+        let _: () = msg_send![&*layer, setBackgroundColor: &*cg_color];
+        let _: () = msg_send![&*layer, setCornerRadius: HOVER_CORNER_RADIUS];
+        let _: () = msg_send![&*layer, setMasksToBounds: true];
+    }
+    let text_color = if hovered {
+        NSColor::whiteColor()
+    } else {
+        NSColor::labelColor()
+    };
+    for tag in label_tags {
+        if let Some(label) = view
+            .viewWithTag(*tag)
+            .and_then(|view| view.downcast::<NSTextField>().ok())
+        {
+            label.setTextColor(Some(&text_color));
+        }
+    }
+}
+
+fn set_action_row_hovered(view: &TrayActionRowView, hovered: bool) {
+    let enabled = view
+        .enclosingMenuItem()
+        .is_some_and(|item| item.isEnabled());
+    set_row_hovered(
+        view,
+        hovered && enabled,
+        &[ACTION_ROW_VIEW_LABEL_TAG],
+    );
+    if !enabled {
+        if let Some(label) = view
+            .viewWithTag(ACTION_ROW_VIEW_LABEL_TAG)
+            .and_then(|view| view.downcast::<NSTextField>().ok())
+        {
+            label.setTextColor(Some(&NSColor::disabledControlTextColor()));
+        }
+    }
+}
+
 fn layer_for(view: &NSView) -> Option<Retained<AnyObject>> {
     unsafe { msg_send![view, layer] }
+}
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[name = "CrossbowTrayMenuObserver"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = AppHandle]
+    struct TrayMenuObserver;
+
+    unsafe impl NSObjectProtocol for TrayMenuObserver {}
+
+    impl TrayMenuObserver {
+        #[unsafe(method(menuDidBeginTracking:))]
+        fn menu_did_begin_tracking(&self, notification: &NSNotification) {
+            let Some(menu) = notification
+                .object()
+                .and_then(|object| object.downcast::<NSMenu>().ok())
+            else {
+                return;
+            };
+            if !contains_delay_test(&menu) {
+                return;
+            }
+            let handle = self.ivars();
+            let Some(state) = handle.try_state::<crate::AppState>() else {
+                return;
+            };
+            let lang = state.store.lock().unwrap().data().ui.lang.clone();
+            let data = state.node_menu.lock().unwrap().snapshot(&crate::tr(
+                &lang,
+                "节点选择",
+                "Nodes",
+            ));
+            let (menu_width, badge_tab) = node_menu_layout(&data.rows);
+            update_menu_items(&menu, &data.rows, data.testing, menu_width, badge_tab);
+        }
+    }
+);
+
+/// Install rows at the beginning of AppKit menu tracking. Tauri temporarily
+/// assigns the menu to NSStatusItem only while tracking, so refreshing it while
+/// closed cannot reach the menu; this notification runs before the first rows
+/// are displayed and keeps custom badges/actions ready on every opening.
+pub fn install_menu_observer(handle: &AppHandle) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let observer = TrayMenuObserver::alloc(mtm).set_ivars(handle.clone());
+    let observer: Retained<TrayMenuObserver> = unsafe { msg_send![super(observer), init] };
+    let center = NSNotificationCenter::defaultCenter();
+    unsafe {
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(menuDidBeginTracking:),
+            Some(NSMenuDidBeginTrackingNotification),
+            None,
+        );
+    }
+    MENU_OBSERVER.with(|current| *current.borrow_mut() = Some(observer));
 }
 
 pub fn display_name(name: &str) -> String {
@@ -546,137 +801,6 @@ fn contains_delay_test(menu: &NSMenu) -> bool {
                     .is_some_and(|submenu| contains_delay_test(&submenu))
         })
     })
-}
-
-/// True while Tauri is tracking the tray's native menu. Its status-item menu
-/// property is temporarily populated only for the duration of that tracking.
-pub fn node_menu_is_open(handle: &AppHandle) -> bool {
-    let Some(state) = handle.try_state::<crate::AppState>() else {
-        return false;
-    };
-    let tray = state.tray.lock().unwrap().clone();
-    let Some(tray) = tray else { return false };
-    let is_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let is_open_from_main = is_open.clone();
-    let _ = tray.with_inner_tray_icon(move |inner| {
-        let Some(status_item) = inner.ns_status_item() else {
-            return;
-        };
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
-        is_open_from_main.store(
-            status_item
-                .menu(mtm)
-                .is_some_and(|menu| contains_delay_test(&menu)),
-            std::sync::atomic::Ordering::Release,
-        );
-    });
-    is_open.load(std::sync::atomic::Ordering::Acquire)
-}
-
-/// Reopen the node submenu after the first click on a standard NSMenuItem has
-/// ended native menu tracking. A synthetic pointer move over the node-group row
-/// restores the same parent/child menu hierarchy; subsequent clicks use the
-/// custom action row and do not leave tracking in the first place.
-pub fn open_node_submenu(handle: &AppHandle) {
-    let Some(state) = handle.try_state::<crate::AppState>() else {
-        return;
-    };
-    let tray = state.tray.lock().unwrap().clone();
-    let Some(tray) = tray else { return };
-    let _ = tray.with_inner_tray_icon(move |inner| {
-        let Some(status_item) = inner.ns_status_item() else {
-            return;
-        };
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
-        let Some(menu) = status_item.menu(mtm) else {
-            return;
-        };
-        let parent = (0..menu.numberOfItems()).find_map(|index| {
-            menu.itemAtIndex(index).filter(|item| {
-                item.submenu()
-                    .is_some_and(|submenu| contains_delay_test(&submenu))
-            })
-        });
-        let Some(parent) = parent else { return };
-        let Some(view) = parent
-            .view()
-            .and_then(|view| view.downcast::<TraySubmenuRowView>().ok())
-        else {
-            return;
-        };
-        let Some(window) = view.window() else { return };
-        let bounds = view.bounds();
-        let location = view.convertPoint_toView(
-            objc2_foundation::NSPoint::new(bounds.size.width / 2.0, bounds.size.height / 2.0),
-            None,
-        );
-        let Some(event) = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-            NSEventType::MouseMoved,
-            location,
-            NSEventModifierFlags::empty(),
-            0.0,
-            window.windowNumber(),
-            None,
-            0,
-            0,
-            0.0,
-        ) else {
-            return;
-        };
-        NSApplication::sharedApplication(mtm).postEvent_atStart(&event, false);
-    });
-}
-
-/// Re-enter the tray's original menu tracking loop after a standard menu item
-/// closes it. This is used only until the custom latency action row is installed.
-pub fn keep_menu_open(handle: &AppHandle) {
-    let Some(state) = handle.try_state::<crate::AppState>() else {
-        return;
-    };
-    let tray = state.tray.lock().unwrap().clone();
-    let Some(tray) = tray else { return };
-    let _ = tray.with_inner_tray_icon(move |inner| {
-        let Some(status_item) = inner.ns_status_item() else { return };
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(button) = status_item.button(mtm) else { return };
-        let Some(target) = button.subviews().firstObject() else { return };
-        let Some(window) = target.window() else { return };
-        let location = button.convertPoint_toView(
-            objc2_foundation::NSPoint::new(1.0, 1.0),
-            None,
-        );
-        let Some(down) = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-            NSEventType::LeftMouseDown,
-            location,
-            NSEventModifierFlags::empty(),
-            0.0,
-            window.windowNumber(),
-            None,
-            0,
-            1,
-            1.0,
-        ) else { return };
-        let Some(up) = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-            NSEventType::LeftMouseUp,
-            location,
-            NSEventModifierFlags::empty(),
-            0.0,
-            window.windowNumber(),
-            None,
-            0,
-            1,
-            0.0,
-        ) else { return };
-
-        unsafe {
-            let _: () = objc2::msg_send![&*target, mouseDown: &*down];
-            let _: () = objc2::msg_send![&*target, mouseUp: &*up];
-        }
-    });
 }
 
 fn node_menu_layout(_rows: &[TrayNodeRow]) -> (f64, f64) {
