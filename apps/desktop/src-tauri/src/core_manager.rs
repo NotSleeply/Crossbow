@@ -185,12 +185,49 @@ impl Shared {
     }
 
     fn kill_child(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(mut child) = inner.child.take() {
             let _ = child.kill();
-            let _ = child.wait();
+            // setuid 内核以 root 运行：普通用户 SIGKILL 报 EPERM，child.wait() 会
+            // 永久阻塞。轮询确认退出；超时仍存活则管理员授权补杀（macOS），
+            // 用户拒绝授权时放弃句柄（进程交给 launchd，绝不阻塞停止流程）。
+            let pid = child.id();
+            let mut gone = false;
+            for _ in 0..40 {
+                match child.try_wait() {
+                    Ok(Some(_)) => {
+                        gone = true;
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                    Err(_) => break,
+                }
+            }
+            if !gone {
+                #[cfg(target_os = "macos")]
+                if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+                    escalate_admin_kill(pid);
+                }
+                for _ in 0..40 {
+                    match child.try_wait() {
+                        Ok(Some(_)) => {
+                            gone = true;
+                            break;
+                        }
+                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                        Err(_) => break,
+                    }
+                }
+                if !gone {
+                    eprintln!("core kill: pid {pid} survived SIGKILL (root?); giving up handle");
+                }
+            }
+            if gone {
+                let _ = child.wait();
+            }
+            // gone=false 时故意丢弃 Child：进程仍存活，句柄无再收价值
         } else if let Some(pid) = inner.external_pid.take() {
-            kill_pid(pid);
+            kill_external(pid, None);
         }
         let _ = std::fs::remove_file(Self::descriptor_path(&self.work_dir));
     }
@@ -289,22 +326,7 @@ impl CoreManager {
         }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
         if let Some(descriptor) = Shared::read_descriptor(&self.shared.work_dir) {
-            if descriptor
-                .binary_path
-                .as_deref()
-                .is_some_and(|path| process_matches_binary(descriptor.pid, path))
-            {
-                kill_pid(descriptor.pid);
-                for _ in 0..40 {
-                    if !process_matches_binary(
-                        descriptor.pid,
-                        descriptor.binary_path.as_deref().unwrap(),
-                    ) {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-            }
+            kill_external(descriptor.pid, descriptor.binary_path.as_deref());
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
         }
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
@@ -368,20 +390,7 @@ impl CoreManager {
             secret: d.secret.clone(),
         };
         if !probe.wait_ready(Duration::from_secs(15), || false, || false) {
-            if d.binary_path
-                .as_deref()
-                .is_some_and(|path| process_matches_binary(d.pid, path))
-            {
-                kill_pid(d.pid);
-                if let Some(path) = d.binary_path.as_deref() {
-                    for _ in 0..40 {
-                        if !process_matches_binary(d.pid, path) {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                }
-            }
+            kill_external(d.pid, d.binary_path.as_deref());
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             return false;
         }
@@ -451,6 +460,12 @@ fn kill_pid_probe(_pid: u32) -> bool {
     false
 }
 
+/// root 内核补杀的授权弹窗门控：应用退出路径置 true（退出时不该突然弹
+/// 管理员框），用户主动的 TUN/引擎/配置切换保持允许——这些本就是会弹
+/// 授权框的语义场景。拒绝授权时停止流程照常继续（预绑定检查兜底报错）。
+pub static ROOT_KILL_PROMPT_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 杀掉不属于本进程的内核 pid（收养场景）。unix 用 SIGKILL，其余平台降级。
 fn kill_pid(pid: u32) {
     #[cfg(unix)]
@@ -463,6 +478,76 @@ fn kill_pid(pid: u32) {
             .args(["/F", "/PID", &pid.to_string()])
             .output();
     }
+}
+
+/// unix 存活探测：kill 0 成功，或 EPERM（进程在但不可信号——root 内核）。
+#[cfg(unix)]
+fn unix_alive(pid: u32) -> bool {
+    unsafe {
+        let rc = libc::kill(pid as i32, 0);
+        rc == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+}
+
+#[cfg(not(unix))]
+fn unix_alive(_pid: u32) -> bool {
+    false
+}
+
+/// root 内核对普通用户 SIGKILL 免疫（EPERM）：SIGKILL 后仍存活时，
+/// 请管理员授权补杀。仅在确有 root 内核残留时才会弹授权框。
+#[cfg(target_os = "macos")]
+fn escalate_admin_kill(pid: u32) {
+    let script = format!("kill -9 {pid}");
+    let out = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            &format!("do shell script '{script}' with administrator privileges"),
+        ])
+        .output();
+    if let Err(e) = out {
+        eprintln!("admin kill {pid}: osascript failed: {e}");
+    } else if !out.unwrap().status.success() {
+        eprintln!("admin kill {pid}: user denied or failed");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn escalate_admin_kill(_pid: u32) {}
+
+/// 杀外部内核并确认真正退出；SIGKILL 无效（root 内核）时管理员补杀。
+/// `expected`：进程身份校验路径（proc_pidpath / /proc/exe 比对），
+/// None 时退化为存活探测。返回是否确认已退出。
+fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
+    fn matches(pid: u32, expected: Option<&std::path::Path>) -> bool {
+        match expected {
+            Some(path) => process_matches_binary(pid, path),
+            None => unix_alive(pid),
+        }
+    }
+    if !matches(pid, expected) {
+        return true; // 已不在
+    }
+    kill_pid(pid);
+    for _ in 0..40 {
+        if !matches(pid, expected) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // 2 秒仍存活：root 内核，SIGKILL 对普通用户 EPERM——授权补杀
+    if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+        escalate_admin_kill(pid);
+    }
+    for _ in 0..40 {
+        if !matches(pid, expected) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    eprintln!("core kill: external pid {pid} still alive after admin kill");
+    false
 }
 
 #[derive(serde::Deserialize)]

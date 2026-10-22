@@ -28,42 +28,65 @@ const LOG_FLUSH_COUNT: usize = 20;
 
 #[derive(Default)]
 pub struct WsHub {
-    /// channel 名 → 活跃标志；false = 已请求退订，读线程自行退出。
-    active: Mutex<HashMap<&'static str, Arc<AtomicBool>>>,
+    /// channel 名 → (活跃标志, 最近一条消息时刻)。false = 已请求退订，读线程自行退出。
+    /// 重订同Channel时旧标志被置 false（读线程最迟约 2 秒退出），新读线程顶替——
+    /// 「订阅还在但已死/连着旧端口」的冻结形态由此自愈。
+    active: Mutex<HashMap<&'static str, (Arc<AtomicBool>, Arc<Mutex<Instant>>)>>,
 }
 
 impl WsHub {
     fn subscribe<F>(&self, name: &'static str, spawn_reader: F) -> Result<(), String>
     where
-        F: FnOnce(Arc<AtomicBool>) + Send + 'static,
+        F: FnOnce(Arc<AtomicBool>, Arc<Mutex<Instant>>) + Send + 'static,
     {
-        let mut map = self.active.lock().unwrap();
-        if let Some(flag) = map.get(name) {
+        let mut map = self.active.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((flag, _)) = map.get(name) {
             if flag.load(Ordering::SeqCst) {
-                return Ok(()); // 已在订阅
+                // 旧读线程仍在：请它退场（重订永远以最新 URL/回调为准）
+                flag.store(false, Ordering::SeqCst);
             }
         }
         let flag = Arc::new(AtomicBool::new(true));
-        map.insert(name, flag.clone());
+        let last_seen = Arc::new(Mutex::new(Instant::now()));
+        map.insert(name, (flag.clone(), last_seen.clone()));
         drop(map);
-        spawn_reader(flag);
+        spawn_reader(flag, last_seen);
         Ok(())
     }
 
+    /// 指定 channel 距最近一条消息的时长；从未订阅返回 None。
+    pub fn last_message_ago(&self, name: &str) -> Option<Duration> {
+        self.active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+            .map(|(_, t)| {
+                t.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .elapsed()
+            })
+    }
+
     pub fn unsubscribe(&self, name: &str) {
-        if let Some(flag) = self.active.lock().unwrap().get(name) {
+        if let Some((flag, _)) = self
+            .active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+        {
             flag.store(false, Ordering::SeqCst);
         }
     }
 
     pub fn unsubscribe_all(&self) {
-        for flag in self.active.lock().unwrap().values() {
+        for (flag, _) in self.active.lock().unwrap_or_else(|e| e.into_inner()).values() {
             flag.store(false, Ordering::SeqCst);
         }
     }
 
     /// 托盘实时速率专用订阅：独立 channel（与前端 traffic 互不干扰），
     /// 每次 tick 回调 (up, down) 字节/秒。菜单栏常驻，不受页面挂载影响。
+    /// 带心跳追踪，供看门狗发现「订阅在但不再更新」的冻结并强制重订。
     pub fn subscribe_traffic_tray(
         &self,
         port: u16,
@@ -71,17 +94,23 @@ impl WsHub {
         on_tick: impl Fn(u64, u64) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
-        self.subscribe("traffic-tray", move |flag| {
+        self.subscribe("traffic-tray", move |flag, last_seen| {
             std::thread::spawn(move || {
-                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
-                    if let Message::Text(txt) = msg {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
-                            let up = v.get("up").and_then(|x| x.as_u64()).unwrap_or(0);
-                            let down = v.get("down").and_then(|x| x.as_u64()).unwrap_or(0);
-                            on_tick(up, down);
+                read_loop(
+                    &url,
+                    flag,
+                    Some(Duration::from_secs(5)),
+                    Some(last_seen),
+                    |msg| {
+                        if let Message::Text(txt) = msg {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                                let up = v.get("up").and_then(|x| x.as_u64()).unwrap_or(0);
+                                let down = v.get("down").and_then(|x| x.as_u64()).unwrap_or(0);
+                                on_tick(up, down);
+                            }
                         }
-                    }
-                });
+                    },
+                );
             });
         })
     }
@@ -97,9 +126,14 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
-        self.subscribe("traffic", move |flag| {
+        self.subscribe("traffic", move |flag, _last_seen| {
             std::thread::spawn(move || {
-                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
+                read_loop(
+                    &url,
+                    flag,
+                    Some(Duration::from_secs(5)),
+                    None,
+                    |msg| {
                     if let Message::Text(txt) = msg {
                         // mihomo 原始 {"up":..,"down":..} → 结构化转发
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
@@ -118,10 +152,15 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
-        self.subscribe("connections", move |flag| {
+        self.subscribe("connections", move |flag, _last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
-                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
+                read_loop(
+                    &url,
+                    flag,
+                    Some(Duration::from_secs(5)),
+                    None,
+                    |msg| {
                     if let Message::Text(txt) = msg {
                         if last_emit.elapsed() < CONN_MIN_INTERVAL {
                             return; // 节流
@@ -143,11 +182,11 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/logs?level=info");
-        self.subscribe("logs", move |flag| {
+        self.subscribe("logs", move |flag, _last_seen| {
             std::thread::spawn(move || {
                 let mut batch: Vec<serde_json::Value> = Vec::new();
                 let mut last_flush = Instant::now();
-                read_loop(&url, flag, None, |msg| {
+                read_loop(&url, flag, None, None, |msg| {
                     if let Message::Text(txt) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             batch.push(v);
@@ -180,10 +219,14 @@ fn ws_url(port: u16, secret: &str, path: &str) -> String {
 /// 未收到任何帧即断开重连——修复 TCP 半开（睡眠唤醒/网络切换/内核假死）
 /// 导致 read 永久阻塞、托盘速率冻结在旧值的问题。None = 保持旧行为
 /// （适合长期无推送也属正常的通道，如日志）。
+///
+/// `last_seen`：每收到一条文本帧即刷新，供上层看门狗判断通道活性
+/// （读线程意外死亡时心跳停走，看门狗据此强制重订）。
 fn read_loop(
     url: &str,
     flag: Arc<AtomicBool>,
     stale: Option<Duration>,
+    last_seen: Option<Arc<Mutex<Instant>>>,
     mut on_text: impl FnMut(Message),
 ) {
     const READ_TIMEOUT: Duration = Duration::from_secs(2);
@@ -209,6 +252,9 @@ fn read_loop(
                 Ok(Message::Ping(_) | Message::Pong(_)) => {}
                 Ok(msg @ Message::Text(_)) => {
                     last_msg = Instant::now();
+                    if let Some(t) = &last_seen {
+                        *t.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+                    }
                     on_text(msg);
                 }
                 Ok(Message::Close(_)) => break, // 内核重启中，走重连

@@ -185,7 +185,7 @@ impl TrayExt for AppHandle {
     ) -> Result<(), String> {
         use tauri::Manager;
         let state = self.state::<crate::AppState>();
-        let tray = state.tray.lock().unwrap().clone();
+        let tray = state.tray.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let Some(tray) = tray else {
             return Err("no tray".into());
         };
@@ -649,7 +649,7 @@ define_class!(
                 return;
             };
             let lang = state.store.lock().unwrap().data().ui.lang.clone();
-            let data = state.node_menu.lock().unwrap().snapshot(
+            let data = state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).snapshot(
                 &crate::tr(&lang, "节点选择", "Nodes"),
                 &crate::tr(&lang, "当前", "Current"),
             );
@@ -735,7 +735,7 @@ pub fn update_node_menu(
     testing: bool,
 ) -> bool {
     let state = handle.state::<crate::AppState>();
-    let tray = state.tray.lock().unwrap().clone();
+    let tray = state.tray.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some(tray) = tray else { return false };
     let rows_owned: Vec<TrayNodeRow> = rows.to_vec();
     let title_owned = title.to_string();
