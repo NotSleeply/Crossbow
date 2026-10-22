@@ -10,18 +10,19 @@ use tauri::{AppHandle, Manager};
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{define_class, msg_send, AnyThread, DeclaredClass, MainThreadMarker, MainThreadOnly};
+use objc2::runtime::ProtocolObject;
+use objc2::{define_class, msg_send, DeclaredClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
 use objc2_app_kit::{
-    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSFont,
-    NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
-    NSForegroundColorAttributeName, NSLineBreakMode, NSMenu, NSMenuItem, NSMutableParagraphStyle,
-    NSMenuDidBeginTrackingNotification, NSParagraphStyleAttributeName, NSStatusBarButton,
-    NSStatusItem, NSTextAlignment, NSTextField, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSFont, NSFontAttributeName,
+    NSFontWeightMedium, NSFontWeightRegular, NSForegroundColorAttributeName, NSImageView,
+    NSLineBreakMode, NSMenu, NSMenuDelegate, NSMenuDidBeginTrackingNotification, NSMenuItem,
+    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem,
+    NSTextAlignment, NSTextField, NSView,
 };
 use objc2_foundation::{
-    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSNotification,
-    NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotification, NSNotificationCenter,
+    NSNumber, NSObject, NSObjectProtocol, NSString,
 };
 
 const FONT_SIZE: f64 = 9.5;
@@ -96,13 +97,15 @@ fn build_attrs(button_height: f64) -> Retained<NSDictionary<NSAttributedStringKe
 /// high in these compact rows. Shift glyphs down without moving the row or its
 /// background (notably the latency badge) so all text is optically centered.
 fn set_menu_label_text(label: &NSTextField, text: &str) {
+    set_menu_label_text_with_offset(label, text, -2.0);
+}
+
+fn set_menu_label_text_with_offset(label: &NSTextField, text: &str, baseline_offset: f64) {
     unsafe {
         let value = NSString::from_str(text);
-        let offset = NSNumber::new_f64(-2.0);
-        let attrs = NSDictionary::from_slices(
-            &[NSBaselineOffsetAttributeName],
-            &[&*offset as &AnyObject],
-        );
+        let offset = NSNumber::new_f64(baseline_offset);
+        let attrs =
+            NSDictionary::from_slices(&[NSBaselineOffsetAttributeName], &[&*offset as &AnyObject]);
         let attributed = NSAttributedString::new_with_attributes(&value, &attrs);
         label.setAttributedStringValue(&attributed);
     }
@@ -238,14 +241,14 @@ fn delay_color(ms: Option<u64>, badge: &str) -> Retained<NSColor> {
 const ROW_VIEW_NAME_TAG: isize = 101;
 const ROW_VIEW_CHECK_TAG: isize = 102;
 const ROW_VIEW_BADGE_TAG: isize = 103;
+const ROW_VIEW_CURRENT_TAG: isize = 107;
 const ACTION_ROW_VIEW_LABEL_TAG: isize = 104;
-const SUBMENU_ROW_LABEL_TAG: isize = 105;
-const SUBMENU_ROW_CHEVRON_TAG: isize = 106;
-const NODE_MENU_WIDTH: f64 = 260.0;
+const NODE_MENU_WIDTH: f64 = 270.0;
 const NODE_ROW_HEIGHT: f64 = 23.0;
 const ACTION_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
-const SUBMENU_ROW_HEIGHT: f64 = NODE_ROW_HEIGHT;
-const HOVER_HORIZONTAL_INSET: f64 = 4.0;
+const HOVER_HORIZONTAL_INSET: f64 = 6.0;
+const HOVER_VERTICAL_INSET: f64 = 1.0;
+const ROW_CONTENT_INSET: f64 = 6.0;
 const HOVER_CORNER_RADIUS: f64 = 7.0;
 
 // NSMenuItem custom views do not automatically dispatch the menu item's action.
@@ -260,24 +263,6 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayNodeRowView {}
 
     impl TrayNodeRowView {
-        #[unsafe(method(updateTrackingAreas))]
-        fn update_tracking_areas(&self) {
-            unsafe {
-                let _: () = msg_send![super(self), updateTrackingAreas];
-            }
-            install_hover_tracking(self);
-        }
-
-        #[unsafe(method(mouseEntered:))]
-        fn on_mouse_entered(&self, _event: &NSEvent) {
-            set_row_hovered(self, true, &[ROW_VIEW_NAME_TAG, ROW_VIEW_CHECK_TAG]);
-        }
-
-        #[unsafe(method(mouseExited:))]
-        fn on_mouse_exited(&self, _event: &NSEvent) {
-            set_row_hovered(self, false, &[ROW_VIEW_NAME_TAG, ROW_VIEW_CHECK_TAG]);
-        }
-
         #[unsafe(method(mouseDown:))]
         fn on_mouse_down(&self, _event: &NSEvent) {
             let Some(item) = self.enclosingMenuItem() else { return };
@@ -289,9 +274,8 @@ define_class!(
                     app.sendAction_to_from(action, target.as_deref(), Some(&*item));
                 }
             }
-            if let Some(menu) = unsafe { item.menu() } {
-                menu.cancelTracking();
-            }
+            // Keep the full status-item menu open; selection is applied and
+            // the checked row is refreshed in place by the async handler.
         }
     }
 );
@@ -308,24 +292,6 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayActionRowView {}
 
     impl TrayActionRowView {
-        #[unsafe(method(updateTrackingAreas))]
-        fn update_tracking_areas(&self) {
-            unsafe {
-                let _: () = msg_send![super(self), updateTrackingAreas];
-            }
-            install_hover_tracking(self);
-        }
-
-        #[unsafe(method(mouseEntered:))]
-        fn on_mouse_entered(&self, _event: &NSEvent) {
-            set_action_row_hovered(self, true);
-        }
-
-        #[unsafe(method(mouseExited:))]
-        fn on_mouse_exited(&self, _event: &NSEvent) {
-            set_action_row_hovered(self, false);
-        }
-
         #[unsafe(method(mouseDown:))]
         fn on_mouse_down(&self, _event: &NSEvent) {
             let Some(item) = self.enclosingMenuItem() else { return };
@@ -384,87 +350,6 @@ fn update_action_row_view(view: &TrayActionRowView, text: &str, enabled: bool, m
     resize_hover_background(view, menu_width, ACTION_ROW_HEIGHT);
 }
 
-define_class!(
-    #[unsafe(super(NSView))]
-    #[name = "CrossbowTraySubmenuRowView"]
-    #[thread_kind = MainThreadOnly]
-    struct TraySubmenuRowView;
-
-    unsafe impl NSObjectProtocol for TraySubmenuRowView {}
-
-    impl TraySubmenuRowView {
-        #[unsafe(method(updateTrackingAreas))]
-        fn update_tracking_areas(&self) {
-            unsafe {
-                let _: () = msg_send![super(self), updateTrackingAreas];
-            }
-            install_hover_tracking(self);
-        }
-
-        #[unsafe(method(mouseEntered:))]
-        fn on_mouse_entered(&self, _event: &NSEvent) {
-            set_row_hovered(self, true, &[SUBMENU_ROW_LABEL_TAG, SUBMENU_ROW_CHEVRON_TAG]);
-        }
-
-        #[unsafe(method(mouseExited:))]
-        fn on_mouse_exited(&self, _event: &NSEvent) {
-            set_row_hovered(self, false, &[SUBMENU_ROW_LABEL_TAG, SUBMENU_ROW_CHEVRON_TAG]);
-        }
-    }
-);
-
-fn make_submenu_row_view(mtm: MainThreadMarker) -> Retained<TraySubmenuRowView> {
-    let frame = objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(0.0, 0.0),
-        objc2_foundation::NSSize::new(NODE_MENU_WIDTH, SUBMENU_ROW_HEIGHT),
-    );
-    let view: Retained<TraySubmenuRowView> = unsafe {
-        let allocated = TraySubmenuRowView::alloc(mtm);
-        msg_send![allocated, initWithFrame: frame]
-    };
-    view.setWantsLayer(true);
-    add_hover_background(&view, NODE_MENU_WIDTH, SUBMENU_ROW_HEIGHT, mtm);
-    let title = NSTextField::labelWithString(&NSString::new(), mtm);
-    title.setTag(SUBMENU_ROW_LABEL_TAG);
-    title.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
-    title.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
-    let chevron = NSTextField::labelWithString(&NSString::from_str("›"), mtm);
-    chevron.setTag(SUBMENU_ROW_CHEVRON_TAG);
-    chevron.setAlignment(NSTextAlignment::Center);
-    chevron.setFont(Some(&NSFont::menuBarFontOfSize(16.0)));
-    set_menu_label_text(&chevron, "›");
-    view.addSubview(&title);
-    view.addSubview(&chevron);
-    view
-}
-
-fn update_submenu_row_view(view: &TraySubmenuRowView, text: &str, menu_width: f64) {
-    view.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(0.0, 0.0),
-        objc2_foundation::NSSize::new(menu_width, SUBMENU_ROW_HEIGHT),
-    ));
-    resize_hover_background(view, menu_width, SUBMENU_ROW_HEIGHT);
-    if let Some(title) = view
-        .viewWithTag(SUBMENU_ROW_LABEL_TAG)
-        .and_then(|view| view.downcast::<NSTextField>().ok())
-    {
-        set_menu_label_text(&title, text);
-        title.setFrame(objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(18.0, 0.0),
-            objc2_foundation::NSSize::new((menu_width - 47.0).max(80.0), SUBMENU_ROW_HEIGHT),
-        ));
-    }
-    if let Some(chevron) = view
-        .viewWithTag(SUBMENU_ROW_CHEVRON_TAG)
-        .and_then(|view| view.downcast::<NSTextField>().ok())
-    {
-        chevron.setFrame(objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(menu_width - 26.0, 0.0),
-            objc2_foundation::NSSize::new(18.0, SUBMENU_ROW_HEIGHT),
-        ));
-    }
-}
-
 fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
     let frame = objc2_foundation::NSRect::new(
         objc2_foundation::NSPoint::new(0.0, 0.0),
@@ -479,21 +364,30 @@ fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
 
     let check = NSTextField::labelWithString(&NSString::from_str("✓"), mtm);
     check.setTag(ROW_VIEW_CHECK_TAG);
-    check.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(4.0, 0.0),
-        objc2_foundation::NSSize::new(16.0, NODE_ROW_HEIGHT),
-    ));
-    check.setFont(Some(&NSFont::menuBarFontOfSize(12.0)));
+    check.setFont(Some(&NSFont::boldSystemFontOfSize(14.0)));
     check.setAlignment(NSTextAlignment::Center);
+    check.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET + 1.0, 0.0),
+        objc2_foundation::NSSize::new(18.0, NODE_ROW_HEIGHT),
+    ));
+    check.setHidden(true);
 
     let name = NSTextField::labelWithString(&NSString::new(), mtm);
     name.setTag(ROW_VIEW_NAME_TAG);
     name.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(25.0, 0.0),
+        objc2_foundation::NSPoint::new(26.0, 0.0),
         objc2_foundation::NSSize::new(220.0, NODE_ROW_HEIGHT),
     ));
     name.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
     name.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+
+    let current = NSTextField::labelWithString(&NSString::new(), mtm);
+    current.setTag(ROW_VIEW_CURRENT_TAG);
+    current.setFont(Some(&NSFont::menuBarFontOfSize(9.5)));
+    current.setAlignment(NSTextAlignment::Center);
+    current.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+    current.setTextColor(Some(&NSColor::secondaryLabelColor()));
+    current.setHidden(true);
 
     let badge = NSTextField::labelWithString(&NSString::new(), mtm);
     badge.setTag(ROW_VIEW_BADGE_TAG);
@@ -512,6 +406,7 @@ fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
 
     view.addSubview(&check);
     view.addSubview(&name);
+    view.addSubview(&current);
     view.addSubview(&badge);
     view
 }
@@ -541,21 +436,56 @@ fn update_node_row_view(
     else {
         return;
     };
+    let Some(current) = view
+        .viewWithTag(ROW_VIEW_CURRENT_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    else {
+        return;
+    };
 
-    let badge_width = (display_width(&row.badge) as f64 * 6.0 + 14.0).max(30.0);
-    let badge_x = menu_width - badge_width - 10.0;
-    let name_width = (badge_x - 34.0).max(50.0);
-    let display_name = truncate_display_name(&row.name, name_width);
+    let badge_width = (display_width(&row.badge) as f64 * 6.0 + 10.0).max(28.0);
+    let badge_x = menu_width - badge_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
+    let current_text = row
+        .current_node
+        .as_ref()
+        .map(|node| format_flag_spacing(node));
+    let name_width = if current_text.is_some() {
+        (display_width(&row.label) as f64 * 5.8 + 4.0).clamp(66.0, 88.0)
+    } else {
+        (badge_x - 38.0).max(50.0)
+    };
+    let spaced_name = format_flag_spacing(&row.label);
+    let display_name = truncate_display_name(&spaced_name, name_width);
     set_menu_label_text(&name, &display_name);
-    name.setToolTip(Some(&NSString::from_str(&row.name)));
-    set_menu_label_text(&check, if row.selected { "✓" } else { "" });
+    name.setToolTip(Some(&NSString::from_str(&spaced_name)));
+    check.setHidden(!row.selected);
     name.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(25.0, 0.0),
+        objc2_foundation::NSPoint::new(26.0, 0.0),
         objc2_foundation::NSSize::new(name_width, NODE_ROW_HEIGHT),
     ));
+    if let Some(current_text) = current_text {
+        let current_x = 26.0 + name_width + 4.0;
+        let current_width = (badge_x - current_x - 5.0).max(0.0);
+        set_menu_label_text_with_offset(
+            &current,
+            &truncate_display_name_with_unit(&current_text, current_width, 5.2),
+            -4.5,
+        );
+        current.setToolTip(Some(&NSString::from_str(&format!(
+            "{}: {}",
+            row.current_label, current_text
+        ))));
+        current.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(current_x, 0.0),
+            objc2_foundation::NSSize::new(current_width, NODE_ROW_HEIGHT),
+        ));
+        current.setHidden(current_width < 28.0);
+    } else {
+        current.setHidden(true);
+    }
     badge.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(badge_x, 2.5),
-        objc2_foundation::NSSize::new(badge_width, 18.0),
+        objc2_foundation::NSPoint::new(badge_x, 3.5),
+        objc2_foundation::NSSize::new(badge_width, 16.0),
     ));
     badge.setAlignment(NSTextAlignment::Center);
     set_menu_label_text(&badge, &row.badge);
@@ -571,35 +501,12 @@ fn update_node_row_view(
     let _ = mtm;
 }
 
-fn install_hover_tracking(view: &NSView) {
-    unsafe {
-        for area in view.trackingAreas() {
-            view.removeTrackingArea(&area);
-        }
-        let options = NSTrackingAreaOptions::MouseEnteredAndExited
-            | NSTrackingAreaOptions::ActiveAlways
-            | NSTrackingAreaOptions::InVisibleRect;
-        let rect = objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(0.0, 0.0),
-            objc2_foundation::NSSize::new(0.0, 0.0),
-        );
-        let area = NSTrackingArea::initWithRect_options_owner_userInfo(
-            NSTrackingArea::alloc(),
-            rect,
-            options,
-            Some(view),
-            None,
-        );
-        view.addTrackingArea(&area);
-    }
-}
-
 fn add_hover_background(view: &NSView, width: f64, height: f64, mtm: MainThreadMarker) {
     let frame = objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, 0.0),
+        objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, HOVER_VERTICAL_INSET),
         objc2_foundation::NSSize::new(
             (width - HOVER_HORIZONTAL_INSET * 2.0).max(0.0),
-            height,
+            (height - HOVER_VERTICAL_INSET * 2.0).max(0.0),
         ),
     );
     let background: Retained<NSView> = unsafe {
@@ -617,10 +524,10 @@ fn hover_background(view: &NSView) -> Option<Retained<NSView>> {
 fn resize_hover_background(view: &NSView, width: f64, height: f64) {
     if let Some(background) = hover_background(view) {
         background.setFrame(objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, 0.0),
+            objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET, HOVER_VERTICAL_INSET),
             objc2_foundation::NSSize::new(
                 (width - HOVER_HORIZONTAL_INSET * 2.0).max(0.0),
-                height,
+                (height - HOVER_VERTICAL_INSET * 2.0).max(0.0),
             ),
         ));
     }
@@ -650,11 +557,12 @@ fn set_row_hovered(view: &NSView, hovered: bool, label_tags: &[isize]) {
         NSColor::labelColor()
     };
     for tag in label_tags {
-        if let Some(label) = view
-            .viewWithTag(*tag)
-            .and_then(|view| view.downcast::<NSTextField>().ok())
-        {
-            label.setTextColor(Some(&text_color));
+        if let Some(label) = view.viewWithTag(*tag) {
+            if let Ok(label) = label.clone().downcast::<NSTextField>() {
+                label.setTextColor(Some(&text_color));
+            } else if let Ok(icon) = label.downcast::<NSImageView>() {
+                icon.setContentTintColor(Some(&text_color));
+            }
         }
     }
 }
@@ -663,17 +571,35 @@ fn set_action_row_hovered(view: &TrayActionRowView, hovered: bool) {
     let enabled = view
         .enclosingMenuItem()
         .is_some_and(|item| item.isEnabled());
-    set_row_hovered(
-        view,
-        hovered && enabled,
-        &[ACTION_ROW_VIEW_LABEL_TAG],
-    );
+    set_row_hovered(view, hovered && enabled, &[ACTION_ROW_VIEW_LABEL_TAG]);
     if !enabled {
         if let Some(label) = view
             .viewWithTag(ACTION_ROW_VIEW_LABEL_TAG)
             .and_then(|view| view.downcast::<NSTextField>().ok())
         {
             label.setTextColor(Some(&NSColor::disabledControlTextColor()));
+        }
+    }
+}
+
+fn set_menu_item_hovered(item: &NSMenuItem, hovered: bool) {
+    let Some(view) = item.view() else { return };
+    if let Ok(view) = view.clone().downcast::<TrayNodeRowView>() {
+        set_row_hovered(
+            &view,
+            hovered,
+            &[ROW_VIEW_NAME_TAG, ROW_VIEW_CURRENT_TAG, ROW_VIEW_CHECK_TAG],
+        );
+    } else if let Ok(view) = view.clone().downcast::<TrayActionRowView>() {
+        set_action_row_hovered(&view, hovered);
+    }
+}
+
+fn install_menu_delegate(menu: &NSMenu, delegate: &TrayMenuObserver) {
+    menu.setDelegate(Some(ProtocolObject::from_ref(delegate)));
+    for index in 0..menu.numberOfItems() {
+        if let Some(submenu) = menu.itemAtIndex(index).and_then(|item| item.submenu()) {
+            install_menu_delegate(&submenu, delegate);
         }
     }
 }
@@ -691,6 +617,20 @@ define_class!(
 
     unsafe impl NSObjectProtocol for TrayMenuObserver {}
 
+    unsafe impl NSMenuDelegate for TrayMenuObserver {
+        #[unsafe(method(menu:willHighlightItem:))]
+        #[allow(non_snake_case)]
+        fn menu_willHighlightItem(&self, menu: &NSMenu, highlighted: Option<&NSMenuItem>) {
+            for index in 0..menu.numberOfItems() {
+                let Some(item) = menu.itemAtIndex(index) else { continue };
+                let is_highlighted = highlighted.is_some_and(|candidate| {
+                    std::ptr::eq(&*item, candidate)
+                });
+                set_menu_item_hovered(&item, is_highlighted);
+            }
+        }
+    }
+
     impl TrayMenuObserver {
         #[unsafe(method(menuDidBeginTracking:))]
         fn menu_did_begin_tracking(&self, notification: &NSNotification) {
@@ -703,18 +643,25 @@ define_class!(
             if !contains_delay_test(&menu) {
                 return;
             }
+            install_menu_delegate(&menu, self);
             let handle = self.ivars();
             let Some(state) = handle.try_state::<crate::AppState>() else {
                 return;
             };
             let lang = state.store.lock().unwrap().data().ui.lang.clone();
-            let data = state.node_menu.lock().unwrap().snapshot(&crate::tr(
-                &lang,
-                "节点选择",
-                "Nodes",
-            ));
+            let data = state.node_menu.lock().unwrap().snapshot(
+                &crate::tr(&lang, "节点选择", "Nodes"),
+                &crate::tr(&lang, "当前", "Current"),
+            );
             let (menu_width, badge_tab) = node_menu_layout(&data.rows);
             update_menu_items(&menu, &data.rows, data.testing, menu_width, badge_tab);
+            let is_node_submenu = (0..menu.numberOfItems()).any(|index| {
+                menu.itemAtIndex(index)
+                    .is_some_and(|item| is_delay_test_item(&item))
+            });
+            if is_node_submenu {
+                crate::refresh_tray_nodes(handle, true);
+            }
         }
     }
 );
@@ -742,11 +689,28 @@ pub fn install_menu_observer(handle: &AppHandle) {
 }
 
 pub fn display_name(name: &str) -> String {
-    truncate_display_name(name, 202.0)
+    truncate_display_name(&format_flag_spacing(name), 202.0)
+}
+
+pub fn format_flag_spacing(name: &str) -> String {
+    let Some((flag, rest)) = name.split_once('|') else {
+        return name.to_string();
+    };
+    let has_flag = flag
+        .chars()
+        .any(|ch| (0x1F1E6..=0x1F1FF).contains(&(ch as u32)));
+    if !has_flag {
+        return name.to_string();
+    }
+    format!("{} | {}", flag.trim_end(), rest.trim_start())
 }
 
 fn truncate_display_name(name: &str, max_width: f64) -> String {
-    let width = |text: &str| display_width(text) as f64 * 7.1;
+    truncate_display_name_with_unit(name, max_width, 7.1)
+}
+
+fn truncate_display_name_with_unit(name: &str, max_width: f64, width_per_unit: f64) -> String {
+    let width = |text: &str| display_width(text) as f64 * width_per_unit;
     if width(name) <= max_width {
         return name.to_string();
     }
@@ -763,13 +727,21 @@ fn truncate_display_name(name: &str, max_width: f64) -> String {
     out
 }
 
-// 原地更新托盘菜单的节点行（不重建菜单，菜单打开时可见实时变化）。
-pub fn update_node_items(handle: &AppHandle, rows: &[TrayNodeRow], testing: bool) {
+// 原地更新打开中的托盘节点菜单（不重建菜单，所以选择后可继续操作）。
+pub fn update_node_menu(
+    handle: &AppHandle,
+    title: &str,
+    rows: &[TrayNodeRow],
+    testing: bool,
+) -> bool {
     let state = handle.state::<crate::AppState>();
     let tray = state.tray.lock().unwrap().clone();
-    let Some(tray) = tray else { return };
+    let Some(tray) = tray else { return false };
     let rows_owned: Vec<TrayNodeRow> = rows.to_vec();
+    let title_owned = title.to_string();
     let testing_owned = testing;
+    let updated = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let updated_in_callback = updated.clone();
     let _ = tray.with_inner_tray_icon(move |inner| {
         let Some(status_item) = inner.ns_status_item() else {
             return;
@@ -780,9 +752,30 @@ pub fn update_node_items(handle: &AppHandle, rows: &[TrayNodeRow], testing: bool
         let Some(menu) = status_item.menu(mtm) else {
             return;
         };
+        let has_node_menu = update_node_parent_title(&menu, &title_owned);
         let (menu_width, badge_tab) = node_menu_layout(&rows_owned);
         update_menu_items(&menu, &rows_owned, testing_owned, menu_width, badge_tab);
+        updated_in_callback.store(has_node_menu, std::sync::atomic::Ordering::SeqCst);
     });
+    updated.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn update_node_parent_title(menu: &NSMenu, title: &str) -> bool {
+    for index in 0..menu.numberOfItems() {
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
+        if let Some(submenu) = item.submenu() {
+            if contains_delay_test(&submenu) {
+                item.setTitle(&NSString::from_str(&format_flag_spacing(title)));
+                return true;
+            }
+            if update_node_parent_title(&submenu, title) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn is_delay_test_item(item: &NSMenuItem) -> bool {
@@ -816,8 +809,10 @@ fn update_menu_items(
     menu_width: f64,
     badge_tab: f64,
 ) {
-    let is_node_menu = (0..menu.numberOfItems())
-        .any(|index| menu.itemAtIndex(index).is_some_and(|item| is_delay_test_item(&item)));
+    let is_node_menu = (0..menu.numberOfItems()).any(|index| {
+        menu.itemAtIndex(index)
+            .is_some_and(|item| is_delay_test_item(&item))
+    });
     if is_node_menu {
         menu.setMinimumWidth(menu_width);
     }
@@ -872,16 +867,6 @@ fn update_menu_items(
         }
 
         if let Some(submenu) = item.submenu() {
-            if contains_delay_test(&submenu) {
-                let mtm =
-                    MainThreadMarker::new().expect("tray menu updates run on the main thread");
-                let row_view = item
-                    .view()
-                    .and_then(|view| view.downcast::<TraySubmenuRowView>().ok())
-                    .unwrap_or_else(|| make_submenu_row_view(mtm));
-                update_submenu_row_view(&row_view, &title, menu.size().width);
-                item.setView(Some(&row_view));
-            }
             update_menu_items(&submenu, rows, testing, menu_width, badge_tab);
         }
     }

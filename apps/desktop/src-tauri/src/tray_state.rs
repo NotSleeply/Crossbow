@@ -17,19 +17,18 @@ use std::time::Instant;
 /// 测速显示看门狗：超过该时长强制恢复「延迟测速」可点态。
 pub const TESTING_VISIBLE_SECS: u64 = 20;
 
-/// 下钻解析最大深度（主组 → 子组 → 节点）。
-const DRILL_DEPTH: usize = 3;
-
 /// 托盘节点子菜单全部可变状态（单一锁）。
 #[derive(Default)]
 pub struct TrayState {
     /// 主选择组（配置声明顺序里第一个有成员的组，通常名为 节点选择）
     group: String,
-    /// 主组当前选中（可能是子组，也可能是节点）
+    /// 主组当前选中（URLTest 自动组或手动节点）
     now: String,
-    /// 子菜单标题：`主组：当前选中`
-    title: String,
-    /// 展示的节点有序列表（下钻后的真实节点）
+    /// 主选择组中负责自动测速切换的 URLTest 子组。
+    automatic_group: Option<String>,
+    /// 自动组当前实际使用的节点。
+    automatic_now: Option<String>,
+    /// 主选择组中的可选项（自动组和手动节点）。
     nodes: Vec<String>,
     /// 延迟缓存（测速成功节点，毫秒）
     delays: BTreeMap<String, u64>,
@@ -46,6 +45,12 @@ pub struct TrayState {
 pub struct TrayNodeRow {
     /// 节点名
     pub name: String,
+    /// 菜单中显示的主标签。
+    pub label: String,
+    /// 自动选择当前实际使用的节点（仅自动组行）。
+    pub current_node: Option<String>,
+    /// 当前节点说明的本地化前缀。
+    pub current_label: String,
     /// 延迟徽标文本：`448 ms` / `失败` / `—`
     pub badge: String,
     /// 延迟毫秒数（失败或未测为 None）
@@ -56,6 +61,7 @@ pub struct TrayNodeRow {
 
 /// 渲染托盘节点子菜单所需的纯数据快照。
 pub struct TrayMenuData {
+    /// 一级菜单标题，显示选择模式/当前手动节点。
     pub title: String,
     pub rows: Vec<TrayNodeRow>,
     pub testing: bool,
@@ -77,6 +83,11 @@ impl TrayState {
         self.nodes.clone()
     }
 
+    /// 当前 URLTest 子组（若主组含自动选择项）。
+    pub fn automatic_group(&self) -> Option<&str> {
+        self.automatic_group.as_deref()
+    }
+
     /// 清空失败标记（测速出错时调用，下次重测）。
     pub fn clear_failed(&mut self) {
         self.failed.clear();
@@ -93,13 +104,13 @@ impl TrayState {
         true
     }
 
-    /// 写入主组数据并下钻解析（主组当前选中可能本身是子组）。
-    /// `lookup`：按名字查子组（返回 None = 是节点不是组）。
-    /// 同时清理延迟/失败缓存中已不在列表里的节点。
-    pub fn apply_group_data<F>(&mut self, now: Option<String>, members: Vec<(String, Option<u64>)>, lookup: &F)
-    where
-        F: Fn(&str) -> Option<(Option<String>, Vec<(String, Option<u64>)>)>,
-    {
+    /// 更新主选择组、自动测速组和展示节点。
+    pub fn apply_group_data(
+        &mut self,
+        now: Option<String>,
+        members: Vec<(String, Option<u64>)>,
+        automatic: Option<(String, Option<String>, Vec<(String, Option<u64>)>)>,
+    ) {
         let known: BTreeSet<&String> = members.iter().map(|(n, _)| n).collect();
         self.delays.retain(|n, _| known.contains(n));
         self.failed.retain(|n| known.contains(n));
@@ -110,25 +121,17 @@ impl TrayState {
         }
         self.failed.retain(|n| !self.delays.contains_key(n));
 
-        // 下钻：主组当前选中若是子组则深入其成员列表（最多 DRILL_DEPTH 层）
-        let mut effective = self.group.clone();
-        let mut sel = now.clone().unwrap_or_default();
         self.nodes = members.iter().map(|(n, _)| n.clone()).collect();
-        for _ in 0..DRILL_DEPTH {
-            if sel.is_empty() {
-                break;
+        self.now = now.unwrap_or_default();
+        self.automatic_group = automatic.as_ref().map(|(name, _, _)| name.clone());
+        self.automatic_now = automatic.as_ref().and_then(|(_, now, _)| now.clone());
+        if let Some((_, _, automatic_members)) = automatic {
+            for (name, delay) in automatic_members {
+                if let Some(delay) = delay {
+                    self.delays.entry(name).or_insert(delay);
+                }
             }
-            let Some((sub_now, sub_members)) = lookup(&sel) else {
-                break;
-            };
-            if sub_members.is_empty() {
-                break;
-            }
-            effective = sel;
-            sel = sub_now.unwrap_or_default();
-            self.nodes = sub_members.iter().map(|(n, _)| n.clone()).collect();
         }
-        self.title = format!("{}：{}", effective, sel);
     }
 
     /// 单飞进入测速态。返回 false = 已有测速在跑。
@@ -183,37 +186,136 @@ impl TrayState {
 
     /// 渲染快照：状态 → 菜单数据（纯函数，无副作用）。
     /// `node_label`：子菜单默认前缀（i18n 的「节点选择」）。
-    pub fn snapshot(&self, node_label: &str) -> TrayMenuData {
-        let title = if self.title.is_empty() {
-            format!("{}：{}", node_label, self.now)
+    pub fn snapshot(&self, node_label: &str, current_label: &str) -> TrayMenuData {
+        let selected_label = if self.automatic_group.as_deref() == Some(self.now.as_str()) {
+            strip_recycle_icon(&self.now)
         } else {
-            self.title.clone()
+            self.now.clone()
         };
-        let rows = self
-            .nodes
+        let title = if selected_label.is_empty() {
+            node_label.to_string()
+        } else {
+            format!("{}：{}", node_label, selected_label)
+        };
+        let mut names = Vec::with_capacity(self.nodes.len());
+        if let Some(automatic_group) = &self.automatic_group {
+            names.push(automatic_group.clone());
+        }
+        names.extend(
+            self.nodes
+                .iter()
+                .filter(|name| self.automatic_group.as_deref() != Some(name.as_str()))
+                .cloned(),
+        );
+        let rows = names
             .iter()
             .map(|n| {
                 let failed = self.failed.contains(n);
-                let (badge, ms) = if failed {
+                let automatic = self.automatic_group.as_deref() == Some(n.as_str());
+                let current_node = if automatic {
+                    self.automatic_now.clone()
+                } else {
+                    None
+                };
+                let display_delay = current_node
+                    .as_ref()
+                    .and_then(|current| self.delays.get(current))
+                    .or_else(|| self.delays.get(n));
+                let (badge, ms) = if failed && display_delay.is_none() {
                     ("失败".to_string(), None)
                 } else {
-                    match self.delays.get(n) {
+                    match display_delay {
                         Some(ms) => (format!("{ms}ms"), Some(*ms)),
                         None => ("—".to_string(), None),
                     }
                 };
                 TrayNodeRow {
                     name: n.clone(),
+                    label: if automatic {
+                        strip_recycle_icon(n)
+                    } else {
+                        n.clone()
+                    },
+                    current_node,
+                    current_label: current_label.to_string(),
                     badge,
                     ms,
                     selected: *n == self.now,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let mut automatic_rows = Vec::new();
+        let mut location_groups: Vec<(String, Vec<TrayNodeRow>)> = Vec::new();
+        for (index, row) in rows.into_iter().enumerate() {
+            if row.current_node.is_some() {
+                automatic_rows.push(row);
+                continue;
+            }
+            let key =
+                location_group_key(&row.name).unwrap_or_else(|| format!("unclassified:{index}"));
+            if let Some((_, group)) = location_groups
+                .iter_mut()
+                .find(|(group_key, _)| *group_key == key)
+            {
+                group.push(row);
+            } else {
+                location_groups.push((key, vec![row]));
+            }
+        }
+        let mut ordered_rows = automatic_rows;
+        ordered_rows.extend(location_groups.into_iter().flat_map(|(_, group)| group));
         TrayMenuData {
             title,
-            rows,
+            rows: ordered_rows,
             testing: self.testing_visible(),
         }
     }
+}
+
+/// Group nodes in first-seen location order. Prefer the explicit flag prefix;
+/// fall back to common country/region codes for profiles without flags.
+fn location_group_key(name: &str) -> Option<String> {
+    let prefix = name.split('|').next().unwrap_or(name).trim();
+    let flag: String = prefix
+        .chars()
+        .filter(|ch| (0x1F1E6..=0x1F1FF).contains(&(*ch as u32)))
+        .collect();
+    if !flag.is_empty() {
+        return Some(format!("flag:{flag}"));
+    }
+
+    let lower = name.to_lowercase();
+    let regions: &[(&str, &[&str])] = &[
+        ("jp", &["-jp", "japan", "日本", "东京", "大阪"]),
+        ("hk", &["-hk", "hkt", "hong kong", "香港"]),
+        ("sg", &["-sg", "singapore", "新加坡"]),
+        ("tw", &["-tw", "taiwan", "台湾"]),
+        ("kr", &["-kr", "korea", "韩国", "首尔"]),
+        (
+            "us",
+            &["-us", "usa", "united states", "美国", "洛杉矶", "纽约"],
+        ),
+        ("uk", &["-uk", "united kingdom", "英国", "伦敦"]),
+        ("de", &["-de", "germany", "德国", "法兰克福"]),
+        ("fr", &["-fr", "france", "法国", "巴黎"]),
+        ("ca", &["-ca", "canada", "加拿大"]),
+        ("au", &["-au", "australia", "澳大利亚"]),
+        ("nl", &["-nl", "netherlands", "荷兰"]),
+        ("my", &["-my", "malaysia", "马来西亚"]),
+        ("th", &["-th", "thailand", "泰国"]),
+        ("in", &["-in", "india", "印度"]),
+        ("tr", &["-tr", "turkey", "土耳其"]),
+        ("ru", &["-ru", "russia", "俄罗斯"]),
+    ];
+    regions.iter().find_map(|(key, aliases)| {
+        aliases
+            .iter()
+            .any(|alias| lower.contains(alias))
+            .then(|| format!("region:{key}"))
+    })
+}
+
+fn strip_recycle_icon(name: &str) -> String {
+    name.trim_start_matches(|character| matches!(character, '♻' | '\u{FE0F}' | ' '))
+        .to_string()
 }

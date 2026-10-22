@@ -1397,7 +1397,7 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
             #[cfg(target_os = "macos")]
-            refresh_tray_nodes(&handle);
+            refresh_tray_nodes(&handle, false);
         }
         // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
         // 避免系统流量指向已死的代理端口导致用户断网。
@@ -1468,18 +1468,27 @@ fn sync_tray_traffic(handle: &AppHandle) {
     tray_speed::clear(handle);
 }
 
-
 /// 后台拉取托盘节点菜单数据：探测主选择组 + 各节点延迟，完成后刷新托盘。
 #[cfg(target_os = "macos")]
-fn refresh_tray_nodes(handle: &AppHandle) {
-    let Some(state) = handle.try_state::<AppState>() else { return };
+fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
+    let Some(state) = handle.try_state::<AppState>() else {
+        return;
+    };
     if state.core().status() != CoreStatus::Running {
         return;
     }
     let h = handle.clone();
     std::thread::spawn(move || {
-        let Some(state) = h.try_state::<AppState>() else { return };
-        let Ok(c) = controller_client(&state) else { return };
+        let Some(state) = h.try_state::<AppState>() else {
+            return;
+        };
+        let Ok(c) = controller_client(&state) else {
+            return;
+        };
+        let groups = match c.groups() {
+            Ok(groups) => groups,
+            Err(_) => return,
+        };
         let mut tray = state.node_menu.lock().unwrap();
         // 主组：已有缓存沿用；否则按订阅声明顺序找第一个有成员的组
         if !tray.has_group() {
@@ -1487,11 +1496,7 @@ fn refresh_tray_nodes(handle: &AppHandle) {
             tray.init_group(&|| {
                 order
                     .iter()
-                    .find(|n| {
-                        c.group_state(n)
-                            .map(|(_, m)| !m.is_empty())
-                            .unwrap_or(false)
-                    })
+                    .find(|n| groups.iter().any(|g| g.name == **n && !g.nodes.is_empty()))
                     .cloned()
             });
         }
@@ -1500,19 +1505,52 @@ fn refresh_tray_nodes(handle: &AppHandle) {
         if group.is_empty() {
             return;
         }
-        let Ok((now, members)) = c.group_state(&group) else { return };
-        let lookup = move |name: &str| c.group_state(name).ok();
-        state
-            .node_menu
-            .lock()
-            .unwrap()
-            .apply_group_data(now, members, &lookup);
-        refresh_tray(&h);
+        let Some(root) = groups.iter().find(|candidate| candidate.name == group) else {
+            return;
+        };
+        let automatic = root
+            .nodes
+            .iter()
+            .find(|node| node.kind.eq_ignore_ascii_case("URLTest"))
+            .and_then(|node| {
+                groups
+                    .iter()
+                    .find(|candidate| candidate.name == node.name)
+                    .map(|automatic| {
+                        (
+                            automatic.name.clone(),
+                            automatic.now.clone(),
+                            automatic
+                                .nodes
+                                .iter()
+                                .map(|member| (member.name.clone(), member.delay_ms))
+                                .collect(),
+                        )
+                    })
+            });
+        state.node_menu.lock().unwrap().apply_group_data(
+            root.now.clone(),
+            root.nodes
+                .iter()
+                .map(|node| (node.name.clone(), node.delay_ms))
+                .collect(),
+            automatic,
+        );
+        let data = tray_menu_data(&state);
+        let menu_updated = keep_menu_open
+            && tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+        if !menu_updated {
+            refresh_tray(&h);
+        }
         // 部分节点还没有延迟数据时自动补一轮测速（静默，不抢菜单交互）
         let missing = {
             let st = h.state::<AppState>();
             let tray = st.node_menu.lock().unwrap();
-            tray.snapshot("").rows.iter().filter(|r| r.ms.is_none() && r.badge != "失败").count()
+            tray.snapshot("", "当前")
+                .rows
+                .iter()
+                .filter(|r| r.ms.is_none() && r.badge != "失败")
+                .count()
         };
         #[cfg(target_os = "macos")]
         if missing > 0 {
@@ -1524,7 +1562,9 @@ fn refresh_tray_nodes(handle: &AppHandle) {
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
 #[cfg(target_os = "macos")]
 fn run_tray_delay_test(handle: &AppHandle) {
-    let Some(state) = handle.try_state::<AppState>() else { return };
+    let Some(state) = handle.try_state::<AppState>() else {
+        return;
+    };
     let generation = {
         let mut tray = state.node_menu.lock().unwrap();
         if !tray.begin_test() {
@@ -1538,7 +1578,9 @@ fn run_tray_delay_test(handle: &AppHandle) {
     let watchdog_handle = handle.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(35));
-        let Some(state) = watchdog_handle.try_state::<AppState>() else { return };
+        let Some(state) = watchdog_handle.try_state::<AppState>() else {
+            return;
+        };
         let mut tray = state.node_menu.lock().unwrap();
         if tray.generation() != generation {
             return; // 新一轮测速已接管
@@ -1546,18 +1588,43 @@ fn run_tray_delay_test(handle: &AppHandle) {
         tray.end_test();
         drop(tray);
         let data = tray_menu_data(&state);
-        tray_speed::update_node_items(&watchdog_handle, &data.rows, data.testing);
+        tray_speed::update_node_menu(&watchdog_handle, &data.title, &data.rows, data.testing);
     });
 
     let h = handle.clone();
     std::thread::spawn(move || {
-        let Some(state) = h.try_state::<AppState>() else { return };
-        let (group, members) = {
-            let tray = state.node_menu.lock().unwrap();
-            (tray.group().to_string(), tray.node_names())
+        let Some(state) = h.try_state::<AppState>() else {
+            return;
         };
-        let measured = controller_client(&state).and_then(|c| c.test_group_delay(&group));
-        let now = controller_client(&state)
+        let (group, members, automatic_group) = {
+            let tray = state.node_menu.lock().unwrap();
+            (
+                tray.group().to_string(),
+                tray.node_names(),
+                tray.automatic_group().map(str::to_string),
+            )
+        };
+        let client = controller_client(&state);
+        let mut measured = match &client {
+            Ok(client) => client.test_group_delay(&group),
+            Err(error) => Err(error.clone()),
+        };
+        if let (Some(auto_group), Ok(client), Ok(root_delays)) =
+            (automatic_group.as_deref(), &client, &mut measured)
+        {
+            if let Ok(groups) = client.groups() {
+                if let Some(auto) = groups.iter().find(|candidate| candidate.name == auto_group) {
+                    root_delays.extend(
+                        auto.nodes.iter().filter_map(|node| {
+                            node.delay_ms.map(|delay| (node.name.clone(), delay))
+                        }),
+                    );
+                }
+            }
+        }
+        let now = client
+            .as_ref()
+            .map_err(Clone::clone)
             .and_then(|c| c.group_state(&group))
             .ok()
             .and_then(|(now, _)| now);
@@ -1577,27 +1644,30 @@ fn run_tray_delay_test(handle: &AppHandle) {
         tray.end_test();
         drop(tray);
         let data = tray_menu_data(&state);
-        tray_speed::update_node_items(&h, &data.rows, data.testing);
+        tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
     });
-
 }
 
 #[cfg(target_os = "macos")]
 fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
-    let Some(state) = handle.try_state::<AppState>() else { return };
-    let data = state.node_menu.lock().unwrap().snapshot(&{
-        let lang = state.store.lock().unwrap().data().ui.lang.clone();
-        tr(&lang, "节点选择", "Nodes")
-    });
-    tray_speed::update_node_items(handle, &data.rows, testing);
+    let Some(state) = handle.try_state::<AppState>() else {
+        return;
+    };
+    let lang = state.store.lock().unwrap().data().ui.lang.clone();
+    let data = state.node_menu.lock().unwrap().snapshot(
+        &tr(&lang, "节点选择", "Nodes"),
+        &tr(&lang, "当前", "Current"),
+    );
+    tray_speed::update_node_menu(handle, &data.title, &data.rows, testing);
 }
 
 #[cfg(target_os = "macos")]
 fn tray_menu_data(state: &AppState) -> tray_state::TrayMenuData {
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
     let node_label = tr(&lang, "节点选择", "Nodes");
+    let current_label = tr(&lang, "当前", "Current");
     let tray = state.node_menu.lock().unwrap();
-    tray.snapshot(&node_label)
+    tray.snapshot(&node_label, &current_label)
 }
 
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
@@ -1677,9 +1747,10 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     // macOS 专属（依赖 NSStatusItem 富文本）；Windows 不展示该子菜单。
     #[cfg(target_os = "macos")]
     let node_menu_data = {
-        let data = state.node_menu.lock().unwrap().snapshot(&{
-            tr(&lang, "节点选择", "Nodes")
-        });
+        let data = state.node_menu.lock().unwrap().snapshot(
+            &tr(&lang, "节点选择", "Nodes"),
+            &tr(&lang, "当前", "Current"),
+        );
         Some((data.title, data.rows, data.testing))
     };
 
@@ -1725,6 +1796,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
                 .item(&quit)
                 .build();
         }
+        let group_menu_label = tray_speed::format_flag_spacing(&group_menu_label);
         let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
         let delay_test = MenuItem::with_id(
             app,
@@ -1741,7 +1813,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         for row in &rows {
             node_builder = node_builder.item(&mk_check(
                 &format!("node-{}", row.name),
-                &format!("{}\t{}", tray_speed::display_name(&row.name), row.badge),
+                &format!("{}\t{}", tray_speed::display_name(&row.label), row.badge),
                 row.selected,
             )?);
         }
@@ -1776,11 +1848,20 @@ fn refresh_tray(app: &AppHandle) {
     // 菜单重建后立即应用等宽列与延迟颜色；测试状态也按当前语言保持一致。
     #[cfg(target_os = "macos")]
     {
-        let data = app.state::<AppState>().node_menu.lock().unwrap().snapshot(&{
-            let lang = app.state::<AppState>().store.lock().unwrap().data().ui.lang.clone();
-            crate::tr(&lang, "节点选择", "Nodes")
-        });
-        tray_speed::update_node_items(app, &data.rows, data.testing);
+        let lang = app
+            .state::<AppState>()
+            .store
+            .lock()
+            .unwrap()
+            .data()
+            .ui
+            .lang
+            .clone();
+        let data = app.state::<AppState>().node_menu.lock().unwrap().snapshot(
+            &crate::tr(&lang, "节点选择", "Nodes"),
+            &crate::tr(&lang, "当前", "Current"),
+        );
+        tray_speed::update_node_menu(app, &data.title, &data.rows, data.testing);
     }
 }
 
@@ -1915,14 +1996,23 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         other => {
             if let Some(name) = other.strip_prefix("node-") {
-                let group = app.state::<AppState>().node_menu.lock().unwrap().group().to_string();
+                let group = app
+                    .state::<AppState>()
+                    .node_menu
+                    .lock()
+                    .unwrap()
+                    .group()
+                    .to_string();
                 let h = app.clone();
                 let name = name.to_string();
                 std::thread::spawn(move || {
                     let result = controller_client(&h.state::<AppState>())
                         .and_then(|c| c.select_proxy(&group, &name));
-                    drop(result);
-                    refresh_tray(&h);
+                    if let Err(error) = result {
+                        eprintln!("select tray node {name}: {error}");
+                    } else {
+                        refresh_tray_nodes(&h, true);
+                    }
                 });
                 Ok(())
             } else if let Some(pid) = other.strip_prefix("profile-") {
@@ -2074,7 +2164,7 @@ pub fn run() {
             // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());
             #[cfg(target_os = "macos")]
-            refresh_tray_nodes(app.handle());
+            refresh_tray_nodes(app.handle(), false);
 
             Ok(())
         })

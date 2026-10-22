@@ -57,6 +57,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSControl",
     "NSBezierPath",
     "NSImage",
+    "NSImageView",
     "NSTextAttachment",
     "NSStringDrawing",
     "NSGraphicsContext",
