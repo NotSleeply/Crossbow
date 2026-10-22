@@ -402,17 +402,44 @@ impl CoreManager {
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
 
         // 混合端口预检：被其他程序占用（常见：Clash Verge 等代理同端口）时，
-        // sing-box 会 FATAL 退出、mihomo 静默失去代理能力——直接给出可操作的错误
-        let bind_probe = std::net::TcpListener::bind(if engine_rt.allow_lan {
-            std::net::SocketAddr::from(([0, 0, 0, 0], engine_rt.mixed_port))
-        } else {
-            std::net::SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
-        });
-        if let Err(e) = bind_probe {
-            return Err(format!(
-                "混合端口 {} 已被其他程序占用（{e}）。多半是 Clash Verge 等其他代理工具——请更换本应用的混合端口或退出对方程序",
-                engine_rt.mixed_port
-            ));
+        // sing-box 会 FATAL 退出、mihomo 静默失去代理能力——直接给出可操作的错误。
+        // 常见占用者其实是本应用自己的残留内核（TUN root 内核 EPERM 杀不掉）：
+        // 先按可执行路径识别并清理（root 走管理员补杀），重试一次，仍失败才报错。
+        let try_bind = || {
+            std::net::TcpListener::bind(if engine_rt.allow_lan {
+                std::net::SocketAddr::from(([0, 0, 0, 0], engine_rt.mixed_port))
+            } else {
+                std::net::SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
+            })
+        };
+        if try_bind().is_err() {
+            let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
+            if let Some(data_dir) = self.shared.work_dir.parent() {
+                let tb = data_dir.join("tun-binaries");
+                if let Ok(versions) = std::fs::read_dir(&tb) {
+                    for v in versions.flatten() {
+                        for name in ["mihomo", "sing-box"] {
+                            candidates.push(v.path().join(crate::core_download::core_bin_file(name)));
+                        }
+                    }
+                }
+            }
+            let mut note = String::new();
+            for (pid, path) in find_leftover_core_pids(&candidates) {
+                if kill_external(pid, Some(&path)) {
+                    note.push_str(&format!("已清理本应用残留内核 pid={pid}；"));
+                } else {
+                    note.push_str(&format!(
+                        "残留内核 pid={pid} 清理失败（可能取消了管理员授权）；"
+                    ));
+                }
+            }
+            if try_bind().is_err() {
+                return Err(format!(
+                    "混合端口 {} 已被其他程序占用（Address already in use）。{note}若仍失败：多半是 Clash Verge 等其他代理工具——请更换本应用的混合端口或退出对方程序",
+                    engine_rt.mixed_port
+                ));
+            }
         }
         // controller 端口避开 mixed，避免自相争抢
         let mut port = free_port().ok_or("no free port for controller")?;
@@ -645,6 +672,57 @@ struct CoreDescriptor {
     pid: u32,
     #[serde(default)]
     binary_path: Option<PathBuf>,
+}
+
+/// 枚举可执行路径与任一候选完全一致的进程（识别本应用残留内核，
+/// 避免误伤系统里无关的 mihomo/sing-box）。非 macOS 平台返回空——
+/// Windows/Linux 的进程路径枚举在各自移植时补齐。
+#[cfg(target_os = "macos")]
+fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
+    use std::ffi::CStr;
+    use std::os::raw::{c_int, c_void};
+
+    #[link(name = "proc")]
+    unsafe extern "C" {
+        fn proc_listallpids(pids: *mut c_void, size: c_int) -> c_int;
+        fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+    }
+
+    let mut out = Vec::new();
+    unsafe {
+        let n = proc_listallpids(std::ptr::null_mut(), 0);
+        if n < 1 {
+            return out;
+        }
+        let mut pids = vec![0_i32; n as usize + 16];
+        let n = proc_listallpids(
+            pids.as_mut_ptr().cast(),
+            (pids.len() * std::mem::size_of::<i32>()) as c_int,
+        );
+        if n < 1 {
+            return out;
+        }
+        for pid in &pids[..n as usize] {
+            let mut buf = [0_i8; 4096];
+            let len = proc_pidpath(*pid, buf.as_mut_ptr().cast(), buf.len() as u32);
+            if len <= 0 {
+                continue;
+            }
+            let Ok(path) = CStr::from_ptr(buf.as_ptr()).to_str() else {
+                continue;
+            };
+            let path = PathBuf::from(path);
+            if candidates.iter().any(|c| *c == path) {
+                out.push((*pid as u32, path));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(target_os = "macos"))]
+fn find_leftover_core_pids(_candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
+    Vec::new()
 }
 
 #[cfg(target_os = "macos")]
