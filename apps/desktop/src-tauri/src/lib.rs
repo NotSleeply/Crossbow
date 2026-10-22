@@ -193,7 +193,7 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
         store.data().engine.engine == crossbow_core::Engine::SingBox
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
-    ensure_engine_binary(state, need)?;
+    let mut binary = ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;
     let store = state.store.lock().unwrap();
     let rt = RuntimeConfig {
@@ -209,7 +209,13 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             drop(store);
-            crate::tun::ensure_root_binary(state)?;
+            binary = crate::tun::ensure_root_binary(state, &binary)?;
+            if binary != state.core().binary_path() {
+                state.core().stop();
+                let rooted_core = CoreManager::new(binary, state.data_dir.join("runtime"));
+                rooted_core.set_callback(core_status_callback(state.app.clone()));
+                *state.core_slot.lock().unwrap() = rooted_core;
+            }
             return state.core().start(&rendered.config, &rt);
         }
         #[cfg(not(target_os = "macos"))]

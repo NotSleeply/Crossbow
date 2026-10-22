@@ -102,7 +102,12 @@ impl Shared {
     /// 写轻量交接描述符（port/secret/pid），下次 GUI 启动据此收养。
     /// 调用方必须已释放 inner 锁（本函数不再加锁）。
     fn write_descriptor(&self, pid: u32, port: u16, secret: &str) {
-        let j = serde_json::json!({ "port": port, "secret": secret, "pid": pid });
+        let j = serde_json::json!({
+            "port": port,
+            "secret": secret,
+            "pid": pid,
+            "binary_path": self.binary_path.display().to_string(),
+        });
         let _ = std::fs::write(
             Self::descriptor_path(&self.work_dir),
             serde_json::to_vec(&j).unwrap_or_default(),
@@ -163,6 +168,9 @@ impl Shared {
         let child = cmd.spawn().map_err(|e| format!("spawn core: {e}"))?;
         let pid = child.id();
         self.inner.lock().unwrap().child = Some(child);
+        if let Some((port, secret)) = self.inner.lock().unwrap().controller.clone() {
+            self.write_descriptor(pid, port, &secret);
+        }
         append_decision(
             &self.work_dir,
             &format!(
@@ -280,10 +288,24 @@ impl CoreManager {
             return Err(msg);
         }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
-        if let Some(pid) = self.read_external_pid() {
-            kill_pid(pid);
+        if let Some(descriptor) = Shared::read_descriptor(&self.shared.work_dir) {
+            if descriptor
+                .binary_path
+                .as_deref()
+                .is_some_and(|path| process_matches_binary(descriptor.pid, path))
+            {
+                kill_pid(descriptor.pid);
+                for _ in 0..40 {
+                    if !process_matches_binary(
+                        descriptor.pid,
+                        descriptor.binary_path.as_deref().unwrap(),
+                    ) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
-            std::thread::sleep(Duration::from_millis(400));
         }
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
 
@@ -336,11 +358,6 @@ impl CoreManager {
         Ok(())
     }
 
-    /// 读取交接描述符中的外部内核 pid（不做活性探测）。
-    fn read_external_pid(&self) -> Option<u32> {
-        Shared::read_descriptor(&self.shared.work_dir).map(|d| d.pid)
-    }
-
     /// 启动时收养上一实例轻量交接的内核：探测通过则标记为运行中的外部实例。
     pub fn adopt_external(&self) -> bool {
         let Some(d) = Shared::read_descriptor(&self.shared.work_dir) else {
@@ -350,7 +367,21 @@ impl CoreManager {
             port: d.port,
             secret: d.secret.clone(),
         };
-        if !probe.wait_ready(Duration::from_secs(2), || false, || false) {
+        if !probe.wait_ready(Duration::from_secs(15), || false, || false) {
+            if d.binary_path
+                .as_deref()
+                .is_some_and(|path| process_matches_binary(d.pid, path))
+            {
+                kill_pid(d.pid);
+                if let Some(path) = d.binary_path.as_deref() {
+                    for _ in 0..40 {
+                        if !process_matches_binary(d.pid, path) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            }
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             return false;
         }
@@ -439,6 +470,60 @@ struct CoreDescriptor {
     port: u16,
     secret: String,
     pid: u32,
+    #[serde(default)]
+    binary_path: Option<PathBuf>,
+}
+
+#[cfg(target_os = "macos")]
+fn process_matches_binary(pid: u32, expected: &Path) -> bool {
+    use std::ffi::CStr;
+    use std::os::raw::{c_int, c_void};
+
+    #[link(name = "proc")]
+    unsafe extern "C" {
+        fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+    }
+
+    let mut buffer = [0_i8; 4096];
+    let len = unsafe {
+        proc_pidpath(
+            pid as c_int,
+            buffer.as_mut_ptr().cast(),
+            buffer.len() as u32,
+        )
+    };
+    if len <= 0 {
+        return false;
+    }
+    let Ok(actual) = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str() else {
+        return false;
+    };
+    match (
+        std::fs::canonicalize(actual),
+        std::fs::canonicalize(expected),
+    ) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn process_matches_binary(pid: u32, expected: &Path) -> bool {
+    match (
+        std::fs::canonicalize(format!("/proc/{pid}/exe")),
+        std::fs::canonicalize(expected),
+    ) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        _ => false,
+    }
+}
+
+#[cfg(any(
+    target_os = "windows",
+    not(any(target_os = "macos", target_os = "linux"))
+))]
+fn process_matches_binary(_pid: u32, _expected: &Path) -> bool {
+    false
 }
 
 impl Shared {
