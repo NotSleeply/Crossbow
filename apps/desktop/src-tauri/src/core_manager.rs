@@ -169,7 +169,13 @@ impl Shared {
         }
         let child = cmd.spawn().map_err(|e| format!("spawn core: {e}"))?;
         let pid = child.id();
-        self.inner.lock().unwrap().child = Some(child);
+        {
+            let mut inner = self.inner.lock().unwrap();
+            // 自有子进程接管：收养角色终结，外部 pid 监视线程据此静默退场
+            inner.external_pid = None;
+            inner.detached = false;
+            inner.child = Some(child);
+        }
         if let Some((port, secret)) = self.inner.lock().unwrap().controller.clone() {
             self.write_descriptor(pid, port, &secret);
         }
@@ -372,7 +378,17 @@ impl CoreManager {
             return Err(msg);
         }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
+        // 先解除收养角色再杀，收养监视线程看到角色已换就静默退场，不会误报；
+        // 杀失败保留描述文件并中止启动，避免无登记孤儿内核抢端口。
         if let Some(descriptor) = Shared::read_descriptor(&self.shared.work_dir) {
+            {
+                let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if inner.external_pid == Some(descriptor.pid) {
+                    inner.external_pid = None;
+                    inner.external_binary = None;
+                    inner.detached = false;
+                }
+            }
             if !kill_external(descriptor.pid, descriptor.binary_path.as_deref()) {
                 let msg = format!(
                     "无法确认旧内核进程 {} 已退出；描述文件已保留，请关闭旧内核后重试",
@@ -380,14 +396,6 @@ impl CoreManager {
                 );
                 self.shared.notify(CoreStatus::Crashed(msg.clone()));
                 return Err(msg);
-            }
-            {
-                let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
-                if inner.external_pid == Some(descriptor.pid) {
-                    inner.external_pid = None;
-                    inner.external_binary = None;
-                }
-                inner.detached = false;
             }
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
         }
@@ -464,6 +472,13 @@ impl CoreManager {
         inner.external_binary = d.binary_path.clone();
         inner.controller = Some((d.port, d.secret));
         inner.status = CoreStatus::Running;
+        drop(inner);
+        // 收养内核没有子进程句柄：死亡无人知晓，状态会永远停在「运行中」，
+        // 系统代理守护也不会触发。起 pid 监视线程补上（身份比对防 pid 复用）。
+        #[cfg(unix)]
+        if let Some(path) = d.binary_path.clone() {
+            watch_external(self.shared.clone(), d.pid, path);
+        }
         true
     }
 
@@ -689,6 +704,37 @@ impl Shared {
         let raw = std::fs::read_to_string(Self::descriptor_path(work_dir)).ok()?;
         serde_json::from_str(&raw).ok()
     }
+}
+
+/// 收养内核的 pid 监视：每 3 秒做一次二进制路径身份比对，进程消失且
+/// 收养角色未变时上报 Crashed（联动系统代理还原、托盘退订等守护）。
+/// stop()/重新 start() 会先解除收养角色（external_pid 置空/换新），
+/// 监视线程据此静默退场，不会误报。仅 unix——Windows 的身份比对是恒
+/// false 占位，启用会立即误判。
+#[cfg(unix)]
+fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(3));
+        if process_matches_binary(pid, &binary) {
+            continue;
+        }
+        let mut inner = shared.inner.lock().unwrap();
+        if inner.stopping || inner.external_pid != Some(pid) {
+            return; // 已被 stop/接管/换核：收尾由对方负责
+        }
+        inner.external_pid = None;
+        inner.detached = false;
+        inner.controller = None;
+        drop(inner);
+        append_decision(
+            &shared.work_dir,
+            &format!("adopted-watch: external pid {pid} gone → Crashed"),
+        );
+        shared.notify(CoreStatus::Crashed(
+            "收养的内核进程已退出（可能是被外部终止或异常崩溃）".into(),
+        ));
+        return;
+    });
 }
 
 fn watch(shared: Arc<Shared>, port: u16, secret: String) {
