@@ -2011,6 +2011,8 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
                     if let Err(error) = result {
                         eprintln!("select tray node {name}: {error}");
                     } else {
+                        // 节点子菜单仅 macOS 构建；选择成功后就地刷新打开中的菜单。
+                        #[cfg(target_os = "macos")]
                         refresh_tray_nodes(&h, true);
                     }
                 });
