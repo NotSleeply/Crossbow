@@ -640,11 +640,13 @@ define_class!(
             else {
                 return;
             };
+            let handle = self.ivars();
+            // 非节点菜单（如模式子菜单）：勾选态随当前模式刷新
             if !contains_delay_test(&menu) {
+                update_mode_checkmarks(&menu, handle);
                 return;
             }
             install_menu_delegate(&menu, self);
-            let handle = self.ivars();
             let Some(state) = handle.try_state::<crate::AppState>() else {
                 return;
             };
@@ -655,6 +657,9 @@ define_class!(
             );
             let (menu_width, badge_tab) = node_menu_layout(&data.rows);
             update_menu_items(&menu, &data.rows, data.testing, menu_width, badge_tab);
+            // 状态项文字（系统代理开/关、当前模式）：菜单关闭期间的
+            // refresh_tray 触达不到 NSStatusItem 的菜单，只能在展开瞬间刷新
+            update_state_labels(&menu, handle);
             let is_node_submenu = (0..menu.numberOfItems()).any(|index| {
                 menu.itemAtIndex(index)
                     .is_some_and(|item| is_delay_test_item(&item))
@@ -794,6 +799,92 @@ fn contains_delay_test(menu: &NSMenu) -> bool {
                     .is_some_and(|submenu| contains_delay_test(&submenu))
         })
     })
+}
+
+/// 菜单展开瞬间同步状态项文字（系统代理开/关、当前模式标题）。
+/// 标题按 build_tray_menu 的格式重建：切换可来自 UI 或托盘任一侧，
+/// 以当前 AppState 为准原位刷新。
+fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
+    let lang = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().ui.lang.clone();
+    let sp = state.sysproxy.status();
+    let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let proxy_title = if sp.enabled {
+        format!(
+            "{} :{}",
+            crate::tr(&lang, "系统代理：已开启", "System Proxy: On"),
+            sp.port
+        )
+    } else {
+        crate::tr(&lang, "系统代理：已关闭", "System Proxy: Off")
+    };
+    let mode_title = format!(
+        "{}：{}",
+        crate::tr(&lang, "模式", "Mode"),
+        crate::tr(
+            &lang,
+            match mode.as_str() {
+                "direct" => "直连",
+                "global" => "全局",
+                _ => "规则",
+            },
+            match mode.as_str() {
+                "direct" => "Direct",
+                "global" => "Global",
+                _ => "Rule",
+            }
+        )
+    );
+    for index in 0..menu.numberOfItems() {
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
+        let title = item.title().to_string();
+        let new_title = if title.starts_with("系统代理") || title.starts_with("System Proxy") {
+            Some(proxy_title.clone())
+        } else if title.starts_with("模式") || title.starts_with("Mode") {
+            Some(mode_title.clone())
+        } else {
+            None
+        };
+        if let Some(new_title) = new_title {
+            item.setTitle(&NSString::from_str(&new_title));
+        }
+    }
+}
+
+/// 模式子菜单的勾选态随当前模式刷新（直连/规则/全局）。
+fn update_mode_checkmarks(menu: &NSMenu, handle: &AppHandle) {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
+    let lang = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().ui.lang.clone();
+    let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let marks: [(&str, &str, bool); 3] = [
+        (
+            &crate::tr(&lang, "直连", "Direct"),
+            "direct",
+            mode == "direct",
+        ),
+        (&crate::tr(&lang, "规则", "Rule"), "rule", mode == "rule"),
+        (
+            &crate::tr(&lang, "全局", "Global"),
+            "global",
+            mode == "global",
+        ),
+    ];
+    for index in 0..menu.numberOfItems() {
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
+        let title = item.title().to_string();
+        if let Some((_, _, on)) = marks.iter().find(|(label, _, _)| *label == title) {
+            // NSControlStateValueOn=1 / Off=0，避开 NSControl feature 依赖
+            let _: () = unsafe { msg_send![&*item, setState: (*on) as isize] };
+        }
+    }
 }
 
 fn node_menu_layout(_rows: &[TrayNodeRow]) -> (f64, f64) {
