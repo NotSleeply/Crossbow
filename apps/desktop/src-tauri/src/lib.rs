@@ -149,7 +149,7 @@ fn pid_alive(pid: u32) -> bool {
 impl AppState {
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
     pub fn core(&self) -> CoreManager {
-        self.core_slot.lock().unwrap().clone()
+        self.core_slot.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -214,7 +214,7 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
                 state.core().stop();
                 let rooted_core = CoreManager::new(binary, state.data_dir.join("runtime"));
                 rooted_core.set_callback(core_status_callback(state.app.clone()));
-                *state.core_slot.lock().unwrap() = rooted_core;
+                *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = rooted_core;
             }
             return state.core().start(&rendered.config, &rt);
         }
@@ -247,7 +247,7 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
     let new_core = CoreManager::new(p.clone(), state.data_dir.join("runtime"));
     // 换核 = 新管理器：必须重挂状态回调（托盘速率/前端事件/崩溃守卫都靠它）
     new_core.set_callback(core_status_callback(state.app.clone()));
-    *state.core_slot.lock().unwrap() = new_core;
+    *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
     state
         .core()
         .log_decision(&format!("ensure: swapped to {}", p.display()));
@@ -1043,7 +1043,7 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
     new_core.set_callback(core_status_callback(app.clone()));
     state.core().stop();
-    *state.core_slot.lock().unwrap() = new_core;
+    *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
     Ok(CoreBinaryInfo {
         path: info.display().to_string(),
         source: "data".into(),
@@ -1466,12 +1466,50 @@ fn sync_tray_traffic(handle: &AppHandle) {
                     #[cfg(target_os = "macos")]
                     tray_speed::set_speed(&h, up, down);
                 });
+            #[cfg(target_os = "macos")]
+            ensure_tray_speed_watchdog(handle);
             return;
         }
     }
     state.ws.unsubscribe_tray_traffic();
     #[cfg(target_os = "macos")]
     tray_speed::clear(handle);
+}
+
+/// 托盘速率看门狗（进程级单例）：内核 Running 期间 /traffic 静默超过阈值
+/// 即强制重订。mihomo/sing-box 的 /traffic 即使零流量也每秒推帧，因此
+/// 「订阅还在但静默」必然意味着读线程死亡、socket 半开或内核假活——
+/// subscribe 的替换语义让重订直接顶替坏通道，冻结在数十秒内自愈。
+#[cfg(target_os = "macos")]
+fn ensure_tray_speed_watchdog(handle: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SPAWNED: AtomicBool = AtomicBool::new(false);
+    if SPAWNED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    const STALE_SECS: u64 = 12;
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            let Some(state) = h.try_state::<AppState>() else {
+                continue;
+            };
+            if state.core().status() != CoreStatus::Running {
+                continue;
+            }
+            match state.ws.last_message_ago("traffic-tray") {
+                Some(silent) if silent.as_secs() >= STALE_SECS => {
+                    eprintln!(
+                        "tray watchdog: traffic-tray silent {}s, resubscribing",
+                        silent.as_secs()
+                    );
+                    sync_tray_traffic(&h);
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
 /// 后台拉取托盘节点菜单数据：探测主选择组 + 各节点延迟，完成后刷新托盘。
@@ -1495,7 +1533,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
             Ok(groups) => groups,
             Err(_) => return,
         };
-        let mut tray = state.node_menu.lock().unwrap();
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         // 主组：已有缓存沿用；否则按订阅声明顺序找第一个有成员的组
         if !tray.has_group() {
             let order = profile_group_order(&h);
@@ -1534,7 +1572,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
                         )
                     })
             });
-        state.node_menu.lock().unwrap().apply_group_data(
+        state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).apply_group_data(
             root.now.clone(),
             root.nodes
                 .iter()
@@ -1551,7 +1589,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
         // 部分节点还没有延迟数据时自动补一轮测速（静默，不抢菜单交互）
         let missing = {
             let st = h.state::<AppState>();
-            let tray = st.node_menu.lock().unwrap();
+            let tray = st.node_menu.lock().unwrap_or_else(|e| e.into_inner());
             tray.snapshot("", "当前")
                 .rows
                 .iter()
@@ -1572,7 +1610,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
         return;
     };
     let generation = {
-        let mut tray = state.node_menu.lock().unwrap();
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         if !tray.begin_test() {
             return; // 已在测速
         }
@@ -1587,7 +1625,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
         let Some(state) = watchdog_handle.try_state::<AppState>() else {
             return;
         };
-        let mut tray = state.node_menu.lock().unwrap();
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         if tray.generation() != generation {
             return; // 新一轮测速已接管
         }
@@ -1603,7 +1641,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
             return;
         };
         let (group, members, automatic_group) = {
-            let tray = state.node_menu.lock().unwrap();
+            let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
             (
                 tray.group().to_string(),
                 tray.node_names(),
@@ -1635,7 +1673,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
             .ok()
             .and_then(|(now, _)| now);
 
-        let mut tray = state.node_menu.lock().unwrap();
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         // 与看门狗竞争结束权；迟到的旧结果不会覆盖新一轮测速。
         if tray.generation() != generation {
             return;
@@ -1660,7 +1698,7 @@ fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
         return;
     };
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
-    let data = state.node_menu.lock().unwrap().snapshot(
+    let data = state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).snapshot(
         &tr(&lang, "节点选择", "Nodes"),
         &tr(&lang, "当前", "Current"),
     );
@@ -1672,7 +1710,7 @@ fn tray_menu_data(state: &AppState) -> tray_state::TrayMenuData {
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
     let node_label = tr(&lang, "节点选择", "Nodes");
     let current_label = tr(&lang, "当前", "Current");
-    let tray = state.node_menu.lock().unwrap();
+    let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
     tray.snapshot(&node_label, &current_label)
 }
 
@@ -1753,7 +1791,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     // macOS 专属（依赖 NSStatusItem 富文本）；Windows 不展示该子菜单。
     #[cfg(target_os = "macos")]
     let node_menu_data = {
-        let data = state.node_menu.lock().unwrap().snapshot(
+        let data = state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).snapshot(
             &tr(&lang, "节点选择", "Nodes"),
             &tr(&lang, "当前", "Current"),
         );
@@ -1843,7 +1881,7 @@ fn refresh_tray(app: &AppHandle) {
     // 关键：不能在持有 tray 锁的状态下构建/设置菜单——两者都会同步派发到
     // 主线程执行，而主线程上的托盘标题回调（每秒一次）也要拿这把锁，
     // 持锁派发 = ABBA 死锁（强制退出报告实锤）。先克隆引用再释放锁。
-    let tray = app.state::<AppState>().tray.lock().unwrap().clone();
+    let tray = app.state::<AppState>().tray.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some(tray) = tray else { return };
     match build_tray_menu(app) {
         Ok(menu) => {
@@ -1863,7 +1901,7 @@ fn refresh_tray(app: &AppHandle) {
             .ui
             .lang
             .clone();
-        let data = app.state::<AppState>().node_menu.lock().unwrap().snapshot(
+        let data = app.state::<AppState>().node_menu.lock().unwrap_or_else(|e| e.into_inner()).snapshot(
             &crate::tr(&lang, "节点选择", "Nodes"),
             &crate::tr(&lang, "当前", "Current"),
         );
@@ -2165,7 +2203,7 @@ pub fn run() {
                 .tooltip("Crossbow")
                 .on_menu_event(handle_menu)
                 .build(app)?;
-            *app.state::<AppState>().tray.lock().unwrap() = Some(tray);
+            *app.state::<AppState>().tray.lock().unwrap_or_else(|e| e.into_inner()) = Some(tray);
             #[cfg(target_os = "macos")]
             tray_speed::install_menu_observer(app.handle());
 
@@ -2278,6 +2316,10 @@ pub fn run() {
                 // 真正退出：还原系统代理、收内核（handoff 之外的所有路径）。
                 tauri::RunEvent::Exit => {
                     if let Some(state) = app.try_state::<AppState>() {
+                        // 退出时不允许 root 内核补杀弹授权框：杀不掉就留给系统，
+                        // 下次启动的收养/预绑定检查会处理。
+                        core_manager::ROOT_KILL_PROMPT_DISABLED
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
                         state.ws.unsubscribe_all();
                         let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
                         let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);

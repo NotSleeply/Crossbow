@@ -64,6 +64,8 @@ struct Inner {
     detached: bool,
     /// 收养的外部内核 pid（上一个 GUI 实例留下的）。
     external_pid: Option<u32>,
+    /// 收养进程的可执行文件身份；对外部 PID 发信号/提权前必须校验。
+    external_binary: Option<PathBuf>,
 }
 
 /// 线程间共享状态；CoreManager 可 Clone。
@@ -184,15 +186,85 @@ impl Shared {
         Ok(())
     }
 
-    fn kill_child(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(mut child) = inner.child.take() {
+    fn kill_child(&self) -> bool {
+        let (child, external) = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let child = inner.child.take();
+            let external = inner
+                .external_pid
+                .take()
+                .map(|pid| (pid, inner.external_binary.take()));
+            (child, external)
+        };
+
+        let stopped = if let Some(mut child) = child {
             let _ = child.kill();
-            let _ = child.wait();
-        } else if let Some(pid) = inner.external_pid.take() {
-            kill_pid(pid);
+            // setuid 内核以 root 运行：普通用户 SIGKILL 报 EPERM，child.wait() 会
+            // 永久阻塞。轮询确认退出；超时仍存活则管理员授权补杀（macOS），
+            // 用户拒绝授权时放弃句柄（进程交给 launchd，绝不阻塞停止流程）。
+            let pid = child.id();
+            let mut gone = false;
+            for _ in 0..40 {
+                match child.try_wait() {
+                    Ok(Some(_)) => {
+                        gone = true;
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                    Err(_) => break,
+                }
+            }
+            if !gone {
+                #[cfg(target_os = "macos")]
+                if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+                    escalate_admin_kill(pid);
+                }
+                for _ in 0..40 {
+                    match child.try_wait() {
+                        Ok(Some(_)) => {
+                            gone = true;
+                            break;
+                        }
+                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                        Err(_) => break,
+                    }
+                }
+                if !gone {
+                    eprintln!("core kill: pid {pid} survived SIGKILL (root?); giving up handle");
+                }
+            }
+            if gone {
+                let _ = child.wait();
+                true
+            } else {
+                // Preserve enough identity to retry safely; the child handle itself
+                // cannot be retained after this bounded stop attempt.
+                let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.external_pid = Some(pid);
+                inner.external_binary = Some(self.binary_path.clone());
+                inner.detached = false;
+                false
+            }
+            // gone=false 时故意丢弃 Child：进程仍存活，句柄无再收价值
+        } else if let Some((pid, binary)) = external {
+            let stopped = kill_external(pid, binary.as_deref());
+            if !stopped {
+                let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.external_pid = Some(pid);
+                inner.external_binary = binary;
+                inner.detached = false;
+            }
+            stopped
+        } else {
+            true
+        };
+
+        if stopped {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            inner.detached = false;
+            let _ = std::fs::remove_file(Self::descriptor_path(&self.work_dir));
         }
-        let _ = std::fs::remove_file(Self::descriptor_path(&self.work_dir));
+        stopped
     }
 }
 
@@ -217,6 +289,7 @@ impl CoreManager {
                     controller: None,
                     detached: false,
                     external_pid: None,
+                    external_binary: None,
                 }),
             }),
         }
@@ -274,7 +347,9 @@ impl CoreManager {
         // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
         // 被旧探测超时路径误杀/误报。
         if self.status() == CoreStatus::Starting {
-            self.stop();
+            if !self.stop() {
+                return Err("无法确认上一次启动的内核已退出，已中止新启动".into());
+            }
         }
         if !matches!(self.status(), CoreStatus::Stopped | CoreStatus::Crashed(_)) {
             return Err(format!("core is {:?}, stop it first", self.status()));
@@ -287,23 +362,32 @@ impl CoreManager {
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
             return Err(msg);
         }
+        let has_tracked_process = {
+            let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            inner.child.is_some() || inner.external_pid.is_some()
+        };
+        if has_tracked_process && !self.shared.kill_child() {
+            let msg = "无法确认上一次内核已退出，已中止新启动".to_string();
+            self.shared.notify(CoreStatus::Crashed(msg.clone()));
+            return Err(msg);
+        }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
         if let Some(descriptor) = Shared::read_descriptor(&self.shared.work_dir) {
-            if descriptor
-                .binary_path
-                .as_deref()
-                .is_some_and(|path| process_matches_binary(descriptor.pid, path))
+            if !kill_external(descriptor.pid, descriptor.binary_path.as_deref()) {
+                let msg = format!(
+                    "无法确认旧内核进程 {} 已退出；描述文件已保留，请关闭旧内核后重试",
+                    descriptor.pid
+                );
+                self.shared.notify(CoreStatus::Crashed(msg.clone()));
+                return Err(msg);
+            }
             {
-                kill_pid(descriptor.pid);
-                for _ in 0..40 {
-                    if !process_matches_binary(
-                        descriptor.pid,
-                        descriptor.binary_path.as_deref().unwrap(),
-                    ) {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
+                let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if inner.external_pid == Some(descriptor.pid) {
+                    inner.external_pid = None;
+                    inner.external_binary = None;
                 }
+                inner.detached = false;
             }
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
         }
@@ -368,27 +452,16 @@ impl CoreManager {
             secret: d.secret.clone(),
         };
         if !probe.wait_ready(Duration::from_secs(15), || false, || false) {
-            if d.binary_path
-                .as_deref()
-                .is_some_and(|path| process_matches_binary(d.pid, path))
-            {
-                kill_pid(d.pid);
-                if let Some(path) = d.binary_path.as_deref() {
-                    for _ in 0..40 {
-                        if !process_matches_binary(d.pid, path) {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                }
+            if kill_external(d.pid, d.binary_path.as_deref()) {
+                let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             }
-            let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             return false;
         }
         let mut inner = self.shared.inner.lock().unwrap();
         inner.stopping = false;
         inner.detached = true;
         inner.external_pid = Some(d.pid);
+        inner.external_binary = d.binary_path.clone();
         inner.controller = Some((d.port, d.secret));
         inner.status = CoreStatus::Running;
         true
@@ -415,14 +488,22 @@ impl CoreManager {
     }
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
-    pub fn stop(&self) {
+    pub fn stop(&self) -> bool {
         {
             let mut inner = self.shared.inner.lock().unwrap();
             inner.stopping = true;
             inner.controller = None;
+            inner.detached = false;
         }
-        self.shared.kill_child();
-        self.shared.notify(CoreStatus::Stopped);
+        let stopped = self.shared.kill_child();
+        if stopped {
+            self.shared.notify(CoreStatus::Stopped);
+        } else {
+            self.shared.notify(CoreStatus::Crashed(
+                "无法确认内核进程已退出；已保留进程描述以便重试停止".into(),
+            ));
+        }
+        stopped
     }
 }
 
@@ -451,6 +532,12 @@ fn kill_pid_probe(_pid: u32) -> bool {
     false
 }
 
+/// root 内核补杀的授权弹窗门控：应用退出路径置 true（退出时不该突然弹
+/// 管理员框），用户主动的 TUN/引擎/配置切换保持允许——这些本就是会弹
+/// 授权框的语义场景。拒绝授权时停止流程照常继续（预绑定检查兜底报错）。
+pub static ROOT_KILL_PROMPT_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 杀掉不属于本进程的内核 pid（收养场景）。unix 用 SIGKILL，其余平台降级。
 fn kill_pid(pid: u32) {
     #[cfg(unix)]
@@ -463,6 +550,77 @@ fn kill_pid(pid: u32) {
             .args(["/F", "/PID", &pid.to_string()])
             .output();
     }
+}
+
+#[cfg(unix)]
+fn pid_is_alive(pid: u32) -> bool {
+    unsafe {
+        let rc = libc::kill(pid as i32, 0);
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+}
+
+#[cfg(not(unix))]
+fn pid_is_alive(_pid: u32) -> bool {
+    true // 无身份信息时宁可保留描述，也不把 PID 当作安全目标
+}
+
+/// root 内核对普通用户 SIGKILL 免疫（EPERM）：SIGKILL 后仍存活时，
+/// 请管理员授权补杀。仅在确有 root 内核残留时才会弹授权框。
+#[cfg(target_os = "macos")]
+fn escalate_admin_kill(pid: u32) {
+    let script = format!("kill -9 {pid}");
+    let out = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            &format!("do shell script '{script}' with administrator privileges"),
+        ])
+        .output();
+    if let Err(e) = out {
+        eprintln!("admin kill {pid}: osascript failed: {e}");
+    } else if !out.unwrap().status.success() {
+        eprintln!("admin kill {pid}: user denied or failed");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn escalate_admin_kill(_pid: u32) {}
+
+/// 杀外部内核并确认真正退出；SIGKILL 无效（root 内核）时管理员补杀。
+/// `expected`：进程身份校验路径（proc_pidpath / /proc/exe 比对）。
+/// 缺少身份信息时只在 PID 已不存在的情况下报告完成，不发送信号或提权。
+/// 返回是否确认已退出。
+fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
+    let Some(expected) = expected else {
+        if !pid_is_alive(pid) {
+            return true;
+        }
+        eprintln!("core kill: refusing to signal unverified external pid {pid}");
+        return false;
+    };
+    let matches = || process_matches_binary(pid, expected);
+    if !matches() {
+        return true; // 已不在
+    }
+    kill_pid(pid);
+    for _ in 0..40 {
+        if !matches() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // 2 秒仍存活：root 内核，SIGKILL 对普通用户 EPERM——授权补杀
+    if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+        escalate_admin_kill(pid);
+    }
+    for _ in 0..40 {
+        if !matches() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    eprintln!("core kill: external pid {pid} still alive after admin kill");
+    false
 }
 
 #[derive(serde::Deserialize)]
@@ -609,6 +767,7 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
                     let mut inner = shared.inner.lock().unwrap();
                     inner.detached = false;
                     inner.external_pid = None;
+                    inner.external_binary = None;
                 }
                 spawn_and_watch(shared);
             }
@@ -1057,6 +1216,7 @@ pub(crate) mod tests {
             inner.status = CoreStatus::Running;
             inner.controller = Some((1, "x".into()));
             inner.external_pid = Some(sleeper.id());
+            inner.external_binary = Some(PathBuf::from("/bin/sleep"));
         }
         let pid = sleeper.id();
         mgr.stop();
