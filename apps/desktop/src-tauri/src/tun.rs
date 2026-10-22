@@ -97,6 +97,26 @@ pub fn ensure_root_binary(state: &AppState, source: &Path) -> Result<PathBuf, St
     Ok(bin)
 }
 
+/// 是否存在已授权（setuid root）的 TUN 内核副本。PR13 后授权副本在
+/// tun-binaries/<版本>/ 下，与解析出的普通内核二进制分离——状态展示
+/// 检查这里，而不是普通内核的 setuid 位（否则永远 false）。
+pub fn authorized_copy_exists(data_dir: &std::path::Path, need: &str) -> bool {
+    let bin_name = crate::core_download::core_bin_file(need);
+    let Ok(versions) = std::fs::read_dir(data_dir.join("tun-binaries")) else {
+        return false;
+    };
+    for version in versions.flatten() {
+        let copy = version.path().join(&bin_name);
+        if let Ok(meta) = std::fs::metadata(&copy) {
+            use std::os::unix::fs::PermissionsExt;
+            if meta.permissions().mode() & 0o4000 != 0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// 关闭 TUN：摘掉 setuid 位（尽力而为，失败不打断流程）。
 pub fn clear_root_binary(state: &AppState) {
     let bin = state.core().binary_path();

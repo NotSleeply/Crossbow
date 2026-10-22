@@ -762,9 +762,8 @@ fn tun_status(state: State<AppState>) -> TunStatus {
             store.data().engine.engine == crossbow_core::Engine::SingBox
         };
         let need = if is_singbox { "sing-box" } else { "mihomo" };
-        let ready = crate::core_download::resolve_core_for(&state.data_dir, Some(need))
-            .map(|p| crate::tun::is_setuid(&p))
-            .unwrap_or(false);
+        // 授权副本在 tun-binaries/<版本>/ 下（PR13），检查它的 setuid 位
+        let ready = crate::tun::authorized_copy_exists(&state.data_dir, need);
         TunStatus { enabled, ready }
     }
     #[cfg(not(target_os = "macos"))]
