@@ -244,12 +244,29 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     }
     // 开启 TUN 时即使核心原本停止，也必须启动核心，否则 UI 会显示 TUN 已开，
     // 但实际没有 utun、DNS 或日志；核心已运行时则重启以应用新配置。
-    let should_start = was_running || enable;
+    // On exit from TUN, start a regular core before restoring a proxy that
+    // may point at Crossbow's mixed port, even if the TUN core already died.
+    let should_start = was_running || enable || previous_tun;
     if should_start {
         let start_result = crate::start_core_locked(state)
             .and_then(|()| crate::wait_core_running(state))
             .and_then(|()| if enable { wait_tun_listener(state) } else { Ok(()) });
         if let Err(start_error) = start_result {
+            if !enable {
+                // The old TUN core has already exited. Rolling the preference
+                // back to true would claim a tunnel exists when there is no
+                // route or process. Restore a safe external proxy instead.
+                let _ = state.core().stop();
+                let proxy_result = state.sysproxy.recover_tun_without_core();
+                return Err(match proxy_result {
+                    Ok(()) => format!(
+                        "TUN 已关闭，但普通内核启动失败；已恢复原系统代理：{start_error}"
+                    ),
+                    Err(error) => format!(
+                        "TUN 已关闭，但普通内核启动失败：{start_error}；恢复原系统代理失败：{error}"
+                    ),
+                });
+            }
             // A failed TUN restart (most commonly a cancelled macOS admin
             // prompt) must not leave the saved toggle enabled while the core
             // is stopped. Restore the previous setting and bring the previous
@@ -283,6 +300,9 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
                 details.join("；")
             ));
         }
+    }
+    if !enable {
+        state.sysproxy.restore_after_tun()?;
     }
     Ok(())
 }
