@@ -2010,17 +2010,12 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         true,
         None::<&str>,
     )?;
+    // 无新版本时为 None——菜单里不渲染占位空行
     #[cfg(target_os = "macos")]
-    let update_item = {
-        let label = update_check::tray_label(app);
-        MenuItem::with_id(
-            app,
-            "tray-update",
-            &label.clone().unwrap_or_default(),
-            label.is_some(),
-            None::<&str>,
-        )?
-    };
+    let update_item: Option<tauri::menu::MenuItem<Wry>> =
+        update_check::tray_label(app).and_then(|label| {
+            MenuItem::with_id(app, "tray-update", &label, true, None::<&str>).ok()
+        });
     let quit = MenuItem::with_id(
         app,
         "quit",
@@ -2048,14 +2043,11 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     {
         let (group_menu_label, rows, testing) = node_menu_data.unwrap();
         if rows.is_empty() {
-            return MenuBuilder::new(app)
-                .item(&proxy)
-                .separator()
-                .item(&update_item)
-                .item(&open)
-                .separator()
-                .item(&quit)
-                .build();
+            let mut b = MenuBuilder::new(app).item(&proxy).separator();
+            if let Some(item) = &update_item {
+                b = b.item(item);
+            }
+            return b.item(&open).separator().item(&quit).build();
         }
         let group_menu_label = tray_speed::format_flag_spacing(&group_menu_label);
         let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
@@ -2080,15 +2072,17 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         }
         let node_menu = node_builder.build()?;
 
-        MenuBuilder::new(app)
+        let mut b = MenuBuilder::new(app)
             .item(&proxy)
             .separator()
             .item(&mode_menu)
             .item(&node_menu)
             .item(&profile_menu)
-            .separator()
-            .item(&update_item)
-            .item(&open)
+            .separator();
+        if let Some(item) = &update_item {
+            b = b.item(item);
+        }
+        b.item(&open)
             .separator()
             .item(&quit)
             .build()
