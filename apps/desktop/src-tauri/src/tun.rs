@@ -9,6 +9,7 @@
 //! 仅 macOS；Windows 的 TUN 走 wintun + 服务，属 M1.5 后续。
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::AppState;
 
@@ -147,8 +148,57 @@ pub fn authorized_copy_exists(data_dir: &std::path::Path, need: &str) -> bool {
     false
 }
 
+/// Mihomo's macOS auto-route installs the 1.0.0.0/8 route. If another tunnel
+/// already owns it, mihomo can report a healthy controller while its TUN
+/// listener failed. Catch this before changing the saved switch or proxy.
+fn ensure_route_available() -> Result<(), String> {
+    let output = std::process::Command::new("netstat")
+        .args(["-rn", "-f", "inet"])
+        .output()
+        .map_err(|e| format!("检查 TUN 路由失败：{e}"))?;
+    if !output.status.success() {
+        return Err("检查 TUN 路由失败".into());
+    }
+    let table = String::from_utf8_lossy(&output.stdout);
+    for line in table.lines() {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        if matches!(fields.first().copied(), Some("1" | "1/8" | "1.0.0.0/8")) {
+            let interface = fields.get(3).copied().unwrap_or("未知接口");
+            return Err(format!(
+                "已有其他隧道占用 1.0.0.0/8 路由（{interface}）。请关闭其他代理或 VPN 的 TUN 模式后重试"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Controller readiness alone does not prove that the TUN listener started.
+/// Mihomo logs route and interface failures after the controller comes up.
+fn wait_tun_listener(state: &AppState) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let log_path = state.data_dir.join("runtime/core-stdio.log");
+    loop {
+        if let Ok(log) = std::fs::read_to_string(&log_path) {
+            if let Some(line) = log.lines().find(|line| line.contains("Start TUN listening error")) {
+                let detail = line.split("msg=").last().unwrap_or(line).trim_matches('"');
+                return Err(format!("TUN 接管失败：{detail}"));
+            }
+        }
+        if let crate::CoreStatus::Crashed(error) = state.core().status() {
+            return Err(error);
+        }
+        if Instant::now() >= deadline {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// TUN 与系统代理互斥：TUN 接管全局路由后系统代理冗余且有环路风险。
 pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
+    // Serialize the entire transition with core start/restart and the health
+    // monitor. The saved flag must never get ahead of a failed stop.
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     let previous_tun = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.tun_enable
@@ -156,29 +206,49 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if previous_tun == enable {
         return Ok(());
     }
-    let was_running = crate::CoreStatus::Running == state.core().status();
+    if enable {
+        ensure_route_available()?;
+    }
+    let was_running = matches!(
+        state.core().status(),
+        crate::CoreStatus::Running | crate::CoreStatus::Starting
+    );
     let previous_proxy = state.sysproxy.status();
+    // Clear the effective macOS proxy, including settings restored from a
+    // previous client. Keep an exact rollback snapshot until TUN starts.
+    let suspended_proxy = if enable {
+        Some(state.sysproxy.suspend_for_tun()?)
+    } else {
+        None
+    };
+    if was_running && !state.core().stop() {
+        if let Some(suspended) = suspended_proxy {
+            state.sysproxy.restore_after_failed_tun(suspended)?;
+        }
+        return Err("旧内核未退出，TUN 状态未改变；请重试切换".into());
+    }
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().engine.tun_enable = enable;
         if let Err(error) = store.save() {
             store.data_mut().engine.tun_enable = previous_tun;
+            drop(store);
+            if was_running {
+                let _ = crate::start_core_locked(state);
+            }
+            if let Some(suspended) = suspended_proxy {
+                state.sysproxy.restore_after_failed_tun(suspended)?;
+            }
             return Err(error.to_string());
         }
-    }
-    if enable {
-        // 先关系统代理（不发事件，最终状态在重启内核后统一刷新）
-        state.sysproxy.disable();
     }
     // 开启 TUN 时即使核心原本停止，也必须启动核心，否则 UI 会显示 TUN 已开，
     // 但实际没有 utun、DNS 或日志；核心已运行时则重启以应用新配置。
     let should_start = was_running || enable;
     if should_start {
-        let start_result = if was_running {
-            crate::restart_core(state)
-        } else {
-            crate::start_core(state)
-        };
+        let start_result = crate::start_core_locked(state)
+            .and_then(|()| crate::wait_core_running(state))
+            .and_then(|()| if enable { wait_tun_listener(state) } else { Ok(()) });
         if let Err(start_error) = start_result {
             // A failed TUN restart (most commonly a cancelled macOS admin
             // prompt) must not leave the saved toggle enabled while the core
@@ -190,16 +260,18 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
                 store.save().err().map(|e| e.to_string())
             };
             let recovery_error = (was_running || previous_proxy.enabled)
-                .then(|| crate::start_core(state).err())
+                .then(|| crate::start_core_locked(state).err())
                 .flatten();
-            if recovery_error.is_none() && previous_proxy.enabled && !previous_tun {
-                if let Err(error) = state.sysproxy.enable(previous_proxy.port) {
-                    return Err(format!(
-                        "{start_error}; TUN 设置已回滚，但恢复系统代理失败：{error}"
-                    ));
+            let proxy_rollback_error = suspended_proxy.and_then(|suspended| {
+                // Never restore a proxy pointing at a core that failed to
+                // restart; that would leave the entire system offline.
+                if previous_proxy.enabled && recovery_error.is_some() {
+                    None
+                } else {
+                    state.sysproxy.restore_after_failed_tun(suspended).err()
                 }
-            }
-            let details = [rollback_error, recovery_error]
+            });
+            let details = [rollback_error, recovery_error, proxy_rollback_error]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();

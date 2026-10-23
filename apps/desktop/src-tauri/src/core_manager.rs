@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 use std::io::Write;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
@@ -405,14 +405,13 @@ impl CoreManager {
         // sing-box 会 FATAL 退出、mihomo 静默失去代理能力——直接给出可操作的错误。
         // 常见占用者其实是本应用自己的残留内核（TUN root 内核 EPERM 杀不掉）：
         // 先按可执行路径识别并清理（root 走管理员补杀），重试一次，仍失败才报错。
-        let try_bind = || {
-            std::net::TcpListener::bind(if engine_rt.allow_lan {
-                std::net::SocketAddr::from(([0, 0, 0, 0], engine_rt.mixed_port))
-            } else {
-                std::net::SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
-            })
+        let address = if engine_rt.allow_lan {
+            SocketAddr::from(([0, 0, 0, 0], engine_rt.mixed_port))
+        } else {
+            SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
         };
-        if try_bind().is_err() {
+        let try_bind = || check_mixed_port_available(address);
+        if wait_for_mixed_port(&try_bind).is_err() {
             // 候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries 各版本副本
             // （实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会漏匹配）
             let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
@@ -449,11 +448,12 @@ impl CoreManager {
                     ));
                 }
             }
-            // root 内核对非 root 完全不可见（枚举/lsof 全瞎）：管理员兜底清理
-            if try_bind().is_err() && escalate_clear_port(engine_rt.mixed_port) {
+            // Root-owned Crossbow kernels may be invisible to process enumeration.
+            // The privileged fallback only targets this app's own binary paths.
+            if wait_for_mixed_port(&try_bind).is_err() && escalate_clear_port(engine_rt.mixed_port) {
                 note.push_str("已通过管理员权限清理端口上的残留内核；");
             }
-            if let Err(e) = try_bind() {
+            if let Err(e) = wait_for_mixed_port(&try_bind) {
                 let listeners = port_listeners_via_lsof(engine_rt.mixed_port);
                 for (pid, cmd) in &listeners {
                     note.push_str(&format!("占用者 pid={pid}（{cmd}）；"));
@@ -570,6 +570,36 @@ impl CoreManager {
         }
         stopped
     }
+}
+
+/// Probe the same address the core will use. macOS needs SO_REUSEADDR when a
+/// previous listener has just exited but its accepted connections linger.
+fn check_mixed_port_available(address: SocketAddr) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use socket2::{Domain, Protocol, Socket, Type};
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+        socket.set_reuse_address(true)?;
+        socket.bind(&address.into())?;
+        socket.listen(1)?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        TcpListener::bind(address).map(|_| ())
+    }
+}
+
+fn wait_for_mixed_port(probe: &impl Fn() -> std::io::Result<()>) -> std::io::Result<()> {
+    let mut result = probe();
+    for _ in 0..20 {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        result = probe();
+    }
+    result
 }
 
 /// 拉起子进程 + 就绪探测 + 监视线程（重启时复用，不重写配置文件）。
@@ -756,7 +786,7 @@ fn escalate_clear_port(port: u16) -> bool {
     // 脚本刻意不含双引号与反斜杠，免去 AppleScript 字符串转义；
     // 仅当监听者命令行含内核特征时才杀，避免误伤其他程序。
     let shell = format!(
-        "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); for p in $pids; do c=$(ps -p $p -o command=); case $c in *mihomo*|*sing-box*) kill -9 $p;; esac; done"
+        "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); killed=0; for p in $pids; do c=$(ps -p $p -o command=); case $c in *com.crossbow.app/tun-binaries/*|*com.richard.crossbow/tun-binaries/*|*/Crossbow.app/Contents/MacOS/mihomo*|*/Crossbow.app/Contents/MacOS/sing-box*) kill -9 $p && killed=1;; esac; done; test $killed -eq 1"
     );
     let apple = format!("do shell script '{shell}' with administrator privileges");
     let out = std::process::Command::new("osascript").arg("-e").arg(apple).output();
