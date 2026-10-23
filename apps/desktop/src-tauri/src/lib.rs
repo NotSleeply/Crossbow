@@ -199,20 +199,23 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
     let need = if is_singbox { "sing-box" } else { "mihomo" };
     let mut binary = ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;
-    let store = state.store.lock().unwrap();
-    let rt = RuntimeConfig {
-        engine: store.data().engine.engine,
-        mixed_port: store.data().engine.mixed_port,
-        allow_lan: store.data().engine.allow_lan,
-        tun_enable: store.data().engine.tun_enable,
-        ..RuntimeConfig::default()
+    // CoreManager::start synchronously notifies the status callback, which also
+    // reads the store. Release this guard before either TUN or regular startup.
+    let rt = {
+        let store = state.store.lock().unwrap();
+        RuntimeConfig {
+            engine: store.data().engine.engine,
+            mixed_port: store.data().engine.mixed_port,
+            allow_lan: store.data().engine.allow_lan,
+            tun_enable: store.data().engine.tun_enable,
+            ..RuntimeConfig::default()
+        }
     };
     // TUN 模式：内核需 root 权限创建 utun。用 osascript 管理员授权把内核
     // 二进制 setuid root（一次性），再由应用正常拉起（子进程继承 root）。
     if rt.tun_enable {
         #[cfg(target_os = "macos")]
         {
-            drop(store);
             binary = crate::tun::ensure_root_binary(state, &binary)?;
             if binary != state.core().binary_path() {
                 state.core().stop();
