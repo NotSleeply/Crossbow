@@ -20,6 +20,8 @@ fn today_ymd() -> (i32, u32, u32, String) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    // 本地时区：仅 unix（libc 已是依赖）。Windows 无 libc 依赖，
+    // 直接用 UTC 命名（保留期边界偏移数小时，可接受；wintun 移植时再补）。
     #[cfg(unix)]
     unsafe {
         let mut tm: libc::tm = std::mem::zeroed();
@@ -29,15 +31,6 @@ fn today_ymd() -> (i32, u32, u32, String) {
                 "{:02}:{:02}:{:02}",
                 tm.tm_hour, tm.tm_min, tm.tm_sec
             );
-            return (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32, time);
-        }
-    }
-    #[cfg(windows)]
-    unsafe {
-        let mut tm: libc::tm = std::mem::zeroed();
-        let t: libc::time_t = secs as libc::time_t;
-        if libc::localtime_s(&mut tm, &t) == 0 {
-            let time = format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
             return (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32, time);
         }
     }
