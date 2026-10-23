@@ -60,18 +60,40 @@ export default function LogsPage() {
   const [keyword, setKeyword] = useState("");
   const pinned = useRef(true);
   const boxRef = useRef<HTMLDivElement>(null);
+  const subscriptionGeneration = useRef(0);
 
   useEffect(() => {
-    ipc.subscribeLogs().catch(console.error);
-    const un = ipc.onLogs((entries) => {
+    const generation = ++subscriptionGeneration.current;
+    let active = true;
+    // Register the Tauri event handler before the backend can emit its first batch.
+    const unlisten = ipc.onLogs((entries) => {
       setLines((prev) => {
         const next = [...prev, ...entries];
         return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
       });
     });
+
+    // StrictMode runs setup → cleanup → setup in development. Waiting for the
+    // listener avoids losing the first batch; the generation guard prevents a
+    // stale setup from subscribing after the page has already been replaced.
+    const subscribe = unlisten.then(() => {
+      if (!active || subscriptionGeneration.current !== generation) return;
+      return ipc.subscribeLogs().catch(console.error);
+    });
+
     return () => {
-      void un.then((f) => f());
-      ipc.unsubscribeLogs().catch(() => {});
+      active = false;
+      void unlisten.then((unlistenEvent) => unlistenEvent());
+      // Delay unsubscription until any in-flight subscribe has settled. A
+      // StrictMode remount advances the generation synchronously and keeps the
+      // replacement subscription alive.
+      void subscribe.catch(() => {}).finally(() => {
+        queueMicrotask(() => {
+          if (subscriptionGeneration.current === generation) {
+            ipc.unsubscribeLogs().catch(() => {});
+          }
+        });
+      });
     };
   }, []);
 
