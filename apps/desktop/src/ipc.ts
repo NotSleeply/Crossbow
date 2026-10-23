@@ -209,6 +209,11 @@ export const ipc = {
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),
+  logsSettings: () =>
+    invoke<{ save_enabled: boolean; retention_days: number }>("logs_settings"),
+  setLogsSave: (enabled: boolean) => invoke<void>("set_logs_save", { enabled }),
+  setLogsRetention: (days: number) => invoke<void>("set_logs_retention", { days }),
+  openLogsDir: () => invoke<void>("open_logs_dir"),
   coreStop: () => invoke<void>("core_stop"),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),

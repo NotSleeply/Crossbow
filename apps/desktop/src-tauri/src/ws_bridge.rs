@@ -233,6 +233,34 @@ impl WsHub {
             });
         })
     }
+
+    /// 日志落盘专用订阅（#29）：独立常驻通道，不随日志页挂载/卸载——
+    /// 只要内核在跑就持续把 info 级日志交给落盘端（level/type/payload）。
+    /// sink 持有 DailyWriter，内部自缓冲。
+    pub fn subscribe_logs_file(
+        &self,
+        port: u16,
+        secret: &str,
+        mut sink: impl FnMut(&str, &str) + Send + 'static,
+    ) -> Result<(), String> {
+        let url = ws_url(port, secret, "/logs?level=info");
+        self.subscribe("logs-file", move |flag, _last_seen| {
+            std::thread::spawn(move || {
+                read_loop(&url, flag, None, None, |msg| {
+                    if let Message::Text(txt) = msg {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                            let level = v.get("type").and_then(|x| x.as_str()).unwrap_or("info");
+                            let payload =
+                                v.get("payload").and_then(|x| x.as_str()).unwrap_or("");
+                            if !payload.is_empty() {
+                                sink(level, payload);
+                            }
+                        }
+                    }
+                });
+            });
+        })
+    }
 }
 
 fn ws_url(port: u16, secret: &str, path: &str) -> String {

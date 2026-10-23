@@ -18,6 +18,7 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
 mod diagnose;
+mod log_files;
 mod mihomo_api;
 mod scheduler;
 mod sysproxy;
@@ -1209,6 +1210,72 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
     Ok(())
 }
 
+/// 日志保存设置（#29）。
+#[tauri::command]
+fn logs_settings(state: State<AppState>) -> crossbow_core::model::LogSettings {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .data()
+        .logs
+        .clone()
+}
+
+#[tauri::command]
+fn set_logs_save(app: AppHandle, state: State<AppState>, enabled: bool) -> Result<(), String> {
+    {
+        let mut store = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        store.data_mut().logs.save_enabled = enabled;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    update_logs_persistence(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
+    if ![1, 3, 5, 7, 15, 30].contains(&days) {
+        return Err(format!("invalid retention days: {days}"));
+    }
+    {
+        let mut store = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        store.data_mut().logs.retention_days = days;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    // 立即按新保留期清理一次
+    let dir = log_files::logs_dir(&state.data_dir);
+    log_files::sweep(&dir, days);
+    Ok(())
+}
+
+#[tauri::command]
+fn open_logs_dir(state: State<AppState>) -> Result<(), String> {
+    let dir = log_files::logs_dir(&state.data_dir);
+    let _ = std::fs::create_dir_all(&dir);
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
@@ -1402,6 +1469,8 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         let _ = handle.emit("core://status", status.clone());
         // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
+        // 日志落盘：Running 且开关开启时订阅，其余状态退订
+        update_logs_persistence(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
             #[cfg(target_os = "macos")]
@@ -1506,6 +1575,46 @@ fn resubscribe_page_channels(app: &AppHandle) {
         .subscribe_traffic(port, &secret, emit.clone());
     let _ = state.ws.subscribe_connections(port, &secret, emit.clone());
     let _ = state.ws.subscribe_logs(port, &secret, emit);
+}
+
+/// 日志落盘联动（#29）：内核 Running 且开关开启时订阅落盘通道，
+/// 其余状态退订。设置开关变化与状态回调都会调用；subscribe 的替换
+/// 语义保证设置变化即时生效（新 sink 持有新的 DailyWriter）。
+fn update_logs_persistence(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let enabled = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data().logs.save_enabled
+    };
+    if !(enabled && state.core().status() == CoreStatus::Running) {
+        state.ws.unsubscribe("logs-file");
+        return;
+    }
+    let Some((port, secret)) = state.core().controller() else {
+        return;
+    };
+    let mut writer = log_files::DailyWriter::new(log_files::logs_dir(&state.data_dir));
+    let _ = state.ws.subscribe_logs_file(port, &secret, move |level, payload| {
+        writer.write(level, payload);
+    });
+}
+
+/// 保留期清理：启动时与每 6 小时各跑一次（按当前设置的天数）。
+fn spawn_logs_sweeper(app: &AppHandle) {
+    let h = app.clone();
+    std::thread::spawn(move || loop {
+        let Some(state) = h.try_state::<AppState>() else {
+            std::thread::sleep(std::time::Duration::from_secs(600));
+            continue;
+        };
+        let days = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().logs.retention_days;
+        let dir = log_files::logs_dir(&state.data_dir);
+        drop(state);
+        log_files::sweep(&dir, days);
+        std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+    });
 }
 
 /// 托盘速率看门狗（进程级单例）：内核 Running 期间 /traffic 静默超过阈值
@@ -2241,6 +2350,9 @@ pub fn run() {
 
             // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());
+            // 收养不走状态回调：日志落盘订阅同样需要补挂
+            update_logs_persistence(app.handle());
+            spawn_logs_sweeper(app.handle());
             #[cfg(target_os = "macos")]
             refresh_tray_nodes(app.handle(), false);
 
@@ -2298,6 +2410,10 @@ pub fn run() {
             get_ui_settings,
             get_engine_config,
             set_theme,
+            logs_settings,
+            set_logs_save,
+            set_logs_retention,
+            open_logs_dir,
             set_lang,
             set_lightweight_close,
             set_mixed_port,
