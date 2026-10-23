@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 use std::io::Write;
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
@@ -411,7 +411,7 @@ impl CoreManager {
             SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
         };
         let try_bind = || check_mixed_port_available(address);
-        if wait_for_mixed_port(&try_bind).is_err() {
+        if wait_for_mixed_port(&try_bind, Duration::from_secs(5)).is_err() {
             // 候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries 各版本副本
             // （实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会漏匹配）
             let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
@@ -450,10 +450,21 @@ impl CoreManager {
             }
             // Root-owned Crossbow kernels may be invisible to process enumeration.
             // The privileged fallback only targets this app's own binary paths.
-            if wait_for_mixed_port(&try_bind).is_err() && escalate_clear_port(engine_rt.mixed_port) {
+            if wait_for_mixed_port(&try_bind, Duration::from_secs(5)).is_err()
+                && port_has_listener(address)
+                && escalate_clear_port(engine_rt.mixed_port)
+            {
                 note.push_str("已通过管理员权限清理端口上的残留内核；");
             }
-            if let Err(e) = wait_for_mixed_port(&try_bind) {
+            // After a TUN core exits, accepted macOS sockets can keep this
+            // address unavailable briefly even though no process is listening.
+            // Wait for that handover instead of reporting a false conflict.
+            let handover_wait = if port_has_listener(address) {
+                Duration::from_secs(5)
+            } else {
+                Duration::from_secs(30)
+            };
+            if let Err(e) = wait_for_mixed_port(&try_bind, handover_wait) {
                 let listeners = port_listeners_via_lsof(engine_rt.mixed_port);
                 for (pid, cmd) in &listeners {
                     note.push_str(&format!("占用者 pid={pid}（{cmd}）；"));
@@ -590,16 +601,26 @@ fn check_mixed_port_available(address: SocketAddr) -> std::io::Result<()> {
     }
 }
 
-fn wait_for_mixed_port(probe: &impl Fn() -> std::io::Result<()>) -> std::io::Result<()> {
+fn wait_for_mixed_port(
+    probe: &impl Fn() -> std::io::Result<()>,
+    timeout: Duration,
+) -> std::io::Result<()> {
+    let deadline = Instant::now() + timeout;
     let mut result = probe();
-    for _ in 0..20 {
-        if result.is_ok() {
-            break;
-        }
+    while result.is_err() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(100));
         result = probe();
     }
     result
+}
+
+fn port_has_listener(address: SocketAddr) -> bool {
+    let address = if address.ip().is_unspecified() {
+        SocketAddr::from(([127, 0, 0, 1], address.port()))
+    } else {
+        address
+    };
+    TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok()
 }
 
 /// 拉起子进程 + 就绪探测 + 监视线程（重启时复用，不重写配置文件）。
