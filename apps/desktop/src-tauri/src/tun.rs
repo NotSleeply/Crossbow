@@ -136,10 +136,22 @@ pub fn clear_root_binary(state: &AppState) {
 
 /// TUN 与系统代理互斥：TUN 接管全局路由后系统代理冗余且有环路风险。
 pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
+    let previous_tun = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data().engine.tun_enable
+    };
+    if previous_tun == enable {
+        return Ok(());
+    }
+    let was_running = crate::CoreStatus::Running == state.core().status();
+    let previous_proxy = state.sysproxy.status();
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().engine.tun_enable = enable;
-        store.save().map_err(|e| e.to_string())?;
+        if let Err(error) = store.save() {
+            store.data_mut().engine.tun_enable = previous_tun;
+            return Err(error.to_string());
+        }
     }
     if enable {
         // 先关系统代理（不发事件，最终状态在重启内核后统一刷新）
@@ -148,9 +160,50 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
         // 摘掉 setuid 位，恢复普通权限
         clear_root_binary(state);
     }
-    // 内核运行中则热重启应用 TUN 配置
-    if crate::CoreStatus::Running == state.core().status() {
-        crate::restart_core(state)?;
+    // 开启 TUN 时即使核心原本停止，也必须启动核心，否则 UI 会显示 TUN 已开，
+    // 但实际没有 utun、DNS 或日志；核心已运行时则重启以应用新配置。
+    let should_start = was_running || enable;
+    if should_start {
+        let start_result = if was_running {
+            crate::restart_core(state)
+        } else {
+            crate::start_core(state)
+        };
+        if let Err(start_error) = start_result {
+            // A failed TUN restart (most commonly a cancelled macOS admin
+            // prompt) must not leave the saved toggle enabled while the core
+            // is stopped. Restore the previous setting and bring the previous
+            // non-TUN core/proxy state back whenever possible.
+            let rollback_error = {
+                let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+                store.data_mut().engine.tun_enable = previous_tun;
+                store.save().err().map(|e| e.to_string())
+            };
+            if !previous_tun {
+                clear_root_binary(state);
+            }
+            let recovery_error = (was_running || previous_proxy.enabled)
+                .then(|| crate::start_core(state).err())
+                .flatten();
+            if recovery_error.is_none() && previous_proxy.enabled && !previous_tun {
+                if let Err(error) = state.sysproxy.enable(previous_proxy.port) {
+                    return Err(format!(
+                        "{start_error}; TUN 设置已回滚，但恢复系统代理失败：{error}"
+                    ));
+                }
+            }
+            let details = [rollback_error, recovery_error]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            if details.is_empty() {
+                return Err(format!("TUN 切换失败，已恢复之前的运行状态：{start_error}"));
+            }
+            return Err(format!(
+                "TUN 切换失败：{start_error}；恢复旧状态时遇到问题：{}",
+                details.join("；")
+            ));
+        }
     }
     Ok(())
 }

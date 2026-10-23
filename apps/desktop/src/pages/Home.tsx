@@ -30,6 +30,7 @@ export default function HomePage() {
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const [updateVer, setUpdateVer] = useState<string | null>(null);
   const mounted = useRef(true);
+  const subscriptionGeneration = useRef(0);
 
   useEffect(() => {
     ipc.updateStateGet().then((s) => setUpdateVer(s?.version ?? null)).catch(() => {});
@@ -50,26 +51,47 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    const generation = ++subscriptionGeneration.current;
+    let active = true;
     mounted.current = true;
     refresh();
     const un1 = ipc.onCoreStatus(setCore);
     const un2 = ipc.onSysproxyStatus(setProxy);
     const un3 = ipc.onCoreMode(setMode);
-    ipc.subscribeTraffic().catch(() => {});
     const un4 = ipc.onTraffic(({ up, down }) => {
-      if (!mounted.current) return;
+      if (!active || !mounted.current) return;
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
       setTotals((t0) => ({ up: t0.up + up, down: t0.down + down }));
     });
-    ipc.subscribeConnections().catch(() => {});
     const un5 = ipc.onConnections((s) => {
-      if (mounted.current) setConnCount(s.rows.length);
+      if (active && mounted.current) setConnCount(s.rows.length);
     });
+
+    // Install event listeners before starting the streams so that the first
+    // websocket frames after a TUN/core restart cannot race past the webview.
+    const subscribe = Promise.all([un1, un2, un3, un4, un5]).then(() => {
+      if (!active || subscriptionGeneration.current !== generation) return;
+      return Promise.allSettled([
+        ipc.subscribeTraffic(),
+        ipc.subscribeConnections(),
+      ]);
+    });
+
     return () => {
+      active = false;
       mounted.current = false;
       for (const un of [un1, un2, un3, un4, un5]) void un.then((f) => f());
-      ipc.unsubscribeTraffic().catch(() => {});
-      ipc.unsubscribeConnections().catch(() => {});
+      // React StrictMode immediately mounts this page again in development.
+      // Wait for in-flight subscribe commands, then let the new generation
+      // decide whether the backend streams should remain active.
+      void subscribe.catch(() => {}).finally(() => {
+        queueMicrotask(() => {
+          if (subscriptionGeneration.current === generation) {
+            ipc.unsubscribeTraffic().catch(() => {});
+            ipc.unsubscribeConnections().catch(() => {});
+          }
+        });
+      });
     };
   }, [refresh]);
 

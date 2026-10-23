@@ -24,6 +24,7 @@ use objc2_foundation::{
     NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotification, NSNotificationCenter,
     NSNumber, NSObject, NSObjectProtocol, NSString,
 };
+use std::sync::{Mutex, OnceLock};
 
 const FONT_SIZE: f64 = 9.5;
 const LINE_HEIGHT: f64 = 10.0;
@@ -34,9 +35,16 @@ const MIN_LENGTH: f64 = 56.0;
 const NS_VARIABLE_LENGTH: f64 = -1.0;
 
 thread_local! {
-    /// 内容不变时跳过重设（每秒一次的 tick 大多数帧是无变化的）。
-    static LAST: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     static MENU_OBSERVER: std::cell::RefCell<Option<Retained<TrayMenuObserver>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Tray ticks arrive on a websocket reader thread while clear() can run on a
+/// core lifecycle thread. Keep this cache process-wide so those paths cannot
+/// disagree about the last title and leave a stale rate rendered in the menu bar.
+static LAST_SPEED: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn last_speed() -> &'static Mutex<String> {
+    LAST_SPEED.get_or_init(|| Mutex::new(String::new()))
 }
 
 // 速率文本：上行在上、下行在下；每行 `{:>6}` 填充——等宽字体下
@@ -149,21 +157,24 @@ fn apply(status_item: &NSStatusItem, text: &str, show_speed: bool) {
 // 更新托盘速率双行显示。
 pub fn set_speed(handle: &AppHandle, up: u64, down: u64) {
     let text = speed_text(up, down);
-    LAST.with(|last| {
-        if last.borrow().as_str() == text {
+    {
+        let last = last_speed().lock().unwrap_or_else(|e| e.into_inner());
+        if last.as_str() == text {
             return;
         }
-        *last.borrow_mut() = text.clone();
-        let text_for_apply = text.clone();
-        let _ = handle.tray_by_id_or_first(move |item| {
-            apply(item, &text_for_apply, true);
-        });
-    });
+    }
+    let text_for_apply = text.clone();
+    if handle
+        .tray_by_id_or_first(move |item| apply(item, &text_for_apply, true))
+        .is_ok()
+    {
+        *last_speed().lock().unwrap_or_else(|e| e.into_inner()) = text;
+    }
 }
 
 // 清空速率显示（内核停止等场景），status item 宽度恢复自适应。
 pub fn clear(handle: &AppHandle) {
-    LAST.with(|last| *last.borrow_mut() = String::new());
+    *last_speed().lock().unwrap_or_else(|e| e.into_inner()) = String::new();
     let _ = handle.tray_by_id_or_first(|item| {
         item.setLength(NS_VARIABLE_LENGTH);
         apply(item, "", false);
