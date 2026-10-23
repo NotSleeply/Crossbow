@@ -154,6 +154,37 @@ pub struct StoreSchema {
     /// v2：界面设置（主题/语言）。
     #[serde(default)]
     pub ui: UiSettings,
+    /// v3：日志本地保存设置。
+    #[serde(default)]
+    pub logs: LogSettings,
+}
+
+/// 日志本地保存设置（#29）：按天落盘 + 保留天数自动清理。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogSettings {
+    /// 本地保存开关（默认开；关闭只停止写入，不删除已存文件）
+    #[serde(default = "default_true")]
+    pub save_enabled: bool,
+    /// 保留天数：1/3/5/7/15/30（默认 7），超出自动删除
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_retention_days() -> u32 {
+    7
+}
+
+impl Default for LogSettings {
+    fn default() -> Self {
+        Self {
+            save_enabled: default_true(),
+            retention_days: default_retention_days(),
+        }
+    }
 }
 
 /// 界面设置（v2 加入）。
@@ -197,6 +228,7 @@ impl Default for StoreSchema {
             engine: EngineConfig::default(),
             active_profile: None,
             ui: UiSettings::default(),
+            logs: LogSettings::default(),
         }
     }
 }

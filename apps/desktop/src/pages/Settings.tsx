@@ -22,6 +22,8 @@ export default function SettingsPage() {
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
   const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(null);
+  const [logsSave, setLogsSave] = useState(true);
+  const [logsRetention, setLogsRetention] = useState(7);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
@@ -39,6 +41,11 @@ export default function SettingsPage() {
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
     setTun(await ipc.tunStatus().catch(() => null));
+    const lg = await ipc.logsSettings().catch(() => null);
+    if (lg) {
+      setLogsSave(lg.save_enabled);
+      setLogsRetention(lg.retention_days);
+    }
     // engineBin 始终跟随目标引擎（失败/成功状态归一）；
     // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
     const target = engineTouched.current
@@ -270,6 +277,37 @@ export default function SettingsPage() {
               setLangState(l);
             }}
           />
+        </Row>
+      </Group>
+
+      <Group title={t("settings.logsSection")}>
+        <Row label={t("settings.logsSave")} hint={t("settings.logsSaveHint")}>
+          <Switch
+            checked={logsSave}
+            onChange={async (v) => {
+              await ipc.setLogsSave(v).catch((e) => flash(false, String(e)));
+              setLogsSave(v);
+            }}
+          />
+        </Row>
+        <Row label={t("settings.logsRetention")} hint={t("settings.logsRetentionHint")}>
+          <Select
+            value={String(logsRetention)}
+            options={[1, 3, 5, 7, 15, 30].map((d) => ({
+              value: String(d),
+              label: `${d} ${t("settings.logsDays")}`,
+            }))}
+            onChange={async (v) => {
+              const d = Number(v);
+              await ipc.setLogsRetention(d).catch((e) => flash(false, String(e)));
+              setLogsRetention(d);
+            }}
+          />
+        </Row>
+        <Row label={t("settings.logsOpen")} hint={t("settings.logsOpenHint")}>
+          <button className="cb-btn" onClick={() => ipc.openLogsDir().catch(() => {})}>
+            {t("settings.logsOpenBtn")}
+          </button>
         </Row>
       </Group>
 
