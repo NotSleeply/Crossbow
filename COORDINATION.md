@@ -12,6 +12,7 @@
 ## 当前认领
 
 - **codex**: #33 sysproxy 状态同步 + #41 PR（sysproxy 启动死锁修复，待合并）；
+  #45 TUN 断网离线恢复脚本（`codex/fix-tun-sysproxy-conflict`，`scripts/recover-tun-network.sh`、`docs/`）；
   另有 `chore/release-signing` 分支（发版签名脚本，未并入 main）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
