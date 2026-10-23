@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ipc, type CoreBinaryInfo, type EngineConfigView, type UiSettings } from "../ipc";
+import {
+  ipc,
+  type CoreBinaryInfo,
+  type EngineConfigView,
+  type UiSettings,
+  type UpdateState,
+} from "../ipc";
 import Select from "../components/Select";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
@@ -24,6 +30,9 @@ export default function SettingsPage() {
   const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(null);
   const [logsSave, setLogsSave] = useState(true);
   const [logsRetention, setLogsRetention] = useState(7);
+  const [autoCheck, setAutoCheck] = useState(true);
+  const [autoDownload, setAutoDownload] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
@@ -46,6 +55,12 @@ export default function SettingsPage() {
       setLogsSave(lg.save_enabled);
       setLogsRetention(lg.retention_days);
     }
+    const u = await ipc.updateSettingsGet().catch(() => null);
+    if (u) {
+      setAutoCheck(u.auto_check);
+      setAutoDownload(u.auto_download);
+    }
+    ipc.updateStateGet().then(setUpdateState).catch(() => {});
     // engineBin 始终跟随目标引擎（失败/成功状态归一）；
     // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
     const target = engineTouched.current
@@ -338,20 +353,78 @@ export default function SettingsPage() {
           />
         </Row>
         <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")} />
-        <Row label={t("settings.checkUpdate")}>
-          <button
-            onClick={async () => {
-              try {
-                const v = await ipc.checkUpdate();
-                flash(true, v ? t("settings.newVersion", { v }) : t("settings.upToDate"));
-              } catch {
-                flash(false, t("settings.updateFailed"));
-              }
+        <Row label={t("settings.autoCheck")} hint={t("settings.autoCheckHint")}>
+          <Switch
+            checked={autoCheck}
+            onChange={async (v) => {
+              await ipc.setUpdateAutoCheck(v).catch((e) => flash(false, String(e)));
+              setAutoCheck(v);
             }}
-            className="cb-btn py-1.5"
-          >
-            Go
-          </button>
+          />
+        </Row>
+        <Row label={t("settings.autoDownload")} hint={t("settings.autoDownloadHint")}>
+          <Switch
+            checked={autoDownload}
+            onChange={async (v) => {
+              await ipc.setUpdateAutoDownload(v).catch((e) => flash(false, String(e)));
+              setAutoDownload(v);
+            }}
+          />
+        </Row>
+        <Row
+          label={t("settings.updateNow")}
+          hint={
+            updateState
+              ? updateState.downloaded
+                ? t("settings.updateReady")
+                : updateState.progress
+                  ? `${t("settings.updateProgress")} ${Math.round(
+                      (updateState.progress[0] / Math.max(updateState.progress[1], 1)) * 100
+                    )}%`
+                  : t("settings.newVersion", { v: updateState.version })
+              : undefined
+          }
+        >
+          <div className="flex items-center gap-2">
+            {updateState === null && (
+              <button
+                className="cb-btn py-1.5"
+                onClick={async () => {
+                  flash(true, t("settings.updateProgress"));
+                  try {
+                    const v = await ipc.updateCheckNow();
+                    flash(
+                      true,
+                      v
+                        ? t("settings.newVersion", { v })
+                        : t("settings.upToDate"),
+                    );
+                  } catch {
+                    flash(false, t("settings.updateFailed"));
+                  }
+                }}
+              >
+                {t("settings.checkUpdateBtn")}
+              </button>
+            )}
+            {updateState && !updateState.downloaded && (
+              <button
+                className="cb-btn py-1.5"
+                onClick={() => ipc.updateStartDownload().catch((e) => flash(false, String(e)))}
+              >
+                {t("settings.updateDownload")}
+              </button>
+            )}
+            {updateState?.downloaded && (
+              <button
+                className="cb-btn py-1.5"
+                style={{ color: "var(--cb-accent)" }}
+                onClick={() => ipc.updateInstall().catch((e) => flash(false, String(e)))}
+              >
+                {t("settings.updateRestart")}
+              </button>
+            )}
+          </div>
         </Row>
       </Group>
     </div>

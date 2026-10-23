@@ -91,6 +91,16 @@ export default function App() {
     };
   }, []);
 
+  // 托盘「发现新版本」等入口跳转设置页
+  useEffect(() => {
+    const un = ipc.onGoto((p) => {
+      if ((p as PageId) === "settings") setPage("settings");
+    });
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
   useEffect(() => {
     initLang();
     ipc.getUiSettings().then((u) => applyTheme(u.theme)).catch(() => {});

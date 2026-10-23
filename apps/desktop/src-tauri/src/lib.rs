@@ -20,6 +20,7 @@ mod core_manager;
 mod diagnose;
 mod log_files;
 mod mihomo_api;
+mod update_check;
 mod scheduler;
 mod sysproxy;
 #[cfg(target_os = "macos")]
@@ -58,6 +59,8 @@ pub struct AppState {
     node_menu: Mutex<tray_state::TrayState>,
     /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
     app: AppHandle,
+    /// 更新设置（#28：自动检查/自动下载）。
+    update: Mutex<crossbow_core::model::UpdateSettings>,
 }
 
 /// macOS Tahoe 会按 NSWindow 外观绘制浅色外沿。同步窗口外观到应用主题，
@@ -1256,6 +1259,67 @@ fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_state_get(app: AppHandle) -> Option<update_check::UpdateInfo> {
+    update_check::current(&app)
+}
+
+#[tauri::command]
+async fn update_check_now(app: AppHandle) -> Result<Option<String>, String> {
+    let (_, auto_download) = update_check::update_settings(&app);
+    update_check::check_once(&app, auto_download)
+}
+
+#[tauri::command]
+fn update_start_download(app: AppHandle) -> Result<(), String> {
+    std::thread::spawn(move || {
+        if let Err(e) = update_check::download_and_prepare(&app) {
+            eprintln!("update download: {e}");
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn update_install(app: AppHandle) -> Result<(), String> {
+    update_check::install(&app)
+}
+
+#[tauri::command]
+fn update_settings_get(state: State<AppState>) -> crossbow_core::model::UpdateSettings {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .data()
+        .update
+        .clone()
+}
+
+#[tauri::command]
+fn set_update_auto_check(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    {
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data_mut().update.auto_check = enabled;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    let mut u = state.update.lock().unwrap_or_else(|e| e.into_inner());
+    u.auto_check = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_update_auto_download(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    {
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data_mut().update.auto_download = enabled;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    let mut u = state.update.lock().unwrap_or_else(|e| e.into_inner());
+    u.auto_download = enabled;
+    Ok(())
+}
+
+#[tauri::command]
 fn open_logs_dir(state: State<AppState>) -> Result<(), String> {
     let dir = log_files::logs_dir(&state.data_dir);
     let _ = std::fs::create_dir_all(&dir);
@@ -1946,6 +2010,12 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         true,
         None::<&str>,
     )?;
+    // 无新版本时为 None——菜单里不渲染占位空行
+    #[cfg(target_os = "macos")]
+    let update_item: Option<tauri::menu::MenuItem<Wry>> =
+        update_check::tray_label(app).and_then(|label| {
+            MenuItem::with_id(app, "tray-update", &label, true, None::<&str>).ok()
+        });
     let quit = MenuItem::with_id(
         app,
         "quit",
@@ -1973,13 +2043,11 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     {
         let (group_menu_label, rows, testing) = node_menu_data.unwrap();
         if rows.is_empty() {
-            return MenuBuilder::new(app)
-                .item(&proxy)
-                .separator()
-                .item(&open)
-                .separator()
-                .item(&quit)
-                .build();
+            let mut b = MenuBuilder::new(app).item(&proxy).separator();
+            if let Some(item) = &update_item {
+                b = b.item(item);
+            }
+            return b.item(&open).separator().item(&quit).build();
         }
         let group_menu_label = tray_speed::format_flag_spacing(&group_menu_label);
         let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
@@ -2004,14 +2072,17 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         }
         let node_menu = node_builder.build()?;
 
-        MenuBuilder::new(app)
+        let mut b = MenuBuilder::new(app)
             .item(&proxy)
             .separator()
             .item(&mode_menu)
             .item(&node_menu)
             .item(&profile_menu)
-            .separator()
-            .item(&open)
+            .separator();
+        if let Some(item) = &update_item {
+            b = b.item(item);
+        }
+        b.item(&open)
             .separator()
             .item(&quit)
             .build()
@@ -2174,6 +2245,11 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             lightweight_quit(app);
             Ok(())
         }
+        "tray-update" => {
+            show_main_window(app);
+            let _ = app.emit("ui://goto", serde_json::json!({ "page": "settings" }));
+            Ok(())
+        }
         "tray-delay-test" => {
             #[cfg(target_os = "macos")]
             run_tray_delay_test(app);
@@ -2263,6 +2339,7 @@ pub fn run() {
 
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
+            let update_settings_init = store.data().update.clone();
 
             // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
             #[cfg(target_os = "macos")]
@@ -2316,6 +2393,7 @@ pub fn run() {
                 ws: WsHub::default(),
                 data_dir: data_dir.clone(),
                 app: app.handle().clone(),
+                update: Mutex::new(update_settings_init),
                 node_menu: Mutex::new(tray_state::TrayState::default()),
             });
 
@@ -2353,6 +2431,8 @@ pub fn run() {
             // 收养不走状态回调：日志落盘订阅同样需要补挂
             update_logs_persistence(app.handle());
             spawn_logs_sweeper(app.handle());
+            // 更新检查线程（启动 30s 后首查，之后每 6h）
+            update_check::spawn_checker(app.handle());
             #[cfg(target_os = "macos")]
             refresh_tray_nodes(app.handle(), false);
 
@@ -2414,6 +2494,13 @@ pub fn run() {
             set_logs_save,
             set_logs_retention,
             open_logs_dir,
+            update_state_get,
+            update_check_now,
+            update_start_download,
+            update_install,
+            set_update_auto_check,
+            update_settings_get,
+            set_update_auto_download,
             set_lang,
             set_lightweight_close,
             set_mixed_port,

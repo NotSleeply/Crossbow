@@ -413,7 +413,16 @@ impl CoreManager {
             })
         };
         if try_bind().is_err() {
+            // 候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries 各版本副本
+            // （实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会漏匹配）
             let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    for name in ["mihomo", "sing-box"] {
+                        candidates.push(dir.join(crate::core_download::core_bin_file(name)));
+                    }
+                }
+            }
             if let Some(data_dir) = self.shared.work_dir.parent() {
                 let tb = data_dir.join("tun-binaries");
                 if let Ok(versions) = std::fs::read_dir(&tb) {
@@ -423,20 +432,34 @@ impl CoreManager {
                         }
                     }
                 }
+                for name in ["mihomo", "sing-box"] {
+                    candidates.push(data_dir.join(crate::core_download::core_bin_file(name)));
+                }
             }
+            candidates.sort();
+            candidates.dedup();
             let mut note = String::new();
             for (pid, path) in find_leftover_core_pids(&candidates) {
                 if kill_external(pid, Some(&path)) {
-                    note.push_str(&format!("已清理本应用残留内核 pid={pid}；"));
+                    note.push_str(&format!("已清理本应用残留内核 pid={pid}（{}）；", path.display()));
                 } else {
                     note.push_str(&format!(
-                        "残留内核 pid={pid} 清理失败（可能取消了管理员授权）；"
+                        "残留内核 pid={pid}（{}）清理失败（可能取消了管理员授权）；",
+                        path.display()
                     ));
                 }
             }
-            if try_bind().is_err() {
+            // root 内核对非 root 完全不可见（枚举/lsof 全瞎）：管理员兜底清理
+            if try_bind().is_err() && escalate_clear_port(engine_rt.mixed_port) {
+                note.push_str("已通过管理员权限清理端口上的残留内核；");
+            }
+            if let Err(e) = try_bind() {
+                let listeners = port_listeners_via_lsof(engine_rt.mixed_port);
+                for (pid, cmd) in &listeners {
+                    note.push_str(&format!("占用者 pid={pid}（{cmd}）；"));
+                }
                 return Err(format!(
-                    "混合端口 {} 已被其他程序占用（Address already in use）。{note}若仍失败：多半是 Clash Verge 等其他代理工具——请更换本应用的混合端口或退出对方程序",
+                    "混合端口 {} 无法绑定（{e}）。{note}若仍失败：请更换本应用的混合端口，或退出占用该端口的程序",
                     engine_rt.mixed_port
                 ));
             }
@@ -722,6 +745,72 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
 
 #[cfg(not(target_os = "macos"))]
 fn find_leftover_core_pids(_candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
+    Vec::new()
+}
+
+/// 端口被占且普通权限查不到占用者（root 内核对非 root 完全不可见：
+/// lsof/proc_pidpath 全瞎）时，用管理员权限在 root 上下文里定位端口
+/// 监听者，且仅当其命令行含内核特征时才杀。返回是否清理成功。
+#[cfg(target_os = "macos")]
+fn escalate_clear_port(port: u16) -> bool {
+    // 脚本刻意不含双引号与反斜杠，免去 AppleScript 字符串转义；
+    // 仅当监听者命令行含内核特征时才杀，避免误伤其他程序。
+    let shell = format!(
+        "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); for p in $pids; do c=$(ps -p $p -o command=); case $c in *mihomo*|*sing-box*) kill -9 $p;; esac; done"
+    );
+    let apple = format!("do shell script '{shell}' with administrator privileges");
+    let out = std::process::Command::new("osascript").arg("-e").arg(apple).output();
+    match out {
+        Ok(o) if o.status.success() => true,
+        Ok(o) => {
+            eprintln!(
+                "admin clear port {port}: denied or failed: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            false
+        }
+        Err(e) => {
+            eprintln!("admin clear port {port}: {e}");
+            false
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn escalate_clear_port(_port: u16) -> bool {
+    false
+}
+
+/// lsof 列出端口监听者的 (pid, 命令行)——仅当前用户可见的范围；
+/// root 进程对普通权限不可见（由 escalate_clear_port 兜底）。
+#[cfg(unix)]
+fn port_listeners_via_lsof(port: u16) -> Vec<(u32, String)> {
+    let Ok(out) = std::process::Command::new("lsof")
+        .args(["-n", "-P", "-i", &format!("TCP:{port}"), "-sTCP:LISTEN"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut out = Vec::new();
+    for line in text.lines().skip(1) {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.len() > 1 {
+            if let Ok(pid) = cols[1].parse::<u32>() {
+                let cmd = std::process::Command::new("ps")
+                    .args(["-p", &pid.to_string(), "-o", "command="])
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                out.push((pid, cmd));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(unix))]
+fn port_listeners_via_lsof(_port: u16) -> Vec<(u32, String)> {
     Vec::new()
 }
 
