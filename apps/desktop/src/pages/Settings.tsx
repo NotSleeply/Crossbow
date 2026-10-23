@@ -220,9 +220,12 @@ export default function SettingsPage() {
           />
         </Row>
         {tun?.enabled && (
-          <Row label="">
-            <span className="text-xs" style={{ color: "var(--cb-ok)" }}>
-              {tun.ready ? t("settings.tunReady") : "…"}
+          <Row label={t("settings.tunState")} hint={t("settings.tunStateHint")}>
+            <span
+              className="text-xs"
+              style={{ color: tun.ready ? "var(--cb-ok)" : "var(--cb-warn)" }}
+            >
+              {tun.ready ? t("settings.tunReady") : t("settings.tunNeedAuth")}
             </span>
           </Row>
         )}
