@@ -795,10 +795,12 @@ async fn set_engine(
 fn set_tun(app: AppHandle, state: State<AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        crate::tun::toggle_tun(&state, enable)?;
-        let _ = app.emit("tun://status", enable);
+        let result = crate::tun::toggle_tun(&state, enable);
+        let actual = state.store.lock().unwrap().data().engine.tun_enable;
+        let _ = app.emit("tun://status", actual);
+        let _ = app.emit("sysproxy://status", state.sysproxy.status());
         refresh_tray(&app);
-        Ok(())
+        result
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1771,8 +1773,26 @@ fn spawn_logs_sweeper(app: &AppHandle) {
     });
 }
 
-/// TUN 健康检查：每 5 秒通过当前默认出口请求一次基准 URL；连续 3 次失败时
-/// 关闭 TUN 并通知界面，避免流量持续被送入失效的隧道。
+/// Probe actual traffic through the default route. A node-delay benchmark can
+/// fail even while normal websites work, so it must not disable a healthy TUN.
+#[cfg(target_os = "macos")]
+fn probe_tun_network() -> Result<(), String> {
+    let agent = ureq::AgentBuilder::new()
+        .try_proxy_from_env(false)
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let mut last_error = String::new();
+    for url in ["https://www.gstatic.com/generate_204", "https://github.com"] {
+        match agent.head(url).call() {
+            Ok(_) | Err(ureq::Error::Status(_, _)) => return Ok(()),
+            Err(error) => last_error = error.to_string(),
+        }
+    }
+    Err(last_error)
+}
+
+/// TUN 健康检查：每 5 秒检查真实网络连通性；连续 3 次失败时关闭 TUN
+/// 并通知界面，避免流量持续被送入失效的隧道。
 #[cfg(target_os = "macos")]
 fn spawn_tun_health_monitor(app: &AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1795,20 +1815,15 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                     failures = 0;
                     reported_disable_failure = false;
                 } else {
-                    let probe = (|| {
-                        let fallback = state
-                            .core()
-                            .current_config()
-                            .and_then(|config| extract_final_outbound(&config));
-                        let controller = controller_client(&state)?;
-                        let outbound = controller.current_outbound(fallback.as_deref())?;
-                        // A configured reject route is intentional policy, not evidence that the
-                        // tunnel itself is unhealthy.
-                        if outbound.node.eq_ignore_ascii_case("REJECT") {
-                            return Ok(0);
+                    // A second proxy client may re-enable a stale macOS proxy
+                    // after Crossbow has established its route. Browsers would
+                    // then bypass TUN and connect to a dead local port.
+                    if !state.sysproxy.external_endpoints().is_empty() {
+                        if let Err(error) = state.sysproxy.suspend_for_tun() {
+                            eprintln!("tun system proxy cleanup failed: {error}");
                         }
-                        controller.test_node_delay(&outbound.node)
-                    })();
+                    }
+                    let probe = probe_tun_network();
 
                     match probe {
                         Ok(_) => {
@@ -2584,6 +2599,11 @@ pub fn run() {
                 store.data_mut().engine.tun_enable = false;
                 store.save()?;
                 eprintln!("cleared stale TUN flag: no running core was adopted");
+            }
+            if !adopted {
+                if let Err(error) = sysproxy.recover_tun_without_core() {
+                    eprintln!("could not restore system proxy after stale TUN: {error}");
+                }
             }
 
             app.manage(AppState {

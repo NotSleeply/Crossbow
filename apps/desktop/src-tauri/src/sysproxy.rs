@@ -80,9 +80,9 @@ impl SysProxyBackend for NetworkSetup {
 
     fn disable_service(&self, service: &str) -> Result<(), String> {
         for setter in [
-            "-setwebproxy",
-            "-setsecurewebproxy",
-            "-setsocksfirewallproxy",
+            "-setwebproxystate",
+            "-setsecurewebproxystate",
+            "-setsocksfirewallproxystate",
         ] {
             Self::run(&[setter, service, "off"])?;
         }
@@ -108,18 +108,18 @@ impl SysProxyBackend for NetworkSetup {
     }
 
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
-        let apply = |setter: &str, ep: Option<&ProxyEndpoint>| -> Result<(), String> {
+        let apply = |setter: &str, state_setter: &str, ep: Option<&ProxyEndpoint>| -> Result<(), String> {
             match ep {
                 Some(ep) => {
                     Self::run(&[setter, service, &ep.host, &ep.port.to_string()])?;
                     Ok(())
                 }
-                None => Self::run(&[setter, service, "off"]).map(|_| ()),
+                None => Self::run(&[state_setter, service, "off"]).map(|_| ()),
             }
         };
-        apply("-setwebproxy", snap.web.as_ref())?;
-        apply("-setsecurewebproxy", snap.secure.as_ref())?;
-        apply("-setsocksfirewallproxy", snap.socks.as_ref())?;
+        apply("-setwebproxy", "-setwebproxystate", snap.web.as_ref())?;
+        apply("-setsecurewebproxy", "-setsecurewebproxystate", snap.secure.as_ref())?;
+        apply("-setsocksfirewallproxy", "-setsocksfirewallproxystate", snap.socks.as_ref())?;
         Ok(())
     }
 }
@@ -329,8 +329,9 @@ pub struct SysProxyManager<B: SysProxyBackend = PlatformBackend> {
     journal_path: PathBuf,
 }
 
-/// The exact system proxy state before TUN took ownership of routing. Kept
-/// only until TUN startup succeeds so a failed startup can roll back cleanly.
+/// The exact system proxy state before TUN took ownership of routing. Persisted
+/// until TUN is disabled so a restart or failed startup can restore it.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct SuspendedSysProxy {
     snapshot: BTreeMap<String, ServiceSnapshot>,
     journal: Option<Vec<u8>>,
@@ -338,6 +339,10 @@ pub(crate) struct SuspendedSysProxy {
 }
 
 impl<B: SysProxyBackend> SysProxyManager<B> {
+    fn tun_journal_path(&self) -> PathBuf {
+        self.journal_path.with_file_name("tun-proxy-journal.json")
+    }
+
     pub fn new(backend: B, journal_path: PathBuf) -> Self {
         Self {
             backend,
@@ -398,6 +403,20 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// local proxy with no listener and keep browsers offline even while TUN
     /// itself is healthy.
     pub fn suspend_for_tun(&self) -> Result<SuspendedSysProxy, String> {
+        let tun_journal = self.tun_journal_path();
+        if let Ok(saved) = std::fs::read(&tun_journal) {
+            let suspended = serde_json::from_slice(&saved)
+                .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+            // Another proxy client may re-enable its system proxy while TUN is
+            // running. Keep the original snapshot, but clear the live settings.
+            for service in self.backend.list_services()? {
+                let live = self.backend.service_snapshot(&service)?;
+                if live.web.is_some() || live.secure.is_some() || live.socks.is_some() {
+                    self.backend.disable_service(&service)?;
+                }
+            }
+            return Ok(suspended);
+        }
         let services = self.backend.list_services()?;
         if services.is_empty() {
             return Err("no network services found".into());
@@ -411,11 +430,16 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             journal: std::fs::read(&self.journal_path).ok(),
             enabled_port: *self.state.lock().unwrap(),
         };
+        let journal = serde_json::to_vec(&suspended)
+            .map_err(|error| format!("serialize TUN proxy journal: {error}"))?;
+        std::fs::write(&tun_journal, journal)
+            .map_err(|error| format!("save TUN proxy journal: {error}"))?;
         for service in &services {
             if let Err(error) = self.backend.disable_service(service) {
                 for (name, original) in &suspended.snapshot {
                     let _ = self.backend.restore_service(name, original);
                 }
+                let _ = std::fs::remove_file(&tun_journal);
                 return Err(format!("disable system proxy for TUN on {service}: {error}"));
             }
         }
@@ -424,7 +448,8 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         Ok(suspended)
     }
 
-    /// Restore the exact pre-TUN settings only when TUN startup fails.
+    /// Restore the exact pre-TUN settings after either a failed start or a
+    /// successful exit from TUN. Keep the journal if restoration fails.
     pub fn restore_after_failed_tun(&self, suspended: SuspendedSysProxy) -> Result<(), String> {
         for (service, original) in &suspended.snapshot {
             self.backend.restore_service(service, original)?;
@@ -437,7 +462,42 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             }
         }
         *self.state.lock().unwrap() = suspended.enabled_port;
+        std::fs::remove_file(self.tun_journal_path())
+            .map_err(|error| format!("remove TUN proxy journal: {error}"))?;
         Ok(())
+    }
+
+    pub fn restore_after_tun(&self) -> Result<(), String> {
+        let path = self.tun_journal_path();
+        let Ok(saved) = std::fs::read(path) else {
+            return Ok(());
+        };
+        let suspended = serde_json::from_slice(&saved)
+            .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+        self.restore_after_failed_tun(suspended)
+    }
+
+    /// A cold launch has no Crossbow listener yet. If Crossbow owned the
+    /// pre-TUN proxy, restore the settings that preceded Crossbow instead of
+    /// pointing the system at its now-dead mixed port.
+    pub fn recover_tun_without_core(&self) -> Result<(), String> {
+        let path = self.tun_journal_path();
+        let Ok(saved) = std::fs::read(path) else {
+            return Ok(());
+        };
+        let mut suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
+            .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+        if suspended.enabled_port.is_some() {
+            suspended.snapshot = suspended
+                .journal
+                .as_deref()
+                .and_then(|raw| serde_json::from_slice::<Journal>(raw).ok())
+                .map(|journal| journal.snapshot)
+                .unwrap_or_default();
+            suspended.journal = None;
+            suspended.enabled_port = None;
+        }
+        self.restore_after_failed_tun(suspended)
     }
 
     /// 各服务当前生效的 HTTP/HTTPS 代理端点（含第三方设置的）。

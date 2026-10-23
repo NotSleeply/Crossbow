@@ -28,6 +28,7 @@ export default function SettingsPage() {
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
   const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(null);
+  const [tunBusy, setTunBusy] = useState(false);
   const [logsSave, setLogsSave] = useState(true);
   const [logsRetention, setLogsRetention] = useState(7);
   const [autoCheck, setAutoCheck] = useState(true);
@@ -236,19 +237,27 @@ export default function SettingsPage() {
           />
         </Row>
         <Row label={t("settings.tun")} hint={t("settings.tunHint")}>
-          <Switch
-            checked={tun?.enabled ?? false}
-            onChange={async (v) => {
-              try {
-                await ipc.setTun(v);
-                flash(true, v ? t("settings.tunOn") : t("settings.tunOff"));
-                setTun(await ipc.tunStatus());
-              } catch (e) {
-                flash(false, `${t("settings.tunFailed")}: ${String(e)}`);
-              }
-              await load();
-            }}
-          />
+          <div className="flex items-center gap-2">
+            {tunBusy && <span className="text-xs text-[var(--cb-text-dim)]">{t("settings.tunSwitching")}</span>}
+            <Switch
+              checked={tun?.enabled ?? false}
+              disabled={tunBusy}
+              onChange={async (v) => {
+                if (tunBusy) return;
+                setTunBusy(true);
+                try {
+                  await ipc.setTun(v);
+                  flash(true, v ? t("settings.tunOn") : t("settings.tunOff"));
+                  setTun(await ipc.tunStatus());
+                } catch (e) {
+                  flash(false, `${t(v ? "settings.tunFailed" : "settings.tunOffFailed")}: ${String(e)}`);
+                } finally {
+                  await load();
+                  setTunBusy(false);
+                }
+              }}
+            />
+          </div>
         </Row>
         {tun?.enabled && (
           <Row label={t("settings.tunState")} hint={t("settings.tunStateHint")}>
@@ -471,11 +480,12 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Switch({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`cb-toggle ${checked ? "on" : ""}`}
+      className={`cb-toggle ${checked ? "on" : ""} ${disabled ? "opacity-60 cursor-wait" : ""}`}
     />
   );
 }
