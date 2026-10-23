@@ -189,6 +189,24 @@ fn start_core(state: &AppState) -> Result<(), String> {
     start_core_locked(state)
 }
 
+/// A successful spawn only means the process exists. Do not expose TUN or
+/// system proxy as enabled until the controller confirms the core is ready.
+fn wait_core_running(state: &AppState) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        match state.core().status() {
+            CoreStatus::Running => return Ok(()),
+            CoreStatus::Crashed(error) => return Err(error),
+            CoreStatus::Stopped => return Err("内核已停止".into()),
+            CoreStatus::Starting => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("等待内核启动超时".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 /// 调用方必须已持有 core_op（start_core / restart_core 入口）。
 fn start_core_locked(state: &AppState) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
@@ -218,11 +236,16 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
         {
             binary = crate::tun::ensure_root_binary(state, &binary)?;
             if binary != state.core().binary_path() {
-                state.core().stop();
+                if !state.core().stop() {
+                    return Err("旧内核未退出，已中止 TUN 内核切换".into());
+                }
                 let rooted_core = CoreManager::new(binary, state.data_dir.join("runtime"));
                 rooted_core.set_callback(core_status_callback(state.app.clone()));
                 *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = rooted_core;
             }
+            // A persisted TUN setting can start the core without going through
+            // toggle_tun. Remove any system proxy left by another client first.
+            let _ = state.sysproxy.suspend_for_tun()?;
             return state.core().start(&rendered.config, &rt);
         }
         #[cfg(not(target_os = "macos"))]
@@ -254,7 +277,9 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
             "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
         ));
     };
-    state.core().stop();
+    if !state.core().stop() {
+        return Err("旧内核未退出，已中止内核切换".into());
+    }
     let new_core = CoreManager::new(p.clone(), state.data_dir.join("runtime"));
     // 换核 = 新管理器：必须重挂状态回调（托盘速率/前端事件/崩溃守卫都靠它）
     new_core.set_callback(core_status_callback(state.app.clone()));
@@ -280,7 +305,9 @@ fn ensure_unprivileged_core_binary(
     let Some(binary) = core_download::resolve_core_for(&state.data_dir, Some(need)) else {
         return Err(format!("内核「{need}」未安装 — 到设置页下载对应内核后再启动"));
     };
-    state.core().stop();
+    if !state.core().stop() {
+        return Err("TUN 内核未退出，已中止普通内核启动".into());
+    }
     let new_core = CoreManager::new(binary.clone(), state.data_dir.join("runtime"));
     new_core.set_callback(core_status_callback(state.app.clone()));
     *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
@@ -290,7 +317,9 @@ fn ensure_unprivileged_core_binary(
 /// 热重启：切换/更新配置后让新配置生效。
 fn restart_core(state: &AppState) -> Result<(), String> {
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-    state.core().stop();
+    if !state.core().stop() {
+        return Err("旧内核未退出，已中止重启".into());
+    }
     start_core_locked(state)
 }
 
@@ -1515,12 +1544,16 @@ fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String>
     if state.sysproxy.status().enabled {
         state.sysproxy.disable();
     } else {
+        if state.store.lock().unwrap().data().engine.tun_enable {
+            return Err("请先关闭 TUN 模式再开启系统代理".into());
+        }
         let port = {
             let store = state.store.lock().unwrap();
             store.data().engine.mixed_port
         };
         if !matches!(state.core().status(), CoreStatus::Running) {
             start_core(&state)?;
+            wait_core_running(&state)?;
         }
         state.sysproxy.enable(port)?;
     }
@@ -1699,6 +1732,30 @@ fn update_logs_persistence(app: &AppHandle) {
 }
 
 /// 保留期清理：启动时与每 6 小时各跑一次（按当前设置的天数）。
+/// 一次性迁移（#28 标识符切换 com.crossbow.app → com.richard.crossbow）：
+/// 新数据目录不存在时整体改名（原子、保留 setuid 与全部内容）；
+/// 已存在（Tauri 先建了空目录）则把旧目录里缺的条目逐个移入。
+fn migrate_legacy_data_dir(new_dir: &std::path::Path) {
+    let Some(parent) = new_dir.parent() else { return };
+    let legacy = parent.join("com.crossbow.app");
+    if !legacy.is_dir() || new_dir == legacy {
+        return;
+    }
+    if !new_dir.exists() {
+        if std::fs::rename(&legacy, new_dir).is_ok() {
+            eprintln!("migrated legacy data dir -> {}", new_dir.display());
+            return;
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(&legacy) else { return };
+    for entry in entries.flatten() {
+        let target = new_dir.join(entry.file_name());
+        if !target.exists() {
+            let _ = std::fs::rename(entry.path(), &target);
+        }
+    }
+}
+
 fn spawn_logs_sweeper(app: &AppHandle) {
     let h = app.clone();
     std::thread::spawn(move || loop {
@@ -2311,12 +2368,16 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
     if state.sysproxy.status().enabled {
         state.sysproxy.disable();
     } else {
+        if state.store.lock().unwrap().data().engine.tun_enable {
+            return Err("请先关闭 TUN 模式再开启系统代理".into());
+        }
         let port = {
             let store = state.store.lock().unwrap();
             store.data().engine.mixed_port
         };
         if !matches!(state.core().status(), CoreStatus::Running) {
             start_core(&state)?;
+            wait_core_running(&state)?;
         }
         state.sysproxy.enable(port)?;
     }
@@ -2451,6 +2512,9 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // 一次性迁移：旧标识符（com.crossbow.app）数据目录 → 新标识符
+            let legacy_target = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            migrate_legacy_data_dir(&legacy_target);
             let data_dir = app.path().app_data_dir()?;
 
             // 双实例保险：single-instance 插件依赖对端实例的事件循环还活着
@@ -2469,7 +2533,7 @@ pub fn run() {
             }
             std::fs::write(&lock_path, std::process::id().to_string())?;
 
-            let store = Store::open(&data_dir)
+            let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
             let update_settings_init = store.data().update.clone();
 
@@ -2511,6 +2575,15 @@ pub fn run() {
                 }
             } else if sysproxy.recover_stale() {
                 eprintln!("recovered stale system proxy from previous session");
+            }
+
+            // The saved preference alone does not mean a tunnel exists. On a
+            // cold start without an adopted core, require an explicit new TUN
+            // start so Settings cannot claim that an inactive tunnel is on.
+            if store.data().engine.tun_enable && !adopted {
+                store.data_mut().engine.tun_enable = false;
+                store.save()?;
+                eprintln!("cleared stale TUN flag: no running core was adopted");
             }
 
             app.manage(AppState {
