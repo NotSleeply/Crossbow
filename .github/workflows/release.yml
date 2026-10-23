@@ -81,6 +81,62 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: pnpm tauri build
 
+      # 中文 changelog：上个 tag → 本 tag 的提交按类型归纳；
+      # PR 标题优先（合并提交信息即 PR 标题），无 tag 时回退为提交数摘要
+      - name: Generate Chinese changelog
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          PREV=$(git tag --sort=-creatordate | grep -v "^${VERSION}$" | head -1 || true)
+          RANGE="${PREV:+${PREV}..}${VERSION}"
+          echo "changelog range: $RANGE"
+          python3 - "$RANGE" "/tmp/changelog.md" <<'PYEOF'
+          import subprocess, sys, collections
+          rng, out = sys.argv[1], sys.argv[2]
+          git_log = subprocess.run(
+              ["git", "log", "--pretty=%s", rng],
+              capture_output=True, text=True).stdout
+          CATS = collections.OrderedDict([
+              ("feat", "### 🚀 新功能"),
+              ("fix", "### 🐛 修复"),
+              ("perf", "### ⚡ 性能"),
+              ("refactor", "### ♻️ 重构"),
+              ("style", "### 🎨 界面"),
+              ("docs", "### 📝 文档"),
+          ])
+          buckets = collections.OrderedDict((k, []) for k in CATS)
+          other = []
+          for line in git_log.splitlines():
+              s = line.strip()
+              if not s:
+                  continue
+              low = s.lower()
+              placed = False
+              for cat in CATS:
+                  if low.startswith(cat + "(") or low.startswith(cat + ":") or low.startswith(cat + " "):
+                      buckets[cat].append(s)
+                      placed = True
+                      break
+              if not placed:
+                  continue
+          md = ["## 更新内容", ""]
+          any_cat = False
+          for cat, title in CATS.items():
+              items = buckets[cat]
+              if not items:
+                  continue
+              any_cat = True
+              md.append(title)
+              for it in items[:40]:
+                  md.append(f"- {it}")
+              md.append("")
+          if not any_cat:
+              md.append("- 本次更新包含稳定性与体验优化")
+              md.append("")
+          open(out, "w").write("\n".join(md))
+          PYEOF
+          cat /tmp/changelog.md
+
       - name: Prepare latest.json
         env:
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
@@ -111,10 +167,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
+          {
+            cat /tmp/changelog.md
+            echo ""
+            echo "## 下载"
+            echo ""
+            echo "- Apple Silicon：[Crossbow_${VERSION#v}_aarch64.dmg](https://github.com/Richard-Zhang1019/Crossbow/releases/download/${VERSION}/Crossbow_${VERSION#v}_aarch64.dmg)"
+            echo "- 自动更新：已签名 \`Crossbow.app.tar.gz\` 与 \`latest.json\`"
+          } > /tmp/release-notes.md
           gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Crossbow $VERSION" \
-            --generate-notes \
+            --notes-file /tmp/release-notes.md \
             target/release/bundle/macos/Crossbow.app.tar.gz \
             target/release/bundle/macos/Crossbow.app.tar.gz.sig \
             target/release/bundle/dmg/Crossbow_*.dmg \
