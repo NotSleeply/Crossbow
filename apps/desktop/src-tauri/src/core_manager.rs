@@ -413,7 +413,16 @@ impl CoreManager {
             })
         };
         if try_bind().is_err() {
+            // 候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries 各版本副本
+            // （实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会漏匹配）
             let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    for name in ["mihomo", "sing-box"] {
+                        candidates.push(dir.join(crate::core_download::core_bin_file(name)));
+                    }
+                }
+            }
             if let Some(data_dir) = self.shared.work_dir.parent() {
                 let tb = data_dir.join("tun-binaries");
                 if let Ok(versions) = std::fs::read_dir(&tb) {
@@ -423,16 +432,25 @@ impl CoreManager {
                         }
                     }
                 }
+                for name in ["mihomo", "sing-box"] {
+                    candidates.push(data_dir.join(crate::core_download::core_bin_file(name)));
+                }
             }
+            candidates.sort();
+            candidates.dedup();
             let mut note = String::new();
             for (pid, path) in find_leftover_core_pids(&candidates) {
                 if kill_external(pid, Some(&path)) {
-                    note.push_str(&format!("已清理本应用残留内核 pid={pid}；"));
+                    note.push_str(&format!("已清理本应用残留内核 pid={pid}（{}）；", path.display()));
                 } else {
                     note.push_str(&format!(
-                        "残留内核 pid={pid} 清理失败（可能取消了管理员授权）；"
+                        "残留内核 pid={pid}（{}）清理失败（可能取消了管理员授权）；",
+                        path.display()
                     ));
                 }
+            }
+            if note.is_empty() {
+                note.push_str("未发现本应用残留内核进程；");
             }
             if try_bind().is_err() {
                 return Err(format!(
