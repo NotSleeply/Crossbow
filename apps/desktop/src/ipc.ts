@@ -149,7 +149,28 @@ function parsePayload<T>(raw: unknown): T {
   return raw as T;
 }
 
+export interface UpdateState {
+  version: string;
+  notes: string | null;
+  downloaded: boolean;
+  progress: [number, number] | null;
+}
+
 export const ipc = {
+  onUpdateState: (cb: (s: UpdateState | null) => void) =>
+    listen<UpdateState | null>("update://state", (e) => cb(parsePayload<UpdateState | null>(e.payload))),
+  updateStateGet: () => invoke<UpdateState | null>("update_state_get"),
+  updateSettingsGet: () =>
+    invoke<{ auto_check: boolean; auto_download: boolean }>("update_settings_get"),
+  setUpdateAutoCheck: (enabled: boolean) => invoke<void>("set_update_auto_check", { enabled }),
+  setUpdateAutoDownload: (enabled: boolean) =>
+    invoke<void>("set_update_auto_download", { enabled }),
+  updateCheckNow: () => invoke<string | null>("update_check_now"),
+  updateStartDownload: () => invoke<void>("update_start_download"),
+  updateInstall: () => invoke<void>("update_install"),
+  onGoto: (cb: (page: string) => void) =>
+    listen<string>("ui://goto", (e) => cb(parsePayload<string>(e.payload))),
+
   checkUpdate: async (): Promise<string | null> => {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();

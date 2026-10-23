@@ -157,6 +157,29 @@ pub struct StoreSchema {
     /// v3：日志本地保存设置。
     #[serde(default)]
     pub logs: LogSettings,
+    /// v3：应用更新设置。
+    #[serde(default)]
+    pub update: UpdateSettings,
+}
+
+/// 应用更新设置（#28）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateSettings {
+    /// 自动检查更新（默认开：启动 30s 后 + 每 6h）
+    #[serde(default = "default_true")]
+    pub auto_check: bool,
+    /// 自动下载新版本（默认关；下载完成后提示重启安装）
+    #[serde(default)]
+    pub auto_download: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self {
+            auto_check: default_true(),
+            auto_download: false,
+        }
+    }
 }
 
 /// 日志本地保存设置（#29）：按天落盘 + 保留天数自动清理。
@@ -229,6 +252,7 @@ impl Default for StoreSchema {
             active_profile: None,
             ui: UiSettings::default(),
             logs: LogSettings::default(),
+            update: UpdateSettings::default(),
         }
     }
 }

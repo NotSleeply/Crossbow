@@ -28,7 +28,16 @@ export default function HomePage() {
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
+  const [updateVer, setUpdateVer] = useState<string | null>(null);
   const mounted = useRef(true);
+
+  useEffect(() => {
+    ipc.updateStateGet().then((s) => setUpdateVer(s?.version ?? null)).catch(() => {});
+    const un = ipc.onUpdateState((s) => setUpdateVer(s?.version ?? null));
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
@@ -84,6 +93,28 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-3.5">
       <PageHead title={t("nav.home")} meta={`mixed :${proxy.port || 7897} · ${mode}`} />
+
+      {updateVer && (
+        <div
+          className="cb-card flex items-center gap-3 px-4 py-3 text-sm"
+          style={{ borderColor: "var(--cb-accent-line)" }}
+        >
+          <span style={{ color: "var(--cb-accent)" }}>✦</span>
+          <span>
+            {t("home.updateAvailable")} <b>v{updateVer}</b> —{" "}
+            <span style={{ color: "var(--cb-text-dim)" }}>{t("home.updateGoTo")}</span>
+          </span>
+          <div className="flex-1" />
+          <button
+            className="cb-btn py-1.5"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("cb:goto", { detail: "settings" }))
+            }
+          >
+            {t("home.updateGoBtn")}
+          </button>
+        </div>
+      )}
 
       {error && <ErrorBar msg={error} />}
 
