@@ -817,6 +817,7 @@ struct TunStatus {
     enabled: bool,
     /// 内核二进制已 setuid root（可无感开 TUN）
     ready: bool,
+    core_running: bool,
 }
 
 #[tauri::command]
@@ -834,13 +835,18 @@ fn tun_status(state: State<AppState>) -> TunStatus {
         let need = if is_singbox { "sing-box" } else { "mihomo" };
         // 授权副本在 tun-binaries/<版本>/ 下（PR13），检查它的 setuid 位
         let ready = crate::tun::authorized_copy_exists(&state.data_dir, need);
-        TunStatus { enabled, ready }
+        TunStatus {
+            enabled,
+            ready,
+            core_running: state.core().status() == CoreStatus::Running,
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
         TunStatus {
             enabled: false,
             ready: false,
+            core_running: false,
         }
     }
 }
