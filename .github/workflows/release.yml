@@ -23,6 +23,7 @@ permissions:
 jobs:
   release-macos:
     runs-on: macos-latest
+    timeout-minutes: 75
     env:
       VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     steps:
@@ -54,20 +55,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      # Developer ID 证书导入临时钥匙串（secrets 中的 base64 .p12）
-      - name: Import signing certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p crossbow-ci build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k crossbow-ci build.keychain
-          security default-keychain -s build.keychain
-          rm -f certificate.p12
-
-      # 签名 + 公证 + 更新器产物由 tauri-bundler 依据以下环境变量自动完成
+      # 签名（证书自动导入临时钥匙串，含 unlock）+ 公证 + 更新器产物
+      # 全部由 tauri-bundler 依据以下环境变量完成（勿再手动导入证书：
+      # keychain 未 unlock 时 codesign 在无 GUI runner 上永久挂起）
       - name: Build (signed + notarized)
         working-directory: apps/desktop
         env:
@@ -146,9 +136,14 @@ jobs:
           python3 - "$SIG" "$NOW" "$VERSION" <<'EOF'
           import json, sys
           sig, now, version = sys.argv[1], sys.argv[2], sys.argv[3].lstrip("v")
+          notes = ""
+          try:
+              notes = open("/tmp/changelog.md").read().strip()
+          except OSError:
+              pass
           manifest = {
               "version": version,
-              "notes": f"Crossbow v{version}",
+              "notes": notes or f"Crossbow v{version}",
               "pub_date": now,
               "platforms": {
                   "darwin-aarch64": {
