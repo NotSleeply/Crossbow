@@ -1,61 +1,62 @@
 # Crossbow
 
-开源代理客户端（macOS + Windows + iOS）：mihomo / sing-box 双内核，三端共享 Rust
-「大脑」，目标「Clash Verge 的易用性 + Surge 级可观测性」。当前处于 M0（macOS MVP），
-Windows 为 M1.5、iOS 为 M2；不做 Linux。
+Crossbow 是面向 macOS 的开源代理客户端，使用 Tauri 2、React 和 Rust 构建，支持
+mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
+并在菜单栏显示实时速率。
 
-- 设计文档：[docs/DESIGN.md](docs/DESIGN.md)
-- MVP 范围：[docs/MVP.md](docs/MVP.md)
-- 线框图：[docs/WIREFRAMES.md](docs/WIREFRAMES.md)
-- 迭代路线图：[docs/ROADMAP.md](docs/ROADMAP.md)
+**当前公开版本：** [v0.9.2](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.9.2)，
+提供 Apple Silicon 的 macOS DMG。下载及更新内容以
+[GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest) 为准；
+`main` 可能包含尚未进入公开安装包的改动。Windows 正在开发与排查中，iOS 目前是工程骨架，
+均未提供正式安装包。
 
-## 仓库结构
+## 安装与使用
 
-```
-crates/crossbow-core   共享核心：Profile/覆写链/配置渲染/快照存储（三端共用）
-apps/desktop           桌面端（Tauri 2 + React + TS；macOS 现役，Windows M1.5 同壳）
-apps/ios               iOS 端骨架（M2：SwiftUI + PacketTunnel 扩展，XcodeGen）
-docs/                  设计/范围/线框
-```
+1. 从 [最新 Release](https://github.com/Richard-Zhang1019/Crossbow/releases/latest)
+   下载 Apple Silicon DMG，将 Crossbow 拖入「应用程序」并启动。
+2. 导入订阅链接或配置文件，在「代理」页选择节点；可在托盘菜单直接切换节点并查看延迟。
+3. 日常使用可在首页开启系统代理。若应用不读取系统代理设置，可在「设置」中开启 TUN。
+   TUN 首次开启需要 macOS 管理员授权；开启时会暂停系统代理。
+
+使用 TUN 前，请先关闭其他代理或 VPN 的 TUN 模式，避免虚拟网卡路由冲突。
+测试网络配置时可先阅读 [TUN 离线恢复说明](docs/TUN-RECOVERY.md)；恢复命令需要一款仍在运行的备用代理。
+近期的 TUN 就绪与代理恢复修复在 v0.9.2 发布后才合入 `main`，尚未包含在该公开 DMG 中。
+
+配置和日志位于 `~/Library/Application Support/com.richard.crossbow/`。旧版
+`com.crossbow.app` 数据会自动迁移，升级前仍建议备份数据目录。
 
 ## 开发
 
-依赖：Node 20+、pnpm、Rust stable（仓库内 `rust-toolchain.toml` 自动选择）。
+依赖 Node.js 20+、pnpm 和 Rust stable；macOS 本地构建还需 Xcode Command Line Tools。
 
 ```bash
 pnpm install
-pnpm dev            # 前端热更（仅 webview）
-pnpm tauri dev      # 完整桌面应用
-cargo test -p crossbow-core   # 核心库单测
+pnpm tauri dev
+pnpm --filter @crossbow/site build
 ```
 
-内核生命周期集成测试（可选，需要 mihomo 二进制）：
+本地打包桌面应用（不生成需要发版签名的更新器产物）：
 
 ```bash
-curl -sL -o /tmp/mihomo.gz https://github.com/MetaCubeX/mihomo/releases/latest/download/mihomo-darwin-arm64-v1.19.32.gz
-gunzip -f /tmp/mihomo.gz && chmod +x /tmp/mihomo
-CROSSBOW_CORE_BIN=/tmp/mihomo cargo test -p crossbow-desktop --lib -- --test-threads=1
+cd apps/desktop
+npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
 
-桌面应用开发时指定内核二进制（不设置则用 `~/Library/Application Support/com.crossbow.app/binaries/mihomo`）：
+仓库结构：
 
-```bash
-CROSSBOW_MIHOMO_BIN=/tmp/mihomo pnpm tauri dev
+```text
+crates/crossbow-core  共享的配置、覆写与存储逻辑
+apps/desktop          macOS 桌面应用；Windows 桌面端仍在开发
+apps/site             官网（Netlify）
+apps/ios              iOS 工程骨架
+docs                  设计、路线图与恢复说明
 ```
 
-iOS 端（M2）：需要完整 Xcode + Apple 开发者账号，见 apps/ios/README.md。
-
-Windows 端（M1.5）：同一 Tauri 壳，需要 Windows 10 1809+（WebView2）与 Rust
-`x86_64-pc-windows-msvc` 工具链；打包用 NSIS。
-
-### 本地环境备注
-
-- 本仓库通过 `rust-toolchain.toml` 固定 Rust stable；若 rustup 下载超时，可临时用镜像：
-  `RUSTUP_DIST_SERVER=https://rsproxy.cn RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup rustup toolchain install stable`
-- 若链接报 `tapi error: unknown architecture arm64e.x1`（CLT 与最新 SDK 不匹配），构建时指回旧 SDK：
-  `export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`
-  （装好完整 Xcode 并 `xcode-select` 切换后可移除。）
+桌面开发时可用 `CROSSBOW_MIHOMO_BIN=/path/to/mihomo pnpm tauri dev` 指定本地内核。
+详细设计、范围与计划见 [设计文档](docs/DESIGN.md)、[MVP](docs/MVP.md) 和
+[路线图](docs/ROADMAP.md)；macOS 正式发版步骤见 [发版文档](docs/RELEASE.md)。
 
 ## 许可
 
-GPL-3.0（与 mihomo 内核一致；内核以 sidecar 独立进程方式分发，不链接）。
+项目声明采用 [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)。mihomo 与 sing-box
+作为独立内核进程运行，分别遵循其自身许可。
