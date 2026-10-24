@@ -34,6 +34,9 @@ export default function SettingsPage() {
   const [autoCheck, setAutoCheck] = useState(true);
   const [autoDownload, setAutoDownload] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const updateCheckInFlight = useRef(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
@@ -87,9 +90,48 @@ export default function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const un = ipc.onUpdateState((state) => {
+      setUpdateState(state);
+      setUpdateCheckResult(null);
+    });
+    return () => {
+      void un.then((off) => off());
+    };
+  }, []);
+
   const flash = (ok: boolean, text: string, full?: string) => {
     setMsg({ ok, text, full: full ?? text });
     setTimeout(() => setMsg(null), 6000);
+  };
+
+  const runUpdateCheck = async () => {
+    if (updateCheckInFlight.current) return;
+    updateCheckInFlight.current = true;
+    setUpdateChecking(true);
+    setUpdateCheckResult(null);
+    try {
+      const version = await ipc.updateCheckNow();
+      const state = await ipc.updateStateGet().catch(() => null);
+      setUpdateState(state ?? (version ? { version, notes: null, downloaded: false, progress: null } : null));
+      setUpdateCheckResult({
+        ok: true,
+        text: version ? t("settings.newVersion", { v: version }) : t("settings.upToDate"),
+      });
+    } catch (error) {
+      const detail = String(error);
+      const message = detail === "UPDATE_CHECK_TIMEOUT"
+        ? t("settings.updateTimeout")
+        : `${t("settings.updateFailed")}: ${detail}`;
+      setUpdateCheckResult({
+        ok: false,
+        text: message.length > 140 ? `${message.slice(0, 140)}…` : message,
+        full: message,
+      });
+    } finally {
+      updateCheckInFlight.current = false;
+      setUpdateChecking(false);
+    }
   };
 
   const applyPort = async () => {
@@ -403,44 +445,51 @@ export default function SettingsPage() {
               : undefined
           }
         >
-          <div className="flex items-center gap-2">
-            {updateState === null && (
-              <button
-                className="cb-btn py-1.5"
-                onClick={async () => {
-                  flash(true, t("settings.updateProgress"));
-                  try {
-                    const v = await ipc.updateCheckNow();
-                    flash(
-                      true,
-                      v
-                        ? t("settings.newVersion", { v })
-                        : t("settings.upToDate"),
-                    );
-                  } catch {
-                    flash(false, t("settings.updateFailed"));
-                  }
-                }}
+          <div className="flex max-w-[240px] flex-col items-end gap-1.5">
+            <div className="flex items-center gap-2">
+              {(updateState === null || updateChecking) && (
+                <button
+                  className="cb-btn inline-flex items-center gap-1.5 py-1.5"
+                  onClick={runUpdateCheck}
+                  disabled={updateChecking}
+                  aria-busy={updateChecking}
+                >
+                  {updateChecking && (
+                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+                    </svg>
+                  )}
+                  {t(updateChecking ? "settings.updateChecking" : "settings.checkUpdateBtn")}
+                </button>
+              )}
+              {updateState && !updateState.downloaded && !updateChecking && (
+                <button
+                  className="cb-btn py-1.5"
+                  onClick={() => ipc.updateStartDownload().catch((e) => flash(false, String(e)))}
+                >
+                  {t("settings.updateDownload")}
+                </button>
+              )}
+              {updateState?.downloaded && !updateChecking && (
+                <button
+                  className="cb-btn py-1.5"
+                  style={{ color: "var(--cb-accent)" }}
+                  onClick={() => ipc.updateInstall().catch((e) => flash(false, String(e)))}
+                >
+                  {t("settings.updateRestart")}
+                </button>
+              )}
+            </div>
+            {(updateChecking || updateCheckResult) && (
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-right text-[11px] leading-4 break-words"
+                style={{ color: updateChecking ? "var(--cb-text-dim)" : updateCheckResult?.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}
+                title={updateCheckResult?.full}
               >
-                {t("settings.checkUpdateBtn")}
-              </button>
-            )}
-            {updateState && !updateState.downloaded && (
-              <button
-                className="cb-btn py-1.5"
-                onClick={() => ipc.updateStartDownload().catch((e) => flash(false, String(e)))}
-              >
-                {t("settings.updateDownload")}
-              </button>
-            )}
-            {updateState?.downloaded && (
-              <button
-                className="cb-btn py-1.5"
-                style={{ color: "var(--cb-accent)" }}
-                onClick={() => ipc.updateInstall().catch((e) => flash(false, String(e)))}
-              >
-                {t("settings.updateRestart")}
-              </button>
+                {updateChecking ? t("settings.updateChecking") : updateCheckResult?.text}
+              </span>
             )}
           </div>
         </Row>
