@@ -228,7 +228,8 @@ fn wait_tun_listener(
     }
 }
 
-/// TUN 与系统代理互斥：TUN 接管全局路由后系统代理冗余且有环路风险。
+/// Crossbow's own system proxy may share the running core with TUN. A proxy
+/// left by another client is still suspended so it cannot bypass this tunnel.
 pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     // Serialize the entire transition with core start/restart and the health
     // monitor. The saved flag must never get ahead of a failed stop.
@@ -250,9 +251,9 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
         crate::CoreStatus::Running | crate::CoreStatus::Starting
     );
     let previous_proxy = state.sysproxy.status();
-    // Clear the effective macOS proxy, including settings restored from a
-    // previous client. Keep an exact rollback snapshot until TUN starts.
-    let suspended_proxy = if enable {
+    // Preserve Crossbow's own proxy when both switches are on. If another
+    // client owns the proxy, keep its exact settings for rollback/TUN exit.
+    let suspended_proxy = if enable && !previous_proxy.enabled {
         Some(state.sysproxy.suspend_for_tun()?)
     } else {
         None
@@ -299,11 +300,15 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
                 // back to true would claim a tunnel exists when there is no
                 // route or process. Restore a safe external proxy instead.
                 let _ = state.core().stop();
-                let proxy_result = state.sysproxy.recover_tun_without_core();
+                let proxy_result = if previous_proxy.enabled {
+                    state.sysproxy.disable()
+                } else {
+                    state.sysproxy.recover_tun_without_core()
+                };
                 return Err(match proxy_result {
-                    Ok(()) => format!(
-                        "TUN 已关闭，但普通内核启动失败；已恢复原系统代理：{start_error}"
-                    ),
+                    Ok(()) => {
+                        format!("TUN 已关闭，但普通内核启动失败；已恢复原系统代理：{start_error}")
+                    }
                     Err(error) => format!(
                         "TUN 已关闭，但普通内核启动失败：{start_error}；恢复原系统代理失败：{error}"
                     ),
@@ -321,15 +326,14 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
             let recovery_error = (was_running || previous_proxy.enabled)
                 .then(|| crate::start_core_locked(state).err())
                 .flatten();
-            let proxy_rollback_error = suspended_proxy.and_then(|suspended| {
-                // Never restore a proxy pointing at a core that failed to
-                // restart; that would leave the entire system offline.
-                if previous_proxy.enabled && recovery_error.is_some() {
-                    None
-                } else {
-                    state.sysproxy.restore_after_failed_tun(suspended).err()
-                }
-            });
+            let proxy_rollback_error = if previous_proxy.enabled && recovery_error.is_some() {
+                // A proxy pointing at a stopped core would leave the system
+                // offline. Restore the settings from before Crossbow instead.
+                state.sysproxy.disable().err()
+            } else {
+                suspended_proxy
+                    .and_then(|suspended| state.sysproxy.restore_after_failed_tun(suspended).err())
+            };
             let details = [rollback_error, recovery_error, proxy_rollback_error]
                 .into_iter()
                 .flatten()

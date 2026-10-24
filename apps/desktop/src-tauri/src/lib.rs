@@ -243,9 +243,11 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
                 rooted_core.set_callback(core_status_callback(state.app.clone()));
                 *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = rooted_core;
             }
-            // A persisted TUN setting can start the core without going through
-            // toggle_tun. Remove any system proxy left by another client first.
-            let _ = state.sysproxy.suspend_for_tun()?;
+            // Keep Crossbow's own system proxy active; only a third-party
+            // proxy would divert proxy-aware apps away from this TUN core.
+            if !state.sysproxy.status().enabled {
+                let _ = state.sysproxy.suspend_for_tun()?;
+            }
             return state.core().start(&rendered.config, &rt);
         }
         #[cfg(not(target_os = "macos"))]
@@ -790,7 +792,7 @@ async fn set_engine(
     Ok(())
 }
 
-/// TUN 开关（macOS）。开启时与系统代理互斥（先关系统代理）。
+/// TUN 开关（macOS）；系统代理有独立开关，可共用同一个内核。
 #[tauri::command]
 fn set_tun(app: AppHandle, state: State<AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -1438,8 +1440,13 @@ fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(
         return Err("端口不能小于 1024".into());
     }
     let proxy_was_on = state.sysproxy.status().enabled;
+    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
     if proxy_was_on {
-        state.sysproxy.disable()?;
+        if tun_enabled {
+            state.sysproxy.disable_during_tun()?;
+        } else {
+            state.sysproxy.disable()?;
+        }
     }
     {
         let mut store = state.store.lock().unwrap();
@@ -1450,7 +1457,11 @@ fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(
         restart_core(&state)?;
     }
     if proxy_was_on {
-        state.sysproxy.enable(port)?;
+        if tun_enabled {
+            state.sysproxy.enable_during_tun(port)?;
+        } else {
+            state.sysproxy.enable(port)?;
+        }
         let _ = app.emit("sysproxy://status", state.sysproxy.status());
     }
     Ok(())
@@ -1545,24 +1556,37 @@ fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
 }
 
 /// 总开关：开启 = 确保内核运行 + 设置系统代理；关闭 = 还原系统代理（内核保持）。
+fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
+    if !state.sysproxy.status().enabled && state.core().status() != CoreStatus::Running {
+        start_core(state)?;
+        wait_core_running(state)?;
+    }
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    let store = state.store.lock().unwrap();
+    let port = store.data().engine.mixed_port;
+    let tun_enabled = store.data().engine.tun_enable;
+    drop(store);
+    if state.sysproxy.status().enabled {
+        if tun_enabled {
+            state.sysproxy.disable_during_tun()
+        } else {
+            state.sysproxy.disable()
+        }
+    } else {
+        if state.core().status() != CoreStatus::Running {
+            return Err("内核未运行，无法开启系统代理".into());
+        }
+        if tun_enabled {
+            state.sysproxy.enable_during_tun(port)
+        } else {
+            state.sysproxy.enable(port)
+        }
+    }
+}
+
 #[tauri::command]
 fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    if state.sysproxy.status().enabled {
-        state.sysproxy.disable()?;
-    } else {
-        if state.store.lock().unwrap().data().engine.tun_enable {
-            return Err("请先关闭 TUN 模式再开启系统代理".into());
-        }
-        let port = {
-            let store = state.store.lock().unwrap();
-            store.data().engine.mixed_port
-        };
-        if !matches!(state.core().status(), CoreStatus::Running) {
-            start_core(&state)?;
-            wait_core_running(&state)?;
-        }
-        state.sysproxy.enable(port)?;
-    }
+    toggle_sysproxy_state(&state)?;
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(&app);
     Ok(())
@@ -1646,11 +1670,15 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
                     (store.data().engine.mixed_port, store.data().engine.tun_enable)
                 };
                 let _ = start_core(&state);
-                // 仅在原本使用系统代理时恢复；TUN 模式不能重新打开系统代理。
-                if proxy_was_on && !tun_enabled {
+                // 安全模式重启成功后，恢复崩溃前由 Crossbow 控制的代理。
+                if proxy_was_on {
                     for _ in 0..100 {
                         if state.core().status() == CoreStatus::Running {
-                            let _ = state.sysproxy.enable(port);
+                            let _ = if tun_enabled {
+                                state.sysproxy.enable_during_tun(port)
+                            } else {
+                                state.sysproxy.enable(port)
+                            };
                             let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                             break;
                         }
@@ -1831,7 +1859,9 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                     let probe = if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
                         // proxy after Crossbow has established its route.
-                        if !state.sysproxy.external_endpoints().is_empty() {
+                        if !state.sysproxy.status().enabled
+                            && !state.sysproxy.external_endpoints().is_empty()
+                        {
                             if let Err(error) = state.sysproxy.suspend_for_tun() {
                                 eprintln!("tun system proxy cleanup failed: {error}");
                             }
@@ -2147,13 +2177,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 
     let sp = state.sysproxy.status();
     let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-    let proxy_label = if tun_enabled {
-        if state.core().status() == CoreStatus::Running {
-            tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
-        } else {
-            tr(&lang, "TUN 已开启 · 内核未运行", "TUN enabled · core stopped")
-        }
-    } else if sp.enabled {
+    let proxy_label = if sp.enabled {
         format!(
             "{} :{}",
             tr(&lang, "系统代理：已开启", "System Proxy: On"),
@@ -2162,13 +2186,19 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     } else {
         tr(&lang, "系统代理：已关闭", "System Proxy: Off")
     };
-    let proxy = MenuItem::with_id(
-        app,
-        "toggle-proxy",
-        &proxy_label,
-        !tun_enabled,
-        None::<&str>,
-    )?;
+    let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, true, None::<&str>)?;
+    #[cfg(target_os = "macos")]
+    let tun_label = if tun_enabled {
+        if state.core().status() == CoreStatus::Running {
+            tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
+        } else {
+            tr(&lang, "TUN 已开启 · 内核未运行", "TUN enabled · core stopped")
+        }
+    } else {
+        tr(&lang, "TUN 模式：已关闭", "TUN mode: Off")
+    };
+    #[cfg(target_os = "macos")]
+    let tun_item = MenuItem::with_id(app, "toggle-tun", &tun_label, true, None::<&str>)?;
 
     let mode = state.mode.lock().unwrap().clone();
     let mk_check = |id: &str, label: &str, checked: bool| {
@@ -2278,7 +2308,13 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     {
         let (group_menu_label, rows, testing) = node_menu_data.unwrap();
         if rows.is_empty() {
-            let mut b = MenuBuilder::new(app).item(&proxy).separator();
+            let mut b = MenuBuilder::new(app)
+                .item(&proxy)
+                .item(&tun_item)
+                .separator()
+                .item(&mode_menu)
+                .item(&profile_menu)
+                .separator();
             if let Some(item) = &update_item {
                 b = b.item(item);
             }
@@ -2309,6 +2345,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 
         let mut b = MenuBuilder::new(app)
             .item(&proxy)
+            .item(&tun_item)
             .separator()
             .item(&mode_menu)
             .item(&node_menu)
@@ -2411,22 +2448,7 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
         state.sysproxy.status().enabled,
         state.core().status()
     ));
-    if state.sysproxy.status().enabled {
-        state.sysproxy.disable()?;
-    } else {
-        if state.store.lock().unwrap().data().engine.tun_enable {
-            return Err("请先关闭 TUN 模式再开启系统代理".into());
-        }
-        let port = {
-            let store = state.store.lock().unwrap();
-            store.data().engine.mixed_port
-        };
-        if !matches!(state.core().status(), CoreStatus::Running) {
-            start_core(&state)?;
-            wait_core_running(&state)?;
-        }
-        state.sysproxy.enable(port)?;
-    }
+    toggle_sysproxy_state(&state)?;
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(app);
     Ok(())
@@ -2459,10 +2481,49 @@ fn show_no_more(app: &AppHandle) {
     }
 }
 
+fn show_tray_toggle_error(app: &AppHandle, title: &'static str, error: String) {
+    let _ = app.run_on_main_thread(move || {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title(title)
+            .set_description(&error)
+            .show();
+    });
+}
+
 fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let id = event.id().as_ref();
     let result = match id {
-        "toggle-proxy" => toggle_sysproxy(app),
+        "toggle-proxy" => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                if let Err(error) = toggle_sysproxy(&handle) {
+                    eprintln!("tray system proxy toggle failed: {error}");
+                    show_tray_toggle_error(&handle, "系统代理切换失败", error);
+                }
+            });
+            Ok(())
+        }
+        "toggle-tun" => {
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    let state = handle.state::<AppState>();
+                    let enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                    let result = crate::tun::toggle_tun(&state, !enabled);
+                    let actual = state.store.lock().unwrap().data().engine.tun_enable;
+                    let _ = handle.emit("tun://status", actual);
+                    let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                    refresh_tray(&handle);
+                    if let Err(error) = result {
+                        eprintln!("tray TUN toggle failed: {error}");
+                        show_tray_toggle_error(&handle, "TUN 切换失败", error);
+                    }
+                });
+            }
+            Ok(())
+        }
         "mode-direct" | "mode-rule" | "mode-global" => {
             let mode = id.strip_prefix("mode-").unwrap().to_string();
             set_core_mode(app.clone(), app.state::<AppState>(), mode)
@@ -2823,6 +2884,11 @@ pub fn run() {
                                 // Once the privileged TUN core is gone, restore
                                 // the settings saved before TUN immediately.
                                 if state.core().stop() {
+                                    if state.sysproxy.status().enabled {
+                                        if let Err(error) = state.sysproxy.disable() {
+                                            eprintln!("exit system proxy recovery failed: {error}");
+                                        }
+                                    }
                                     if let Err(error) = state.sysproxy.recover_tun_without_core() {
                                         eprintln!("exit TUN proxy recovery failed: {error}");
                                     }

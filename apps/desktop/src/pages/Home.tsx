@@ -119,7 +119,9 @@ export default function HomePage() {
   const routingEnabled = proxy.enabled || tun.enabled;
   const statusTitle = tun.enabled
     ? running
-      ? t("home.tunOn")
+      ? proxy.enabled
+        ? t("home.tunAndSysproxyOn")
+        : t("home.tunOn")
       : t("home.tunCoreStopped")
     : proxy.enabled
       ? t("home.sysproxyOn")
@@ -187,7 +189,7 @@ export default function HomePage() {
         <button
           className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
           onClick={toggleProxy}
-          disabled={busy || !activeId || tun.enabled}
+          disabled={busy || !activeId}
           title={activeId ? undefined : t("home.noProfiles")}
         />
         <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />
