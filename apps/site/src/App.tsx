@@ -112,7 +112,7 @@ function Footer() {
             </div>
             <div>
               <span className="micro" style={{ display: "block", marginBottom: 10 }}>协议</span>
-              <a href={`${REPO}/blob/master/LICENSE`} target="_blank" rel="noopener" style={{ display: "block", color: "var(--dim)", fontSize: 13, marginBottom: 8 }}>GPL-3.0 License</a>
+              <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener" style={{ display: "block", color: "var(--dim)", fontSize: 13, marginBottom: 8 }}>GPL-3.0 条款</a>
             </div>
           </div>
         </div>

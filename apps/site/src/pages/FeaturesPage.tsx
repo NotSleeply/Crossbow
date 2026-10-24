@@ -1,6 +1,6 @@
 import { DownloadIcon, Logo } from "../components";
 import { LATEST, REPO, VERSION } from "../site-meta";
-import heroApp from "../assets/hero-app.png";
+import { Link } from "react-router-dom";
 
 const FEATURES = [
   {
@@ -25,6 +25,17 @@ const FEATURES = [
       "正常退出、崩溃、甚至进程被强杀，下次启动都会先执行一次全量还原，不留脏设置。",
       "内核崩溃时立即还原系统代理并提示；覆写导致的配置错误自动进入安全模式（禁用覆写重启一次）。",
       "混合端口被其他程序占用时，启动前即明确报错，不让你对着「启动中」干等。",
+    ],
+  },
+  {
+    tag: "网络",
+    title: "TUN 模式",
+    summary:
+      "macOS 上创建虚拟网卡接管更多应用流量；可在设置中与系统代理模式切换。",
+    detail: [
+      "首次开启需要 macOS 管理员授权；应用会保存授权后的内核副本，减少重复授权。",
+      "TUN 与系统代理互斥；关闭 TUN 后检查原代理状态与网络连接。",
+      "若其他代理或 VPN 已占用隧道路由，先关闭对方的 TUN 模式；断网时可按仓库中的离线恢复说明操作。",
     ],
   },
   {
@@ -148,8 +159,8 @@ export default function FeaturesPage() {
         <p style={{ color: "var(--dim)", fontSize: 14, margin: "10px auto 22px", maxWidth: 520, lineHeight: 1.7 }}>
           JS 覆写教程、双引擎切换实操、深链接导入、安全模式机制——见进阶指南。
         </p>
-        <a
-          href="#/guide"
+        <Link
+          to="/guide"
           className="btn-primary"
           style={{
             display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
@@ -159,7 +170,7 @@ export default function FeaturesPage() {
         >
           <DownloadIcon />
           查看进阶指南
-        </a>
+        </Link>
       </div>
 
       <div style={{ textAlign: "center", marginTop: 24, fontSize: 12.5, color: "var(--faint)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>

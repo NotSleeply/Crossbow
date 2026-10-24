@@ -144,6 +144,24 @@ export default function GuidePage() {
         </Card>
 
         <Card>
+          <H2>系统代理与 TUN 怎么选</H2>
+          <p style={{ color: "var(--dim)", fontSize: 13.5, lineHeight: 1.75, margin: "10px 0 4px" }}>
+            日常浏览可先使用首页的系统代理；需要代理不读取系统代理设置的应用时，在设置中开启 TUN。
+            两种方式不会同时启用。关闭 TUN 后请检查原系统代理状态和网络连接。
+          </p>
+          <Step n="01" title="开启前">
+            先关闭 Clash Verge 或其他 VPN 的 TUN 模式，确认当前配置与节点可用。若要测试断网恢复，先按离线恢复说明检查备用代理。
+          </Step>
+          <Step n="02" title="开启和检查">
+            设置 → TUN 模式 → 开启；首次需要 macOS 管理员授权。访问网页并观察日志和菜单栏速率，确认流量经过内核。
+          </Step>
+          <Step n="03" title="关闭或恢复">
+            关闭 TUN 后确认原系统代理状态与网络连接已恢复。若测试时断网，可在终端运行仓库中的
+            {" "}<a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>离线恢复命令</a>；该命令依赖仍在运行的备用代理。
+          </Step>
+        </Card>
+
+        <Card>
           <H2>轻量模式与托盘</H2>
           <p style={{ color: "var(--dim)", fontSize: 13.5, lineHeight: 1.75, margin: "10px 0 4px" }}>
             设置 → 轻量模式开启后：点关闭窗口 = 代理照常、界面内存释放、托盘常驻。再点托盘图标即恢复窗口。
@@ -154,9 +172,9 @@ export default function GuidePage() {
         <Card>
           <H2>配置与数据的位置</H2>
           <p style={{ color: "var(--dim)", fontSize: 13.5, lineHeight: 1.75, margin: "10px 0 4px" }}>
-            全部数据在 <code style={{ font: "12px var(--mono)" }}>~/Library/Application Support/com.crossbow.app/</code>：
+            全部数据在 <code style={{ font: "12px var(--mono)" }}>~/Library/Application Support/com.richard.crossbow/</code>：
             store.json（订阅/设置/覆写，保存前自动快照保留 5 份）、runtime/（内核运行时与日志）、binaries/（内核本体）。
-            备份这个目录 = 备份一切。
+            旧版 <code style={{ font: "12px var(--mono)" }}>com.crossbow.app</code> 数据会自动迁移；升级前可备份新目录。
           </p>
         </Card>
       </div>
@@ -185,7 +203,7 @@ export default function GuidePage() {
         </a>
         {" "}
         <a
-          href={`${REPO}/blob/master/docs`}
+          href={`${REPO}/tree/main/docs`}
           target="_blank"
           rel="noopener"
           style={{ marginLeft: 10, color: "var(--dim)", fontSize: 13.5 }}

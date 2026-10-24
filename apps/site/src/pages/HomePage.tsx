@@ -37,9 +37,8 @@ function Hero() {
         </span>
       </h1>
       <p style={{ color: "var(--dim)", fontSize: 17, maxWidth: 560, margin: "0 auto 34px" }}>
-        Crossbow 以 <span className="mono">mihomo</span> 为内核，为 macOS
-        而生：订阅自动更新、网络诊断向导、JS 覆写、轻量模式——
-        把「为什么上不了网」变成一键自检。
+        Crossbow 为 macOS 提供 mihomo / sing-box 双内核、系统代理与 TUN 模式。
+        订阅管理、节点测速和网络诊断集中在一个界面，菜单栏随时查看实时速率。
       </p>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
         <a
@@ -71,7 +70,7 @@ function Hero() {
         </a>
       </div>
       <div style={{ marginTop: 14, font: "11.5px var(--mono)", color: "var(--faint)" }}>
-        免费开源 · 安装包 31 MB · 无追踪 · macOS 11+ Apple Silicon
+        免费开源 · 无追踪 · macOS Apple Silicon
       </div>
 
       <div
@@ -98,8 +97,8 @@ const FEATURES = [
   {
     icon: <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />,
     icon2: <path d="M9 12l2 2 4-4" />,
-    title: "系统代理守护",
-    text: "开启前快照原设置，退出/崩溃精确还原；内核异常自动降级恢复——告别「退出后断网」。",
+    title: "系统代理与 TUN",
+    text: "系统代理适合日常使用；TUN 可接管更多应用流量。两种模式在设置中切换，TUN 首次开启需要管理员授权。",
   },
   {
     icon: <path d="M3 12h4l2-6 4 12 2-6h6" />,
@@ -188,7 +187,7 @@ function Steps() {
           <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>01</div>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>下载并安装</h3>
           <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            下载 dmg 拖入「应用程序」。首次打开右键 → 打开，或执行 <code style={{ font: "12px var(--mono)", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 5, padding: "1px 6px" }}>xattr -dr com.apple.quarantine /Applications/Crossbow.app</code>。
+            从 GitHub Releases 下载官方 dmg，打开后将 Crossbow 拖入「应用程序」，再从应用程序文件夹启动。
           </p>
         </div>
         <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "26px 22px" }}>
@@ -202,7 +201,7 @@ function Steps() {
           <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>03</div>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>一键开启</h3>
           <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            首页点亮开关：内核自动拉起、系统代理即时生效。选个节点，或让诊断向导帮你确认链路。
+            选择节点，在首页开启系统代理；需要接管不读取系统代理的应用时，可到设置中开启 TUN。
           </p>
         </div>
       </div>
@@ -214,8 +213,8 @@ function Download() {
   const [copied, setCopied] = useState(false);
   const rel = useLatestRelease();
   const version = rel?.version ?? VERSION;
-  const dmgUrl = rel?.dmgUrl ?? DMG_URL;
-  const date = rel?.date ?? "2026-10-07";
+  const dmgUrl = rel?.dmgUrl ?? (rel ? LATEST : DMG_URL);
+  const date = rel?.date ?? "2026-10-24";
   const shaKnown = version === VERSION; // 静态值里的 SHA256 与该版本对应
   const copy = () => {
     navigator.clipboard?.writeText(DMG_SHA256).then(() => {
@@ -239,7 +238,7 @@ function Download() {
       >
         <div style={{ font: "600 13px var(--mono)", color: "var(--accent)" }}>{version} · {date}</div>
         <h3 style={{ fontSize: 22, fontWeight: 700, margin: "10px 0 6px" }}>Crossbow for macOS</h3>
-        <div style={{ color: "var(--dim)", fontSize: 13 }}>Apple Silicon (M 系列) · macOS 11+ · 安装包 31 MB</div>
+        <div style={{ color: "var(--dim)", fontSize: 13 }}>Apple Silicon (M 系列) · macOS</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", margin: "26px 0 18px", flexWrap: "wrap" }}>
           <a
             href={dmgUrl}
@@ -289,8 +288,8 @@ function Download() {
 
 const FAQS = [
   {
-    q: "打开提示「无法验证」或「已损坏」？",
-    a: <>应用未做 Developer ID 公证。首次打开右键 → <b>打开</b>；或终端执行 <code style={{ font: "12px var(--mono)", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 5, padding: "1px 6px" }}>xattr -dr com.apple.quarantine /Applications/Crossbow.app</code> 后正常打开。</>,
+    q: "安装或打开时遇到 macOS 安全提示？",
+    a: <>请确认安装包来自 <a href={RELEASES} target="_blank" rel="noopener">GitHub Releases</a>，重新下载后按系统提示打开；不要使用来源不明的安装包。</>,
   },
   {
     q: "支持哪些协议？",
@@ -298,7 +297,7 @@ const FAQS = [
   },
   {
     q: "支持 TUN 模式吗？",
-    a: <>暂缓评估中。当前通过系统代理覆盖浏览器与大部分应用；当你遇到「某应用流量不走代理」的真实需求时我们会重启 TUN 开发。</>,
+    a: <>macOS 版可在设置中开启 TUN，首次开启需要管理员授权。TUN 与系统代理互斥；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。v0.9.2 公开安装包早于最近的 TUN 恢复修复；测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
   },
   {
     q: "有 Windows / iOS 版本吗？",
@@ -306,7 +305,7 @@ const FAQS = [
   },
   {
     q: "升级会丢配置吗？",
-    a: <>不会。配置存储于 ~/Library/Application Support/com.crossbow.app/，每次保存前自动快照（保留 5 份），升级自动继承；坏覆写会触发安全模式兜底。</>,
+    a: <>现有配置会继续保存在 ~/Library/Application Support/com.richard.crossbow/；旧版 com.crossbow.app 数据会在升级时迁移。配置保存前有快照，建议升级前仍自行备份。</>,
   },
   {
     q: "如何参与或反馈？",
