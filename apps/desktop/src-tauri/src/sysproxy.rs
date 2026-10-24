@@ -91,19 +91,13 @@ impl SysProxyBackend for NetworkSetup {
 
     fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
         Ok(ServiceSnapshot {
-            web: Self::run(&["-getwebproxy", service])
-                .ok()
-                .as_deref()
-                .and_then(parse_endpoint),
-            secure: Self::run(&["-getsecurewebproxy", service])
-                .ok()
-                .as_deref()
-                .and_then(parse_endpoint),
-            socks: Self::run(&["-getsocksfirewallproxy", service])
-                .ok()
-                .as_deref()
-                .and_then(parse_endpoint),
-            bypass: None,
+            web: parse_endpoint(&Self::run(&["-getwebproxy", service])?),
+            secure: parse_endpoint(&Self::run(&["-getsecurewebproxy", service])?),
+            socks: parse_endpoint(&Self::run(&["-getsocksfirewallproxy", service])?),
+            bypass: Some(
+                parse_bypass_domains(&Self::run(&["-getproxybypassdomains", service])?)
+                    .join("\n"),
+            ),
         })
     }
 
@@ -120,6 +114,16 @@ impl SysProxyBackend for NetworkSetup {
         apply("-setwebproxy", "-setwebproxystate", snap.web.as_ref())?;
         apply("-setsecurewebproxy", "-setsecurewebproxystate", snap.secure.as_ref())?;
         apply("-setsocksfirewallproxy", "-setsocksfirewallproxystate", snap.socks.as_ref())?;
+        if let Some(bypass) = &snap.bypass {
+            let domains = bypass.lines().collect::<Vec<_>>();
+            let mut args = vec!["-setproxybypassdomains", service];
+            if domains.is_empty() {
+                args.push("Empty");
+            } else {
+                args.extend(domains);
+            }
+            Self::run(&args)?;
+        }
         Ok(())
     }
 }
@@ -309,7 +313,7 @@ pub struct ServiceSnapshot {
     pub web: Option<ProxyEndpoint>,
     pub secure: Option<ProxyEndpoint>,
     pub socks: Option<ProxyEndpoint>,
-    /// Windows：ProxyOverride 原文（绕过列表）；macOS 不快照绕过域。
+    /// Windows：ProxyOverride 原文；macOS：逐行保存的绕过域名。
     #[serde(default)]
     pub bypass: Option<String>,
 }
@@ -351,51 +355,88 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
     }
 
-    /// 对所有网络服务开启代理。开启前先快照原设置（崩溃兜底与还原都靠它）；
-    /// 逐服务尽力执行，全部失败才报错。
+    /// 对所有网络服务开启代理。先保存完整快照与恢复日志；任一服务设置
+    /// 失败时回滚全部服务，避免留下 HTTP/HTTPS/SOCKS 半配置状态。
     pub fn enable(&self, port: u16) -> Result<(), String> {
+        // A previous attempt may have changed some services before its
+        // rollback failed. Recover that snapshot before taking a new one;
+        // otherwise the original settings would be overwritten permanently.
+        if self.journal_path.exists() {
+            self.disable()?;
+        }
         let services = self.backend.list_services()?;
         if services.is_empty() {
             return Err("no network services found".into());
         }
-        // 先快照再动手
         let mut snapshot = BTreeMap::new();
         for svc in &services {
-            if let Ok(snap) = self.backend.service_snapshot(svc) {
-                snapshot.insert(svc.clone(), snap);
-            }
+            snapshot.insert(svc.clone(), self.backend.service_snapshot(svc)?);
         }
-        let mut ok = 0;
-        let mut last_err = String::new();
+        // 写盘必须发生在任何 networksetup 修改之前，异常退出也能恢复。
+        self.write_journal(port, &snapshot)?;
         for svc in &services {
-            match self.backend.enable_service(svc, port) {
-                Ok(()) => ok += 1,
-                Err(e) => last_err = format!("{svc}: {e}"),
+            if let Err(error) = self.backend.enable_service(svc, port) {
+                let mut rollback_errors = Vec::new();
+                for (name, original) in &snapshot {
+                    if let Err(restore_error) = self.backend.restore_service(name, original) {
+                        rollback_errors.push(format!("{name}: {restore_error}"));
+                    }
+                }
+                if rollback_errors.is_empty() {
+                    if let Err(remove_error) = std::fs::remove_file(&self.journal_path) {
+                        rollback_errors.push(format!("清理恢复日志失败: {remove_error}"));
+                    }
+                }
+                let detail = if rollback_errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("；回滚未完成：{}", rollback_errors.join("；"))
+                };
+                return Err(format!("{svc}: {error}{detail}"));
             }
-        }
-        if ok == 0 {
-            return Err(format!("failed on all services; last error: {last_err}"));
         }
         *self.state.lock().unwrap() = Some(port);
-        self.write_journal(port, &snapshot);
         Ok(())
     }
 
     /// 还原代理设置：优先按 journal 里的原设置快照逐服务恢复；无快照（老格式
     /// 或快照失败）退回全量关闭。幂等，用于退出兜底。
-    pub fn disable(&self) {
+    pub fn disable(&self) -> Result<(), String> {
         let journal = self.read_journal();
+        if self.journal_path.exists() && journal.is_none() {
+            return Err("系统代理恢复日志无法读取，未覆盖现有代理设置".into());
+        }
+        if journal.is_none() && self.state.lock().unwrap().is_none() {
+            // Crossbow does not own the current proxy. In particular, exiting
+            // while TUN is active must not clear another client's settings.
+            return Ok(());
+        }
+        let mut errors = Vec::new();
         if let Some(snapshot) = journal.map(|j| j.snapshot).filter(|s| !s.is_empty()) {
             for (svc, snap) in &snapshot {
-                let _ = self.backend.restore_service(svc, snap);
+                if let Err(error) = self.backend.restore_service(svc, snap) {
+                    errors.push(format!("{svc}: {error}"));
+                }
             }
-        } else if let Ok(services) = self.backend.list_services() {
-            for svc in &services {
-                let _ = self.backend.disable_service(svc);
+        } else {
+            for svc in self.backend.list_services()? {
+                if let Err(error) = self.backend.disable_service(&svc) {
+                    errors.push(format!("{svc}: {error}"));
+                }
+            }
+        }
+        if !errors.is_empty() {
+            // Preserve the journal and enabled state so a later attempt can
+            // finish restoring every service after a transient failure.
+            return Err(format!("还原系统代理失败：{}", errors.join("；")));
+        }
+        if let Err(error) = std::fs::remove_file(&self.journal_path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("清理系统代理恢复日志失败：{error}"));
             }
         }
         *self.state.lock().unwrap() = None;
-        let _ = std::fs::remove_file(&self.journal_path);
+        Ok(())
     }
 
     /// TUN must leave every network service with its system proxy disabled.
@@ -500,7 +541,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         self.restore_after_failed_tun(suspended)
     }
 
-    /// 各服务当前生效的 HTTP/HTTPS 代理端点（含第三方设置的）。
+    /// 各服务当前生效的 HTTP/HTTPS/SOCKS 代理端点（含第三方设置的）。
     /// 诊断用：判断系统代理是否指向本应用端口、是否存在第三方冲突。
     pub fn external_endpoints(&self) -> Vec<(String, ProxyEndpoint)> {
         let mut out = Vec::new();
@@ -511,6 +552,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                         out.push((svc.clone(), ep));
                     }
                     if let Some(ep) = snap.secure {
+                        out.push((svc.clone(), ep));
+                    }
+                    if let Some(ep) = snap.socks {
                         out.push((svc.clone(), ep));
                     }
                 }
@@ -546,10 +590,15 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 启动时兜底：上次会话残留的开启状态 → 还原原设置。返回是否发生了还原。
     pub fn recover_stale(&self) -> bool {
-        self.read_journal().is_some_and(|_| {
-            self.disable();
+        if !self.journal_path.exists() {
+            return false;
+        }
+        if let Err(error) = self.disable() {
+            eprintln!("sysproxy stale recovery failed: {error}");
+            false
+        } else {
             true
-        })
+        }
     }
 
     fn read_journal(&self) -> Option<Journal> {
@@ -566,18 +615,23 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             })
     }
 
-    fn write_journal(&self, port: u16, snapshot: &BTreeMap<String, ServiceSnapshot>) {
+    fn write_journal(
+        &self,
+        port: u16,
+        snapshot: &BTreeMap<String, ServiceSnapshot>,
+    ) -> Result<(), String> {
         let j = Journal {
             port,
             snapshot: snapshot.clone(),
         };
         if let Some(parent) = self.journal_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建代理恢复目录失败: {e}"))?;
         }
-        let _ = std::fs::write(
+        std::fs::write(
             &self.journal_path,
-            serde_json::to_vec(&j).unwrap_or_default(),
-        );
+            serde_json::to_vec(&j).map_err(|e| format!("序列化代理恢复日志失败: {e}"))?,
+        )
+        .map_err(|e| format!("写入代理恢复日志失败: {e}"))
     }
 }
 
@@ -588,6 +642,21 @@ fn parse_services(output: &str) -> Vec<String> {
         .skip(1) // "An asterisk (*) denotes..."
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('*'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// `networksetup -getproxybypassdomains` 在没有条目时输出一句说明，
+/// 有条目时每行一个域名。空列表仍需作为快照保存，恢复时传入 Empty。
+#[cfg(target_os = "macos")]
+fn parse_bypass_domains(output: &str) -> Vec<String> {
+    let lines = output.lines().map(str::trim).filter(|line| !line.is_empty());
+    lines
+        .filter(|line| {
+            !line.starts_with("There aren't any bypass domains")
+                && !line.starts_with("There are no bypass domains")
+                && !line.starts_with("Domains bypassed by the proxy server:")
+        })
         .map(str::to_string)
         .collect()
 }
@@ -752,7 +821,7 @@ mod tests {
         assert_eq!(mgr.status().port, 7897);
         assert!(dir.path().join("journal.json").exists());
 
-        mgr.disable();
+        mgr.disable().unwrap();
         assert!(!mgr.status().enabled);
         assert!(!dir.path().join("journal.json").exists());
     }
@@ -799,7 +868,7 @@ mod tests {
         let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", preset.clone());
         let mgr = manager_with(backend.clone(), &dir);
         mgr.enable(7897).unwrap();
-        mgr.disable();
+        mgr.disable().unwrap();
 
         let restored = backend.inner.restored.lock().unwrap();
         let snap = restored.get("Wi-Fi").expect("restore called");
@@ -820,7 +889,7 @@ mod tests {
         let backend = FakeBackend::new(&["Wi-Fi"]);
         let mgr = manager_with(backend.clone(), &dir);
         mgr.enable(7897).unwrap();
-        mgr.disable();
+        mgr.disable().unwrap();
         let restored = backend.inner.restored.lock().unwrap();
         let snap = restored.get("Wi-Fi").expect("restore called");
         assert_eq!(*snap, ServiceSnapshot::default());
@@ -851,7 +920,7 @@ mod tests {
         let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
         assert!(parse_proxy_enabled(&out), "proxy should be enabled");
 
-        mgr.disable();
+        mgr.disable().unwrap();
         let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
         assert!(!parse_proxy_enabled(&out), "proxy should be restored");
     }
