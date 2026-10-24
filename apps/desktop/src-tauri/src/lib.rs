@@ -1329,8 +1329,12 @@ fn update_state_get(app: AppHandle) -> Option<update_check::UpdateInfo> {
 
 #[tauri::command]
 async fn update_check_now(app: AppHandle) -> Result<Option<String>, String> {
-    let (_, auto_download) = update_check::update_settings(&app);
-    update_check::check_once(&app, auto_download)
+    tauri::async_runtime::spawn_blocking(move || {
+        let (_, auto_download) = update_check::update_settings(&app);
+        update_check::check_once(&app, auto_download)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

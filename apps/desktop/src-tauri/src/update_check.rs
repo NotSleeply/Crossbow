@@ -6,6 +6,7 @@
 //! AppState，逻辑平台无关——插件双平台同构。
 
 use std::sync::Mutex;
+use std::time::Duration;
 
 use tauri::AppHandle;
 use tauri::Emitter as _;
@@ -60,7 +61,13 @@ pub fn spawn_checker(app: &AppHandle) {
 /// 手动/定时共用的单次检查。auto_download=true 时发现新版立即后台下载。
 pub fn check_once(app: &AppHandle, auto_download: bool) -> Result<Option<String>, String> {
     let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
-    let update = tauri::async_runtime::block_on(updater.check()).map_err(|e| e.to_string())?;
+    // Updater requests have no default timeout. Limit only the check, so a slow
+    // download is not aborted by the same deadline.
+    let update = tauri::async_runtime::block_on(async {
+        tokio::time::timeout(Duration::from_secs(20), updater.check()).await
+    })
+    .map_err(|_| "UPDATE_CHECK_TIMEOUT".to_string())?
+    .map_err(|e| e.to_string())?;
     match update {
         Some(u) => {
             let version = u.version.clone();

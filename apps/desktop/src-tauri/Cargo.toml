@@ -30,6 +30,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["time"] }
 crossbow-core = { path = "../../../crates/crossbow-core" }
 
 [target.'cfg(unix)'.dependencies]
