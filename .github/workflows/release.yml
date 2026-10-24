@@ -1,0 +1,194 @@
+name: release
+
+# 正式发版：macOS 签名 + 公证 + 更新器产物 + GitHub Release。
+# 触发方式（二选一，均需手动发起）：
+#   1. 推送 tag：git tag v0.9.2 && git push origin v0.9.2
+#   2. Actions 页 → release → Run workflow → 填版本号
+# 所需 Secrets：
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID      —— 公证（Apple ID + App 专用密码）
+#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD —— Developer ID 证书 .p12（base64）
+#   TAURI_SIGNING_PRIVATE_KEY                      —— 更新器签名私钥（~/.tauri/crossbow.key 内容）
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 v0.9.2）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Download mihomo sidecar
+        run: |
+          curl -fsSL -o mihomo.gz \
+            "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/mihomo-darwin-arm64-v1.19.32.gz" \
+            || curl -fsSL -o mihomo.gz \
+            "https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/mihomo-darwin-arm64-v1.19.32.gz"
+          gunzip -f mihomo.gz
+          mkdir -p apps/desktop/src-tauri/binaries
+          mv mihomo apps/desktop/src-tauri/binaries/mihomo-aarch64-apple-darwin
+          chmod +x apps/desktop/src-tauri/binaries/mihomo-aarch64-apple-darwin
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      # 签名（证书自动导入临时钥匙串，含 unlock）+ 公证 + 更新器产物
+      # 全部由 tauri-bundler 依据以下环境变量完成（勿再手动导入证书：
+      # keychain 未 unlock 时 codesign 在无 GUI runner 上永久挂起）
+      - name: Build (signed + notarized)
+        working-directory: apps/desktop
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Xueyu Zhang (M8H9MSJT3S)"
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: pnpm tauri build
+
+      # tauri 只公证 .app；DMG 单独公证 + 装订（离线安装也有有效票据）
+      - name: Notarize & staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG=$(ls target/release/bundle/dmg/*.dmg | head -1)
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+
+      # 中文 changelog：上个 tag → 本 tag 的提交按类型归纳；
+      # PR 标题优先（合并提交信息即 PR 标题），无 tag 时回退为提交数摘要
+      - name: Generate Chinese changelog
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          PREV=$(git tag --sort=-creatordate | grep -v "^${VERSION}$" | head -1 || true)
+          RANGE="${PREV:+${PREV}..}${VERSION}"
+          echo "changelog range: $RANGE"
+          python3 - "$RANGE" "/tmp/changelog.md" <<'PYEOF'
+          import subprocess, sys, collections
+          rng, out = sys.argv[1], sys.argv[2]
+          git_log = subprocess.run(
+              ["git", "log", "--pretty=%s", rng],
+              capture_output=True, text=True).stdout
+          CATS = collections.OrderedDict([
+              ("feat", "### 🚀 新功能"),
+              ("fix", "### 🐛 修复"),
+              ("perf", "### ⚡ 性能"),
+              ("refactor", "### ♻️ 重构"),
+              ("style", "### 🎨 界面"),
+              ("docs", "### 📝 文档"),
+          ])
+          buckets = collections.OrderedDict((k, []) for k in CATS)
+          other = []
+          for line in git_log.splitlines():
+              s = line.strip()
+              if not s:
+                  continue
+              low = s.lower()
+              placed = False
+              for cat in CATS:
+                  if low.startswith(cat + "(") or low.startswith(cat + ":") or low.startswith(cat + " "):
+                      buckets[cat].append(s)
+                      placed = True
+                      break
+              if not placed:
+                  continue
+          md = ["## 更新内容", ""]
+          any_cat = False
+          for cat, title in CATS.items():
+              items = buckets[cat]
+              if not items:
+                  continue
+              any_cat = True
+              md.append(title)
+              for it in items[:40]:
+                  md.append(f"- {it}")
+              md.append("")
+          if not any_cat:
+              md.append("- 本次更新包含稳定性与体验优化")
+              md.append("")
+          open(out, "w").write("\n".join(md))
+          PYEOF
+          cat /tmp/changelog.md
+
+      - name: Prepare latest.json
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          SIG=$(cat target/release/bundle/macos/Crossbow.app.tar.gz.sig)
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          python3 - "$SIG" "$NOW" "$VERSION" <<'EOF'
+          import json, sys
+          sig, now, version = sys.argv[1], sys.argv[2], sys.argv[3].lstrip("v")
+          notes = ""
+          try:
+              notes = open("/tmp/changelog.md").read().strip()
+          except OSError:
+              pass
+          manifest = {
+              "version": version,
+              "notes": notes or f"Crossbow v{version}",
+              "pub_date": now,
+              "platforms": {
+                  "darwin-aarch64": {
+                      "signature": sig,
+                      "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
+                      + sys.argv[3]
+                      + "/Crossbow.app.tar.gz",
+                  }
+              },
+          }
+          open("latest.json", "w").write(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          {
+            cat /tmp/changelog.md
+            echo ""
+            echo "## 下载"
+            echo ""
+            echo "- Apple Silicon：[Crossbow_${VERSION#v}_aarch64.dmg](https://github.com/Richard-Zhang1019/Crossbow/releases/download/${VERSION}/Crossbow_${VERSION#v}_aarch64.dmg)"
+            echo "- 自动更新：已签名 \`Crossbow.app.tar.gz\` 与 \`latest.json\`"
+          } > /tmp/release-notes.md
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Crossbow $VERSION" \
+            --notes-file /tmp/release-notes.md \
+            target/release/bundle/macos/Crossbow.app.tar.gz \
+            target/release/bundle/macos/Crossbow.app.tar.gz.sig \
+            target/release/bundle/dmg/Crossbow_*.dmg \
+            latest.json
