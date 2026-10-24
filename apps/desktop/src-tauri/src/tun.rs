@@ -8,6 +8,7 @@
 //! 授权后的版本化副本保留 setuid，关闭 TUN 时不重复请求管理员授权。
 //! 仅 macOS；Windows 的 TUN 走 wintun + 服务，属 M1.5 后续。
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -151,7 +152,7 @@ pub fn authorized_copy_exists(data_dir: &std::path::Path, need: &str) -> bool {
 /// Mihomo's macOS auto-route installs the 1.0.0.0/8 route. If another tunnel
 /// already owns it, mihomo can report a healthy controller while its TUN
 /// listener failed. Catch this before changing the saved switch or proxy.
-fn ensure_route_available() -> Result<(), String> {
+fn ipv4_routes() -> Result<Vec<(String, String)>, String> {
     let output = std::process::Command::new("netstat")
         .args(["-rn", "-f", "inet"])
         .output()
@@ -160,26 +161,52 @@ fn ensure_route_available() -> Result<(), String> {
         return Err("检查 TUN 路由失败".into());
     }
     let table = String::from_utf8_lossy(&output.stdout);
+    let mut routes = Vec::new();
     for line in table.lines() {
         let fields = line.split_whitespace().collect::<Vec<_>>();
-        if matches!(fields.first().copied(), Some("1" | "1/8" | "1.0.0.0/8")) {
-            let interface = fields.get(3).copied().unwrap_or("未知接口");
+        if let (Some(destination), Some(interface)) = (fields.first(), fields.get(3)) {
+            routes.push(((*destination).to_string(), (*interface).to_string()));
+        }
+    }
+    Ok(routes)
+}
+
+fn utun_routes() -> Result<BTreeSet<(String, String)>, String> {
+    Ok(ipv4_routes()?
+        .into_iter()
+        .filter(|(_, interface)| interface.starts_with("utun"))
+        .collect())
+}
+
+fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
+    let routes = ipv4_routes()?;
+    for (destination, interface) in &routes {
+        if matches!(destination.as_str(), "1" | "1/8" | "1.0.0.0/8") {
             return Err(format!(
                 "已有其他隧道占用 1.0.0.0/8 路由（{interface}）。请关闭其他代理或 VPN 的 TUN 模式后重试"
             ));
         }
     }
-    Ok(())
+    Ok(routes
+        .into_iter()
+        .filter(|(_, interface)| interface.starts_with("utun"))
+        .collect())
 }
 
 /// Controller readiness alone does not prove that the TUN listener started.
 /// Mihomo logs route and interface failures after the controller comes up.
-fn wait_tun_listener(state: &AppState) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(3);
+fn wait_tun_listener(
+    state: &AppState,
+    previous_routes: &BTreeSet<(String, String)>,
+) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(10);
     let log_path = state.data_dir.join("runtime/core-stdio.log");
     loop {
         if let Ok(log) = std::fs::read_to_string(&log_path) {
-            if let Some(line) = log.lines().find(|line| line.contains("Start TUN listening error")) {
+            if let Some(line) = log
+                .lines()
+                .find(|line| line.contains("Start TUN listening error"))
+            {
                 let detail = line.split("msg=").last().unwrap_or(line).trim_matches('"');
                 return Err(format!("TUN 接管失败：{detail}"));
             }
@@ -187,8 +214,13 @@ fn wait_tun_listener(state: &AppState) -> Result<(), String> {
         if let crate::CoreStatus::Crashed(error) = state.core().status() {
             return Err(error);
         }
-        if Instant::now() >= deadline {
+        // A ready controller does not prove that the virtual interface took
+        // over traffic. Both supported cores add IPv4 routes through utun.
+        if utun_routes()?.difference(previous_routes).next().is_some() {
             return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err("TUN 内核已启动，但未检测到新的 utun 路由；请检查内核日志".into());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -206,9 +238,11 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if previous_tun == enable {
         return Ok(());
     }
-    if enable {
-        ensure_route_available()?;
-    }
+    let previous_routes = if enable {
+        ensure_route_available()?
+    } else {
+        BTreeSet::new()
+    };
     let was_running = matches!(
         state.core().status(),
         crate::CoreStatus::Running | crate::CoreStatus::Starting
@@ -250,7 +284,13 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if should_start {
         let start_result = crate::start_core_locked(state)
             .and_then(|()| crate::wait_core_running(state))
-            .and_then(|()| if enable { wait_tun_listener(state) } else { Ok(()) });
+            .and_then(|()| {
+                if enable {
+                    wait_tun_listener(state, &previous_routes)
+                } else {
+                    Ok(())
+                }
+            });
         if let Err(start_error) = start_result {
             if !enable {
                 // The old TUN core has already exited. Rolling the preference

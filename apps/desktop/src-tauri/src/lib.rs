@@ -1435,7 +1435,7 @@ fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(
     }
     let proxy_was_on = state.sysproxy.status().enabled;
     if proxy_was_on {
-        state.sysproxy.disable();
+        state.sysproxy.disable()?;
     }
     {
         let mut store = state.store.lock().unwrap();
@@ -1544,7 +1544,7 @@ fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
 #[tauri::command]
 fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     if state.sysproxy.status().enabled {
-        state.sysproxy.disable();
+        state.sysproxy.disable()?;
     } else {
         if state.store.lock().unwrap().data().engine.tun_enable {
             return Err("请先关闭 TUN 模式再开启系统代理".into());
@@ -1615,8 +1615,11 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
                 return;
             };
             // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
-            if state.sysproxy.status().enabled {
-                state.sysproxy.disable();
+            let proxy_was_on = state.sysproxy.status().enabled;
+            if proxy_was_on {
+                if let Err(error) = state.sysproxy.disable() {
+                    eprintln!("core crash system proxy recovery failed: {error}");
+                }
                 let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                 refresh_tray(&handle);
             }
@@ -1636,14 +1639,16 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
                 }
                 let port = state.store.lock().unwrap().data().engine.mixed_port;
                 let _ = start_core(&state);
-                // 等内核起来后恢复系统代理（最多 20s）
-                for _ in 0..100 {
-                    if state.core().status() == CoreStatus::Running {
-                        let _ = state.sysproxy.enable(port);
-                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-                        break;
+                // 仅在原本使用系统代理时恢复；TUN 模式不能重新打开系统代理。
+                if proxy_was_on {
+                    for _ in 0..100 {
+                        if state.core().status() == CoreStatus::Running {
+                            let _ = state.sysproxy.enable(port);
+                            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
                 let _ = handle.emit(
                             "core://safe-mode",
@@ -1811,19 +1816,25 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
             let cycle_started = std::time::Instant::now();
             if let Some(state) = handle.try_state::<AppState>() {
                 let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-                if !tun_enabled || state.core().status() != CoreStatus::Running {
+                let core_status = state.core().status();
+                if !tun_enabled || core_status == CoreStatus::Starting {
                     failures = 0;
                     reported_disable_failure = false;
                 } else {
-                    // A second proxy client may re-enable a stale macOS proxy
-                    // after Crossbow has established its route. Browsers would
-                    // then bypass TUN and connect to a dead local port.
-                    if !state.sysproxy.external_endpoints().is_empty() {
-                        if let Err(error) = state.sysproxy.suspend_for_tun() {
-                            eprintln!("tun system proxy cleanup failed: {error}");
+                    let probe = if core_status == CoreStatus::Running {
+                        // A second proxy client may re-enable a stale macOS
+                        // proxy after Crossbow has established its route.
+                        if !state.sysproxy.external_endpoints().is_empty() {
+                            if let Err(error) = state.sysproxy.suspend_for_tun() {
+                                eprintln!("tun system proxy cleanup failed: {error}");
+                            }
                         }
-                    }
-                    let probe = probe_tun_network();
+                        probe_tun_network()
+                    } else {
+                        // Give the core's automatic restart time to recover.
+                        // A persistent Crashed/Stopped state is a dead TUN.
+                        Err(format!("TUN 内核未运行：{core_status:?}"))
+                    };
 
                     match probe {
                         Ok(_) => {
@@ -1844,6 +1855,8 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                             failures = 0;
                                             reported_disable_failure = false;
                                             let _ = handle.emit("tun://status", false);
+                                            let _ = handle
+                                                .emit("sysproxy://status", state.sysproxy.status());
                                             refresh_tray(&handle);
                                             let _ = handle.emit("tun://health-notice", true);
                                         }
@@ -1852,6 +1865,17 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                             eprintln!(
                                                 "tun health recovery could not disable TUN: {disable_error}"
                                             );
+                                            let actual = state
+                                                .store
+                                                .lock()
+                                                .unwrap()
+                                                .data()
+                                                .engine
+                                                .tun_enable;
+                                            let _ = handle.emit("tun://status", actual);
+                                            let _ = handle
+                                                .emit("sysproxy://status", state.sysproxy.status());
+                                            refresh_tray(&handle);
                                             if !reported_disable_failure {
                                                 let _ = handle.emit("tun://health-notice", false);
                                                 reported_disable_failure = true;
@@ -2381,7 +2405,7 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
         state.core().status()
     ));
     if state.sysproxy.status().enabled {
-        state.sysproxy.disable();
+        state.sysproxy.disable()?;
     } else {
         if state.store.lock().unwrap().data().engine.tun_enable {
             return Err("请先关闭 TUN 模式再开启系统代理".into());
@@ -2787,7 +2811,9 @@ pub fn run() {
                         let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
                         let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
                         if !handoff {
-                            state.sysproxy.disable();
+                            if let Err(error) = state.sysproxy.disable() {
+                                eprintln!("exit system proxy recovery failed: {error}");
+                            }
                             state.core().stop();
                         }
                     }
