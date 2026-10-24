@@ -358,6 +358,12 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 对所有网络服务开启代理。先保存完整快照与恢复日志；任一服务设置
     /// 失败时回滚全部服务，避免留下 HTTP/HTTPS/SOCKS 半配置状态。
     pub fn enable(&self, port: u16) -> Result<(), String> {
+        // A previous attempt may have changed some services before its
+        // rollback failed. Recover that snapshot before taking a new one;
+        // otherwise the original settings would be overwritten permanently.
+        if self.journal_path.exists() {
+            self.disable()?;
+        }
         let services = self.backend.list_services()?;
         if services.is_empty() {
             return Err("no network services found".into());
@@ -397,6 +403,14 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 或快照失败）退回全量关闭。幂等，用于退出兜底。
     pub fn disable(&self) -> Result<(), String> {
         let journal = self.read_journal();
+        if self.journal_path.exists() && journal.is_none() {
+            return Err("系统代理恢复日志无法读取，未覆盖现有代理设置".into());
+        }
+        if journal.is_none() && self.state.lock().unwrap().is_none() {
+            // Crossbow does not own the current proxy. In particular, exiting
+            // while TUN is active must not clear another client's settings.
+            return Ok(());
+        }
         let mut errors = Vec::new();
         if let Some(snapshot) = journal.map(|j| j.snapshot).filter(|s| !s.is_empty()) {
             for (svc, snap) in &snapshot {
@@ -576,14 +590,15 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 启动时兜底：上次会话残留的开启状态 → 还原原设置。返回是否发生了还原。
     pub fn recover_stale(&self) -> bool {
-        self.read_journal().is_some_and(|_| {
-            if let Err(error) = self.disable() {
-                eprintln!("sysproxy stale recovery failed: {error}");
-                false
-            } else {
-                true
-            }
-        })
+        if !self.journal_path.exists() {
+            return false;
+        }
+        if let Err(error) = self.disable() {
+            eprintln!("sysproxy stale recovery failed: {error}");
+            false
+        } else {
+            true
+        }
     }
 
     fn read_journal(&self) -> Option<Journal> {

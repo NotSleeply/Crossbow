@@ -2811,10 +2811,21 @@ pub fn run() {
                         let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
                         let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
                         if !handoff {
-                            if let Err(error) = state.sysproxy.disable() {
-                                eprintln!("exit system proxy recovery failed: {error}");
+                            let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                            if tun_enabled {
+                                // Once the privileged TUN core is gone, restore
+                                // the settings saved before TUN immediately.
+                                if state.core().stop() {
+                                    if let Err(error) = state.sysproxy.recover_tun_without_core() {
+                                        eprintln!("exit TUN proxy recovery failed: {error}");
+                                    }
+                                }
+                            } else {
+                                if let Err(error) = state.sysproxy.disable() {
+                                    eprintln!("exit system proxy recovery failed: {error}");
+                                }
+                                state.core().stop();
                             }
-                            state.core().stop();
                         }
                     }
                 }
