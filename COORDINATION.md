@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/fix-update-check-feedback |
+| /Users/ayu/Crossbow-codex | codex | codex/docs-site-readme-v092 |
 
 ## 当前认领
 
-- **codex**: 无（PR #53 待审）
+- **codex**: #56 PR #53 Windows CI 与 Netlify 官网预览（`codex/docs-site-readme-v092`；`.github/workflows/build.yml`、`netlify.toml`、官网 CI 配置）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
