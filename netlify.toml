@@ -1,4 +1,6 @@
 # Netlify 部署配置（站点链接到本仓库时自动生效）
+# crossbow-client 站点的生产分支须为 main；Deploy Previews 须在 Netlify 后台开启。
+# 这样以 main 为 base 的官网 PR 才会得到 deploy-preview-<PR>--crossbow-client.netlify.app。
 [build]
   base = "apps/site"
   command = "pnpm install --no-frozen-lockfile && pnpm build"
