@@ -71,6 +71,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: pnpm tauri build
 
+      # tauri 只公证 .app；DMG 单独公证 + 装订（离线安装也有有效票据）
+      - name: Notarize & staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG=$(ls target/release/bundle/dmg/*.dmg | head -1)
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+
       # 中文 changelog：上个 tag → 本 tag 的提交按类型归纳；
       # PR 标题优先（合并提交信息即 PR 标题），无 tag 时回退为提交数摘要
       - name: Generate Chinese changelog
