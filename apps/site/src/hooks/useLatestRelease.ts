@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 export interface ReleaseInfo {
-  /** 形如 v0.5.0 */
+  /** 形如 v0.9.2 */
   version: string;
   /** Apple Silicon dmg 资产直链（该版本含此资产时才有） */
   dmgUrl: string | null;

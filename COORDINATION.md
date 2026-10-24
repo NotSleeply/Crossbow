@@ -7,15 +7,16 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/fix-update-check-feedback |
+| /Users/ayu/Crossbow-codex | codex | codex/docs-site-readme-v092 |
 
 ## 当前认领
 
-- **codex**: 无（PR #51 待审）
+- **codex**: #56 PR #53 Windows CI 与 Netlify 官网预览（`codex/docs-site-readme-v092`；`.github/workflows/build.yml`、`netlify.toml`、官网 CI 配置）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
+- 2026-10-24: codex #52 官网与 README 同步已推送至 PR #53（`codex/docs-site-readme-v092`），待审。
 - 2026-10-24: codex #50 手动检查更新进度、结果与超时反馈（PR #51，`codex/fix-update-check-feedback`，待审）
 - 2026-10-24: codex #49 TUN 就绪与系统代理恢复已推送至 PR #48（`codex/fix-tun-sysproxy-conflict`），待审。
 - 2026-10-24: #45 TUN 断网离线恢复命令与使用说明（`scripts/recover-tun-network.command`、`docs/TUN-RECOVERY.md`，已提交）
