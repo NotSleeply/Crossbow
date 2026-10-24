@@ -1637,10 +1637,13 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
                     }
                     let _ = store.save();
                 }
-                let port = state.store.lock().unwrap().data().engine.mixed_port;
+                let (port, tun_enabled) = {
+                    let store = state.store.lock().unwrap();
+                    (store.data().engine.mixed_port, store.data().engine.tun_enable)
+                };
                 let _ = start_core(&state);
                 // 仅在原本使用系统代理时恢复；TUN 模式不能重新打开系统代理。
-                if proxy_was_on {
+                if proxy_was_on && !tun_enabled {
                     for _ in 0..100 {
                         if state.core().status() == CoreStatus::Running {
                             let _ = state.sysproxy.enable(port);

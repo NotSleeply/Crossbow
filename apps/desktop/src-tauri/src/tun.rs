@@ -211,8 +211,10 @@ fn wait_tun_listener(
                 return Err(format!("TUN 接管失败：{detail}"));
             }
         }
-        if let crate::CoreStatus::Crashed(error) = state.core().status() {
-            return Err(error);
+        match state.core().status() {
+            crate::CoreStatus::Crashed(error) => return Err(error),
+            crate::CoreStatus::Stopped => return Err("TUN 内核在路由就绪前已停止".into()),
+            _ => {}
         }
         // A ready controller does not prove that the virtual interface took
         // over traffic. Both supported cores add IPv4 routes through utun.
