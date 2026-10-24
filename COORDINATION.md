@@ -11,12 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #50 手动检查更新无反馈与版本检测（`codex/fix-update-check-feedback`；
-  `apps/desktop/src/pages/Settings.tsx`、`apps/desktop/src-tauri/src/update_check.rs`、`apps/desktop/src/i18n.ts`）
+- **codex**: 无（PR #51 待审）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
+- 2026-10-24: codex #50 手动检查更新进度、结果与超时反馈（PR #51，`codex/fix-update-check-feedback`，待审）
 - 2026-10-24: codex #49 TUN 就绪与系统代理恢复已推送至 PR #48（`codex/fix-tun-sysproxy-conflict`），待审。
 - 2026-10-24: #45 TUN 断网离线恢复命令与使用说明（`scripts/recover-tun-network.command`、`docs/TUN-RECOVERY.md`，已提交）
 - 2026-10-23: PR #42 标识符切换（待合并）；v0.9.1 发布；#20/#22/#24/#36/#37 修复合并（#37-#40）
