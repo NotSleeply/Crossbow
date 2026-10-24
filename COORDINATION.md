@@ -11,13 +11,14 @@
 
 ## 当前认领
 
-- **codex**: #54 托盘延迟零值、TUN/系统代理独立控制和勾选样式（`codex/tray-tun-proxy-controls`；`tray_state.rs`、`tray_speed.rs`、`tun.rs`、`sysproxy.rs`、`lib.rs`、`Home.tsx`、`i18n.ts`）
+- **codex**: #54/#56 后续核查 PR #55 变基并排查 #21/#23（`codex/tray-tun-proxy-controls`；`COORDINATION.md`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
-- 2026-10-24: codex #52 官网与 README 同步已推送至 PR #53（`codex/docs-site-readme-v092`），待审。
+- 2026-10-24: codex #54 托盘 0ms 失败显示、TUN 与系统代理独立开关、子菜单对勾统一（PR #55，`codex/tray-tun-proxy-controls`，待验收）
 - 2026-10-24: codex #50 手动检查更新进度、结果与超时反馈（PR #51，`codex/fix-update-check-feedback`，待审）
+- 2026-10-24: codex #52 官网与 README 同步已推送至 PR #53（`codex/docs-site-readme-v092`），待审。
 - 2026-10-24: codex #49 TUN 就绪与系统代理恢复已推送至 PR #48（`codex/fix-tun-sysproxy-conflict`），待审。
 - 2026-10-24: #45 TUN 断网离线恢复命令与使用说明（`scripts/recover-tun-network.command`、`docs/TUN-RECOVERY.md`，已提交）
 - 2026-10-23: PR #42 标识符切换（待合并）；v0.9.1 发布；#20/#22/#24/#36/#37 修复合并（#37-#40）
