@@ -1,23 +1,25 @@
 # Agent 协作状态（每会话开工前必读，认领后必更）
 
-> 更新：2026-10-23 13:0x
+> 更新：2026-10-24 20:0x
 
 ## Worktree 布局
 
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/docs-site-readme-v092 |
+| /Users/ayu/Crossbow-codex | codex | codex/tray-tun-proxy-controls |
 
 ## 当前认领
 
-- **codex**: #56 PR #53 Windows CI 与 Netlify 官网预览（`codex/docs-site-readme-v092`；`.github/workflows/build.yml`、`netlify.toml`、官网 CI 配置）
+- **codex**: PR #55 变基与 #21/#23 后续 TUN 修复（`codex/tray-tun-proxy-controls`；`runtime.rs`、`tun.rs`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
-- 2026-10-24: codex #52 官网与 README 同步已推送至 PR #53（`codex/docs-site-readme-v092`），待审。
+- 2026-10-24: codex #54 托盘 0ms 失败显示、TUN 与系统代理独立开关、子菜单对勾统一（PR #55，`codex/tray-tun-proxy-controls`，待验收）
+- 2026-10-24: PR #53 已合并且 Netlify 预览成功；PR #55 已变基到 main，并补充 TUN LAN 网关保留与 macOS 分片默认路由识别（Refs #21 #23）。
 - 2026-10-24: codex #50 手动检查更新进度、结果与超时反馈（PR #51，`codex/fix-update-check-feedback`，待审）
+- 2026-10-24: codex #52 官网与 README 同步已推送至 PR #53（`codex/docs-site-readme-v092`），待审。
 - 2026-10-24: codex #49 TUN 就绪与系统代理恢复已推送至 PR #48（`codex/fix-tun-sysproxy-conflict`），待审。
 - 2026-10-24: #45 TUN 断网离线恢复命令与使用说明（`scripts/recover-tun-network.command`、`docs/TUN-RECOVERY.md`，已提交）
 - 2026-10-23: PR #42 标识符切换（待合并）；v0.9.1 发布；#20/#22/#24/#36/#37 修复合并（#37-#40）

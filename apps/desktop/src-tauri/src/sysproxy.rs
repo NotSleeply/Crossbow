@@ -95,25 +95,33 @@ impl SysProxyBackend for NetworkSetup {
             secure: parse_endpoint(&Self::run(&["-getsecurewebproxy", service])?),
             socks: parse_endpoint(&Self::run(&["-getsocksfirewallproxy", service])?),
             bypass: Some(
-                parse_bypass_domains(&Self::run(&["-getproxybypassdomains", service])?)
-                    .join("\n"),
+                parse_bypass_domains(&Self::run(&["-getproxybypassdomains", service])?).join("\n"),
             ),
         })
     }
 
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
-        let apply = |setter: &str, state_setter: &str, ep: Option<&ProxyEndpoint>| -> Result<(), String> {
-            match ep {
-                Some(ep) => {
-                    Self::run(&[setter, service, &ep.host, &ep.port.to_string()])?;
-                    Ok(())
+        let apply =
+            |setter: &str, state_setter: &str, ep: Option<&ProxyEndpoint>| -> Result<(), String> {
+                match ep {
+                    Some(ep) => {
+                        Self::run(&[setter, service, &ep.host, &ep.port.to_string()])?;
+                        Ok(())
+                    }
+                    None => Self::run(&[state_setter, service, "off"]).map(|_| ()),
                 }
-                None => Self::run(&[state_setter, service, "off"]).map(|_| ()),
-            }
-        };
+            };
         apply("-setwebproxy", "-setwebproxystate", snap.web.as_ref())?;
-        apply("-setsecurewebproxy", "-setsecurewebproxystate", snap.secure.as_ref())?;
-        apply("-setsocksfirewallproxy", "-setsocksfirewallproxystate", snap.socks.as_ref())?;
+        apply(
+            "-setsecurewebproxy",
+            "-setsecurewebproxystate",
+            snap.secure.as_ref(),
+        )?;
+        apply(
+            "-setsocksfirewallproxy",
+            "-setsocksfirewallproxystate",
+            snap.socks.as_ref(),
+        )?;
         if let Some(bypass) = &snap.bypass {
             let domains = bypass.lines().collect::<Vec<_>>();
             let mut args = vec!["-setproxybypassdomains", service];
@@ -399,6 +407,131 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         Ok(())
     }
 
+    /// When TUN suspended another client's proxy, transfer that original
+    /// snapshot to Crossbow's proxy journal without briefly re-enabling it.
+    /// The two Crossbow switches can then be controlled independently.
+    pub fn enable_during_tun(&self, port: u16) -> Result<(), String> {
+        let tun_journal = self.tun_journal_path();
+        let saved = match std::fs::read(&tun_journal) {
+            Ok(saved) => saved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return self.enable(port);
+            }
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
+        };
+        if self.journal_path.exists() {
+            return Err("系统代理恢复日志已存在，无法接管 TUN 暂停的代理".into());
+        }
+        let suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
+            .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+        let original = if suspended.enabled_port.is_some() {
+            let raw = suspended
+                .journal
+                .as_deref()
+                .ok_or("TUN 代理恢复日志缺少原始系统代理快照")?;
+            serde_json::from_slice::<Journal>(raw)
+                .map_err(|error| format!("解析原始系统代理快照失败：{error}"))?
+                .snapshot
+        } else {
+            suspended.snapshot
+        };
+        let services = self.backend.list_services()?;
+        if services.is_empty() {
+            return Err("no network services found".into());
+        }
+        let mut current = BTreeMap::new();
+        for service in &services {
+            current.insert(service.clone(), self.backend.service_snapshot(service)?);
+        }
+        self.write_journal(port, &original)?;
+        let result = services
+            .iter()
+            .try_for_each(|service| self.backend.enable_service(service, port))
+            .and_then(|()| {
+                std::fs::remove_file(&tun_journal)
+                    .map_err(|error| format!("清理 TUN 代理恢复日志失败：{error}"))
+            });
+        if let Err(error) = result {
+            let mut rollback_errors = Vec::new();
+            for (service, snapshot) in &current {
+                if let Err(restore_error) = self.backend.restore_service(service, snapshot) {
+                    rollback_errors.push(format!("{service}: {restore_error}"));
+                }
+            }
+            if rollback_errors.is_empty() {
+                let _ = std::fs::remove_file(&self.journal_path);
+            }
+            let rollback = if rollback_errors.is_empty() {
+                String::new()
+            } else {
+                format!("；回滚未完成：{}", rollback_errors.join("；"))
+            };
+            return Err(format!("开启系统代理失败：{error}{rollback}"));
+        }
+        *self.state.lock().unwrap() = Some(port);
+        Ok(())
+    }
+
+    /// While TUN remains on, disabling Crossbow's proxy must leave macOS
+    /// proxy settings off. Defer the pre-Crossbow snapshot until TUN exits.
+    pub fn disable_during_tun(&self) -> Result<(), String> {
+        if self.state.lock().unwrap().is_none() {
+            return Ok(());
+        }
+        let journal = self
+            .read_journal()
+            .ok_or("系统代理恢复日志无法读取，未覆盖现有代理设置")?;
+        let tun_journal = self.tun_journal_path();
+        let previous_tun_journal = match std::fs::read(&tun_journal) {
+            Ok(saved) => Some(saved),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
+        };
+        let services = self.backend.list_services()?;
+        let mut current = BTreeMap::new();
+        for service in &services {
+            current.insert(service.clone(), self.backend.service_snapshot(service)?);
+        }
+        let suspended = SuspendedSysProxy {
+            snapshot: journal.snapshot,
+            journal: None,
+            enabled_port: None,
+        };
+        if previous_tun_journal.is_none() {
+            std::fs::write(
+                &tun_journal,
+                serde_json::to_vec(&suspended).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| format!("保存 TUN 代理恢复日志失败：{error}"))?;
+        }
+        let result = services
+            .iter()
+            .try_for_each(|service| self.backend.disable_service(service))
+            .and_then(|()| {
+                std::fs::remove_file(&self.journal_path)
+                    .map_err(|error| format!("清理系统代理恢复日志失败：{error}"))
+            });
+        if let Err(error) = result {
+            let mut rollback_errors = Vec::new();
+            for (service, snapshot) in &current {
+                if let Err(restore_error) = self.backend.restore_service(service, snapshot) {
+                    rollback_errors.push(format!("{service}: {restore_error}"));
+                }
+            }
+            if previous_tun_journal.is_none() && rollback_errors.is_empty() {
+                let _ = std::fs::remove_file(&tun_journal);
+            }
+            let rollback = if rollback_errors.is_empty() {
+                String::new()
+            } else {
+                format!("；回滚未完成：{}", rollback_errors.join("；"))
+            };
+            return Err(format!("关闭系统代理失败：{error}{rollback}"));
+        }
+        *self.state.lock().unwrap() = None;
+        Ok(())
+    }
+
     /// 还原代理设置：优先按 journal 里的原设置快照逐服务恢复；无快照（老格式
     /// 或快照失败）退回全量关闭。幂等，用于退出兜底。
     pub fn disable(&self) -> Result<(), String> {
@@ -481,7 +614,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                     let _ = self.backend.restore_service(name, original);
                 }
                 let _ = std::fs::remove_file(&tun_journal);
-                return Err(format!("disable system proxy for TUN on {service}: {error}"));
+                return Err(format!(
+                    "disable system proxy for TUN on {service}: {error}"
+                ));
             }
         }
         *self.state.lock().unwrap() = None;
@@ -509,6 +644,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     pub fn restore_after_tun(&self) -> Result<(), String> {
+        if self.state.lock().unwrap().is_some() {
+            return Ok(());
+        }
         let path = self.tun_journal_path();
         let Ok(saved) = std::fs::read(path) else {
             return Ok(());
@@ -650,7 +788,10 @@ fn parse_services(output: &str) -> Vec<String> {
 /// 有条目时每行一个域名。空列表仍需作为快照保存，恢复时传入 Empty。
 #[cfg(target_os = "macos")]
 fn parse_bypass_domains(output: &str) -> Vec<String> {
-    let lines = output.lines().map(str::trim).filter(|line| !line.is_empty());
+    let lines = output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty());
     lines
         .filter(|line| {
             !line.starts_with("There aren't any bypass domains")

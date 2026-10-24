@@ -21,7 +21,7 @@ export default function HomePage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
   const [proxy, setProxy] = useState<SysProxyStatus>({ enabled: false, port: 0 });
-  const [tun, setTun] = useState({ enabled: false, ready: false });
+  const [tun, setTun] = useState({ enabled: false, ready: false, coreRunning: false });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +47,13 @@ export default function HomePage() {
     setActiveId(await ipc.activeProfileId().catch(() => null));
     setCore(await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })));
     setProxy(await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })));
-    setTun(await ipc.tunStatus().catch(() => ({ enabled: false, ready: false })));
+    setTun(
+      await ipc.tunStatus().catch(() => ({
+        enabled: false,
+        ready: false,
+        coreRunning: false,
+      })),
+    );
     setMode(await ipc.coreMode().catch(() => "rule" as const));
     setOutbound(await ipc.currentOutbound().catch(() => null));
   }, []);
@@ -118,12 +124,10 @@ export default function HomePage() {
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
   const statusTitle = tun.enabled
-    ? running
-      ? t("home.tunOn")
-      : t("home.tunCoreStopped")
-    : proxy.enabled
-      ? t("home.sysproxyOn")
-      : t("home.sysproxyOff");
+    ? (tun.coreRunning
+      ? (proxy.enabled ? t("home.tunAndSysproxyOn") : t("home.tunOn"))
+      : t("home.tunCoreStopped"))
+    : (proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff"));
 
   return (
     <div className="mx-auto max-w-4xl space-y-3.5">
@@ -187,7 +191,7 @@ export default function HomePage() {
         <button
           className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
           onClick={toggleProxy}
-          disabled={busy || !activeId || tun.enabled}
+          disabled={busy || !activeId}
           title={activeId ? undefined : t("home.noProfiles")}
         />
         <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />

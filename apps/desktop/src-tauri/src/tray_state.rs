@@ -115,8 +115,13 @@ impl TrayState {
         self.delays.retain(|n, _| known.contains(n));
         self.failed.retain(|n| known.contains(n));
         for (n, d) in &members {
-            if let Some(ms) = d {
-                self.delays.entry(n.clone()).or_insert(*ms);
+            // A failed explicit test takes precedence over older controller
+            // history until the next successful test updates this node.
+            if self.failed.contains(n) {
+                continue;
+            }
+            if let Some(ms) = d.filter(|ms| *ms > 0) {
+                self.delays.entry(n.clone()).or_insert(ms);
             }
         }
         self.failed.retain(|n| !self.delays.contains_key(n));
@@ -127,7 +132,10 @@ impl TrayState {
         self.automatic_now = automatic.as_ref().and_then(|(_, now, _)| now.clone());
         if let Some((_, _, automatic_members)) = automatic {
             for (name, delay) in automatic_members {
-                if let Some(delay) = delay {
+                if self.failed.contains(&name) {
+                    continue;
+                }
+                if let Some(delay) = delay.filter(|ms| *ms > 0) {
                     self.delays.entry(name).or_insert(delay);
                 }
             }
@@ -163,7 +171,7 @@ impl TrayState {
         members: &[String],
         now: Option<String>,
     ) {
-        self.delays = delays;
+        self.delays = delays.into_iter().filter(|(_, ms)| *ms > 0).collect();
         self.failed.clear();
         for m in members {
             if !self.delays.contains_key(m) {
@@ -210,17 +218,24 @@ impl TrayState {
         let rows = names
             .iter()
             .map(|n| {
-                let failed = self.failed.contains(n);
                 let automatic = self.automatic_group.as_deref() == Some(n.as_str());
                 let current_node = if automatic {
                     self.automatic_now.clone()
                 } else {
                     None
                 };
-                let display_delay = current_node
-                    .as_ref()
-                    .and_then(|current| self.delays.get(current))
-                    .or_else(|| self.delays.get(n));
+                let failed = self.failed.contains(n)
+                    || current_node
+                        .as_ref()
+                        .is_some_and(|current| self.failed.contains(current));
+                let display_delay = if failed {
+                    None
+                } else {
+                    current_node
+                        .as_ref()
+                        .and_then(|current| self.delays.get(current))
+                        .or_else(|| self.delays.get(n))
+                };
                 let (badge, ms) = if failed && display_delay.is_none() {
                     ("失败".to_string(), None)
                 } else {

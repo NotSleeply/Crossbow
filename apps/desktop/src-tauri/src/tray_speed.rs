@@ -253,6 +253,8 @@ const ROW_VIEW_NAME_TAG: isize = 101;
 const ROW_VIEW_CHECK_TAG: isize = 102;
 const ROW_VIEW_BADGE_TAG: isize = 103;
 const ROW_VIEW_CURRENT_TAG: isize = 107;
+const CHECK_ROW_VIEW_CHECK_TAG: isize = 108;
+const CHECK_ROW_VIEW_LABEL_TAG: isize = 109;
 const ACTION_ROW_VIEW_LABEL_TAG: isize = 104;
 const NODE_MENU_WIDTH: f64 = 270.0;
 const NODE_ROW_HEIGHT: f64 = 23.0;
@@ -317,6 +319,94 @@ define_class!(
         }
     }
 );
+
+// Mode and profile entries use the same bold check and compact hover row as
+// the selected node. Forward their native action, then close the submenu.
+define_class!(
+    #[unsafe(super(NSView))]
+    #[name = "CrossbowTrayCheckRowView"]
+    #[thread_kind = MainThreadOnly]
+    struct TrayCheckRowView;
+
+    unsafe impl NSObjectProtocol for TrayCheckRowView {}
+
+    impl TrayCheckRowView {
+        #[unsafe(method(mouseDown:))]
+        fn on_mouse_down(&self, _event: &NSEvent) {
+            let Some(item) = self.enclosingMenuItem() else { return };
+            let menu = unsafe { item.menu() };
+            if let Some(action) = item.action() {
+                let mtm = MainThreadMarker::new().expect("menu click runs on the main thread");
+                let app = NSApplication::sharedApplication(mtm);
+                let target = item.target();
+                unsafe {
+                    app.sendAction_to_from(action, target.as_deref(), Some(&*item));
+                }
+            }
+            if let Some(menu) = menu {
+                menu.cancelTracking();
+            }
+        }
+    }
+);
+
+fn make_check_row_view(mtm: MainThreadMarker, width: f64) -> Retained<TrayCheckRowView> {
+    let frame = objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(width, NODE_ROW_HEIGHT),
+    );
+    let view: Retained<TrayCheckRowView> = unsafe {
+        let allocated = TrayCheckRowView::alloc(mtm);
+        msg_send![allocated, initWithFrame: frame]
+    };
+    view.setWantsLayer(true);
+    add_hover_background(&view, width, NODE_ROW_HEIGHT, mtm);
+
+    let check = NSTextField::labelWithString(&NSString::from_str("✓"), mtm);
+    check.setTag(CHECK_ROW_VIEW_CHECK_TAG);
+    check.setFont(Some(&NSFont::boldSystemFontOfSize(14.0)));
+    check.setAlignment(NSTextAlignment::Center);
+    check.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(HOVER_HORIZONTAL_INSET + 1.0, 0.0),
+        objc2_foundation::NSSize::new(18.0, NODE_ROW_HEIGHT),
+    ));
+    let label = NSTextField::labelWithString(&NSString::new(), mtm);
+    label.setTag(CHECK_ROW_VIEW_LABEL_TAG);
+    label.setFont(Some(&NSFont::menuBarFontOfSize(12.5)));
+    label.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+    label.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(26.0, 0.0),
+        objc2_foundation::NSSize::new(width - 38.0, NODE_ROW_HEIGHT),
+    ));
+    view.addSubview(&check);
+    view.addSubview(&label);
+    view
+}
+
+fn update_check_row_view(view: &TrayCheckRowView, title: &str, checked: bool, width: f64) {
+    view.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        objc2_foundation::NSSize::new(width, NODE_ROW_HEIGHT),
+    ));
+    resize_hover_background(view, width, NODE_ROW_HEIGHT);
+    if let Some(check) = view
+        .viewWithTag(CHECK_ROW_VIEW_CHECK_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    {
+        check.setHidden(!checked);
+    }
+    if let Some(label) = view
+        .viewWithTag(CHECK_ROW_VIEW_LABEL_TAG)
+        .and_then(|view| view.downcast::<NSTextField>().ok())
+    {
+        set_menu_label_text(&label, title);
+        label.setToolTip(Some(&NSString::from_str(title)));
+        label.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(26.0, 0.0),
+            objc2_foundation::NSSize::new(width - 38.0, NODE_ROW_HEIGHT),
+        ));
+    }
+}
 
 fn make_action_row_view(mtm: MainThreadMarker) -> Retained<TrayActionRowView> {
     let frame = objc2_foundation::NSRect::new(
@@ -603,6 +693,12 @@ fn set_menu_item_hovered(item: &NSMenuItem, hovered: bool) {
         );
     } else if let Ok(view) = view.clone().downcast::<TrayActionRowView>() {
         set_action_row_hovered(&view, hovered);
+    } else if let Ok(view) = view.downcast::<TrayCheckRowView>() {
+        set_row_hovered(
+            &view,
+            hovered,
+            &[CHECK_ROW_VIEW_CHECK_TAG, CHECK_ROW_VIEW_LABEL_TAG],
+        );
     }
 }
 
@@ -652,12 +748,15 @@ define_class!(
                 return;
             };
             let handle = self.ivars();
-            // 非节点菜单（如模式子菜单）：勾选态随当前模式刷新
+            update_state_labels(&menu, handle);
+            install_menu_delegate(&menu, self);
+            // 非节点菜单（如模式和配置子菜单）：勾选态随当前状态刷新
             if !contains_delay_test(&menu) {
+                update_profile_checkmarks(&menu, handle);
                 update_mode_checkmarks(&menu, handle);
+                update_simple_check_rows(&menu, handle);
                 return;
             }
-            install_menu_delegate(&menu, self);
             let Some(state) = handle.try_state::<crate::AppState>() else {
                 return;
             };
@@ -668,9 +767,7 @@ define_class!(
             );
             let (menu_width, badge_tab) = node_menu_layout(&data.rows);
             update_menu_items(&menu, &data.rows, data.testing, menu_width, badge_tab);
-            // 状态项文字（系统代理开/关、当前模式）：菜单关闭期间的
-            // refresh_tray 触达不到 NSStatusItem 的菜单，只能在展开瞬间刷新
-            update_state_labels(&menu, handle);
+            // 菜单关闭期间的 refresh_tray 触达不到 NSStatusItem 的菜单。
             let is_node_submenu = (0..menu.numberOfItems()).any(|index| {
                 menu.itemAtIndex(index)
                     .is_some_and(|item| is_delay_test_item(&item))
@@ -825,13 +922,7 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
     };
     let sp = state.sysproxy.status();
     let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let proxy_title = if tun_enabled {
-        if state.core().status() == crate::CoreStatus::Running {
-            crate::tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
-        } else {
-            crate::tr(&lang, "TUN 已开启 · 内核未运行", "TUN enabled · core stopped")
-        }
-    } else if sp.enabled {
+    let proxy_title = if sp.enabled {
         format!(
             "{} :{}",
             crate::tr(&lang, "系统代理：已开启", "System Proxy: On"),
@@ -839,6 +930,19 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
         )
     } else {
         crate::tr(&lang, "系统代理：已关闭", "System Proxy: Off")
+    };
+    let tun_title = if tun_enabled {
+        if state.core().status() == crate::CoreStatus::Running {
+            crate::tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
+        } else {
+            crate::tr(
+                &lang,
+                "TUN 已开启 · 内核未运行",
+                "TUN enabled · core stopped",
+            )
+        }
+    } else {
+        crate::tr(&lang, "TUN 模式：已关闭", "TUN mode: Off")
     };
     let mode_title = format!(
         "{}：{}",
@@ -862,11 +966,10 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
             continue;
         };
         let title = item.title().to_string();
-        let proxy_status_item = title.starts_with("系统代理")
-            || title.starts_with("System Proxy")
-            || title.starts_with("TUN ");
-        let new_title = if proxy_status_item {
+        let new_title = if title.starts_with("系统代理") || title.starts_with("System Proxy") {
             Some(proxy_title.clone())
+        } else if title.starts_with("TUN ") {
+            Some(tun_title.clone())
         } else if title.starts_with("模式") || title.starts_with("Mode") {
             Some(mode_title.clone())
         } else {
@@ -874,7 +977,7 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
         };
         if let Some(new_title) = new_title {
             item.setTitle(&NSString::from_str(&new_title));
-            item.setEnabled(!tun_enabled);
+            item.setEnabled(true);
         }
     }
 }
@@ -884,7 +987,14 @@ fn update_mode_checkmarks(menu: &NSMenu, handle: &AppHandle) {
     let Some(state) = handle.try_state::<crate::AppState>() else {
         return;
     };
-    let lang = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().ui.lang.clone();
+    let lang = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .ui
+        .lang
+        .clone();
     let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let marks: [(&str, &str, bool); 3] = [
         (
@@ -908,6 +1018,80 @@ fn update_mode_checkmarks(menu: &NSMenu, handle: &AppHandle) {
             // NSControlStateValueOn=1 / Off=0，避开 NSControl feature 依赖
             let _: () = unsafe { msg_send![&*item, setState: (*on) as isize] };
         }
+    }
+}
+
+fn update_profile_checkmarks(menu: &NSMenu, handle: &AppHandle) {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let profiles = &store.data().profiles;
+    if profiles.is_empty() || profiles.len() != menu.numberOfItems() as usize {
+        return;
+    }
+    for (index, profile) in profiles.iter().enumerate() {
+        let Some(item) = menu.itemAtIndex(index as isize) else {
+            return;
+        };
+        if item.title().to_string() != profile.name {
+            return;
+        }
+    }
+    for (index, profile) in profiles.iter().enumerate() {
+        if let Some(item) = menu.itemAtIndex(index as isize) {
+            let selected = store.data().active_profile.as_deref() == Some(profile.id.as_str());
+            let _: () = unsafe { msg_send![&*item, setState: selected as isize] };
+        }
+    }
+}
+
+fn update_simple_check_rows(menu: &NSMenu, handle: &AppHandle) {
+    let Some(state) = handle.try_state::<crate::AppState>() else {
+        return;
+    };
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let titles = (0..menu.numberOfItems())
+        .filter_map(|index| menu.itemAtIndex(index))
+        .map(|item| item.title().to_string())
+        .collect::<Vec<_>>();
+    if titles.is_empty() || titles.len() != menu.numberOfItems() as usize {
+        return;
+    }
+    let mode_titles = [
+        crate::tr(&store.data().ui.lang, "直连", "Direct"),
+        crate::tr(&store.data().ui.lang, "规则", "Rule"),
+        crate::tr(&store.data().ui.lang, "全局", "Global"),
+    ];
+    let is_mode = titles.len() == mode_titles.len()
+        && titles.iter().zip(mode_titles.iter()).all(|(a, b)| a == b);
+    let is_profiles = !store.data().profiles.is_empty()
+        && titles.len() == store.data().profiles.len()
+        && titles
+            .iter()
+            .zip(store.data().profiles.iter())
+            .all(|(title, profile)| title == &profile.name);
+    drop(store);
+    if !is_mode && !is_profiles {
+        return;
+    }
+    let width = titles
+        .iter()
+        .map(|title| display_width(title) as f64 * 7.1 + 42.0)
+        .fold(110.0, f64::max)
+        .min(300.0);
+    menu.setMinimumWidth(width);
+    let mtm = MainThreadMarker::new().expect("tray menu updates run on the main thread");
+    for (index, title) in titles.iter().enumerate() {
+        let Some(item) = menu.itemAtIndex(index as isize) else {
+            continue;
+        };
+        let row_view = item
+            .view()
+            .and_then(|view| view.downcast::<TrayCheckRowView>().ok())
+            .unwrap_or_else(|| make_check_row_view(mtm, width));
+        update_check_row_view(&row_view, title, item.state() == 1, width);
+        item.setView(Some(&row_view));
     }
 }
 

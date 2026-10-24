@@ -143,7 +143,8 @@ impl Controller {
                         .and_then(|h| h.as_array())
                         .and_then(|a| a.last())
                         .and_then(|e| e.get("delay"))
-                        .and_then(|d| d.as_u64());
+                        .and_then(|d| d.as_u64())
+                        .filter(|delay| *delay > 0);
                     // 组嵌组时延迟取组内当前节点不可得，显示为未测即可
                     NodeView {
                         name: m.to_string(),
@@ -217,12 +218,12 @@ impl Controller {
                 .and_then(|h| h.as_array())
                 .and_then(|a| a.last())
                 .and_then(|e| e.get("delay"))
-                .and_then(|d| d.as_u64());
+                .and_then(|d| d.as_u64())
+                .filter(|delay| *delay > 0);
             out.push((name.to_string(), delay));
         }
         Ok((now, out))
     }
-
 
     pub fn test_group_delay(&self, group: &str) -> Result<BTreeMap<String, u64>, String> {
         let path = format!(
@@ -242,7 +243,7 @@ impl Controller {
         let mut out = BTreeMap::new();
         if let Some(obj) = v.as_object() {
             for (k, d) in obj {
-                if let Some(ms) = d.as_u64() {
+                if let Some(ms) = d.as_u64().filter(|delay| *delay > 0) {
                     out.insert(k.clone(), ms);
                 }
             }
@@ -290,7 +291,8 @@ impl Controller {
                             .and_then(|h| h.as_array())
                             .and_then(|a| a.last())
                             .and_then(|e| e.get("delay"))
-                            .and_then(|d| d.as_u64());
+                            .and_then(|d| d.as_u64())
+                            .filter(|delay| *delay > 0);
                         return (cur, delay);
                     }
                 }
@@ -366,6 +368,7 @@ impl Controller {
         let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         v.get("delay")
             .and_then(|d| d.as_u64())
+            .filter(|delay| *delay > 0)
             .ok_or_else(|| format!("node delay {node}: no delay field"))
     }
 }
