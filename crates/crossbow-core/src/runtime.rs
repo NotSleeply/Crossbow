@@ -65,12 +65,18 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
     patch.insert(Value::from("mode"), Value::from("rule"));
     patch.insert(Value::from("log-level"), Value::from(rt.log_level.as_str()));
     if rt.tun_enable {
-        // mihomo 内置 sing-tun：gVisor 网栈 + 自动路由；TUN 必须配 DNS（fake-ip）
+        // mihomo 内置 sing-tun：gVisor 网栈 + 自动路由；TUN 必须配 DNS（fake-ip）。
+        // 覆盖默认路由时保留本机物理网关，睡眠唤醒或出口断开时可继续管理路由。
         let mut tun = Mapping::new();
         tun.insert(Value::from("enable"), Value::from(true));
         tun.insert(Value::from("stack"), Value::from("gvisor"));
         tun.insert(Value::from("auto-route"), Value::from(true));
+        tun.insert(Value::from("auto-redirect"), Value::from(true));
         tun.insert(Value::from("auto-detect-interface"), Value::from(true));
+        tun.insert(
+            Value::from("route-exclude-address"),
+            Value::Sequence(vec![Value::from("192.168.0.0/16")]),
+        );
         // Mihomo defaults macOS dns-mode to disabled, so hijacking port 53
         // alone does not make the system resolver use the TUN. Native mode
         // points system DNS at the TUN address; dns-hijack also catches
@@ -297,6 +303,9 @@ mod tun_tests {
         assert!(out.contains("tun:"), "应注入 tun 段");
         assert!(out.contains("stack: gvisor"));
         assert!(out.contains("auto-route: true"));
+        assert!(out.contains("auto-redirect: true"));
+        assert!(out.contains("route-exclude-address:"));
+        assert!(out.contains("192.168.0.0/16"));
         assert!(out.contains("dns-mode: native"));
         assert!(out.contains("dns-hijack:"));
         assert!(out.contains("tcp://any:53"));

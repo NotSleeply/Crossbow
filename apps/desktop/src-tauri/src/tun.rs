@@ -178,12 +178,23 @@ fn utun_routes() -> Result<BTreeSet<(String, String)>, String> {
         .collect())
 }
 
+/// macOS renders a full-default route as 1, 2/7, 4/6, ..., 128.0/1 instead of
+/// a literal 0.0.0.0/0. Treat any utun-owned prefix in that set as a tunnel.
+fn is_default_route(destination: &str) -> bool {
+    matches!(destination, "0" | "0/0" | "0.0.0.0/0" | "default")
+        || matches!(destination, "1" | "1/8" | "1.0.0.0/8")
+        || matches!(
+            destination,
+            "2/7" | "4/6" | "8/5" | "16/4" | "32/3" | "64/2" | "128.0/1"
+        )
+}
+
 fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
     let routes = ipv4_routes()?;
     for (destination, interface) in &routes {
-        if matches!(destination.as_str(), "1" | "1/8" | "1.0.0.0/8") {
+        if is_default_route(destination) {
             return Err(format!(
-                "已有其他隧道占用 1.0.0.0/8 路由（{interface}）。请关闭其他代理或 VPN 的 TUN 模式后重试"
+                "已有其他隧道占用默认路由（{interface}）。请关闭其他代理或 VPN 的 TUN 模式后重试"
             ));
         }
     }
@@ -191,6 +202,24 @@ fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
         .into_iter()
         .filter(|(_, interface)| interface.starts_with("utun"))
         .collect())
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+
+    #[test]
+    fn detects_mihomo_default_route_shards() {
+        for route in ["1", "2/7", "4/6", "8/5", "16/4", "32/3", "64/2", "128.0/1"] {
+            assert!(is_default_route(route), "missing {route}");
+        }
+    }
+
+    #[test]
+    fn ignores_private_lan_routes() {
+        assert!(!is_default_route("192.168.0/16"));
+        assert!(!is_default_route("192.168.31"));
+    }
 }
 
 /// Controller readiness alone does not prove that the TUN listener started.
