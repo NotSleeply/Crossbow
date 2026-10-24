@@ -7,13 +7,12 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/fix-tun-sysproxy-conflict |
+| /Users/ayu/Crossbow-codex | codex | codex/fix-update-check-feedback |
 
 ## 当前认领
 
-- **codex**: #33 sysproxy 状态同步 + #41 PR（sysproxy 启动死锁修复，待合并）；
-  #46 TUN 系统代理与端口交接修复（`codex/fix-tun-sysproxy-conflict`）；
-  另有 `chore/release-signing` 分支（发版签名脚本，未并入 main）
+- **codex**: #50 手动检查更新无反馈与版本检测（`codex/fix-update-check-feedback`；
+  `apps/desktop/src/pages/Settings.tsx`、`apps/desktop/src-tauri/src/update_check.rs`、`apps/desktop/src/i18n.ts`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
