@@ -11,6 +11,9 @@
 
 ## 当前认领
 
+- **codex（本会话）**: #49 TUN 就绪与崩溃状态、macOS 系统代理完整恢复；
+  分支 `codex/fix-tun-sysproxy-conflict`；涉及 `apps/desktop/src-tauri/src/tun.rs`、
+  `apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src-tauri/src/sysproxy.rs`。
 - **codex**: #33 sysproxy 状态同步 + #41 PR（sysproxy 启动死锁修复，待合并）；
   #46 TUN 系统代理与端口交接修复（`codex/fix-tun-sysproxy-conflict`）；
   另有 `chore/release-signing` 分支（发版签名脚本，未并入 main）
