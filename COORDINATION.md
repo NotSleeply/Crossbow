@@ -11,7 +11,7 @@
 
 ## 当前认领
 
-- **codex**: 无（PR #51 待审）
+- **codex**: #52 官网与 README 同步（`codex/docs-site-readme-v092`；`README.md`、`apps/site/src/`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
