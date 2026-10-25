@@ -84,6 +84,17 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
             Value::from("inet6-route-address"),
             Value::Sequence(vec![Value::from("::/1"), Value::from("8000::/1")]),
         );
+        // v6 侧排除本地段（对齐 v4 的 route-exclude-address）：::/1+8000::/1
+        // 覆盖全部 v6 空间，不排除会把链路本地/ULA/组播吸进隧道，
+        // 路由器管理页、NAS 等 v6 本地访问会断。
+        tun.insert(
+            Value::from("inet6-route-exclude-address"),
+            Value::Sequence(vec![
+                Value::from("fe80::/10"),
+                Value::from("fc00::/7"),
+                Value::from("ff00::/8"),
+            ]),
+        );
         tun.insert(
             Value::from("route-exclude-address"),
             Value::Sequence(vec![Value::from("192.168.0.0/16")]),
@@ -329,6 +340,8 @@ mod tun_tests {
         assert!(out.contains("inet6-route-address:"));
         assert!(out.contains("::/1"));
         assert!(out.contains("8000::/1"));
+        assert!(out.contains("inet6-route-exclude-address:"));
+        assert!(out.contains("fe80::/10"));
         assert!(out.contains("ipv6: true"));
     }
 
