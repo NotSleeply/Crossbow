@@ -33,5 +33,6 @@ if [ "$STATUS" -ne 0 ] || [ "$VERDICT" != Accepted ]; then
   echo "::error::DMG notarization did not succeed (status=$VERDICT, exit=$STATUS)"
   exit 1
 fi
-xcrun stapler staple "$DMG"
-xcrun stapler validate "$DMG"
+. "$(dirname "${BASH_SOURCE[0]}")/lib_retry.sh"
+staple_retry staple "$DMG"
+staple_retry validate "$DMG"
