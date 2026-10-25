@@ -45,7 +45,10 @@ function NotificationViewport() {
     const removed = previous.current.filter((n) => !snapshot.active.some((a) => a.id === n.id));
     previous.current = snapshot.active;
     setLeaving(removed);
-    const timer = window.setTimeout(() => setLeaving([]), 180);
+    const timer = window.setTimeout(() => {
+      for (const n of removed) rects.current.delete(n.id);
+      setLeaving([]);
+    }, 180);
     return () => window.clearTimeout(timer);
   }, [snapshot.active]);
   useEffect(() => {
@@ -64,8 +67,9 @@ function NotificationViewport() {
         key={notice.id}
         notice={notice}
         ref={(el) => {
+          // 卸载（el=null）时保留最后一次实测矩形——退场克隆在卡片移除
+          // 之后才渲染，需要用它钉位；矩形在退场动画结束后统一清理
           if (el) rects.current.set(notice.id, el.getBoundingClientRect());
-          else rects.current.delete(notice.id);
         }}
       />
     ))}
