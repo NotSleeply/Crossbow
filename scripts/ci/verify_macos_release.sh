@@ -9,18 +9,9 @@ DMG="target/release/bundle/dmg/Crossbow_${TAG#v}_aarch64.dmg"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
 
 # stapler validate 连 Apple GK 票据服务，runner 出口瞬时抖动会让其失败
-# （NSURLError -1005 / exit 68）。5 档退避重试规避暂态故障（Refs #102 #104）
-staple_validate() {
-  local target="$1" attempt
-  for attempt in 1 2 3 4 5; do
-    if xcrun stapler validate "$target"; then
-      return 0
-    fi
-    echo "stapler validate failed (attempt $attempt/5): $target"
-    sleep $((attempt * 20))
-  done
-  return 1
-}
+# （NSURLError -1005 / exit 68）。重试助手共享自 lib_retry.sh（Refs #102 #104 #108）
+. "$(dirname "${BASH_SOURCE[0]}")/lib_retry.sh"
+staple_validate() { staple_retry validate "$1"; }
 
 # $2 非空 = 副本（DMG 挂载/解包）：跳过 stapler validate——副本的 staple
 # 与主 app 逐字节相同（release_checks.py 已做全量内容比对），重复联网校验
