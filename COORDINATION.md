@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/tray-tun-proxy-controls |
+| /Users/ayu/Crossbow-codex | codex | codex/unified-notifications |
 
 ## 当前认领
 
-- **codex**: PR #55 变基与 #21/#23 后续 TUN 修复（`codex/tray-tun-proxy-controls`；`runtime.rs`、`tun.rs`）
+- **codex**: #66 统一全局 Notification（`codex/unified-notifications`；`apps/desktop/src/` 通知组件及页面、`src-tauri/src/notifications.rs`、后台通知入口、开发文档）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
