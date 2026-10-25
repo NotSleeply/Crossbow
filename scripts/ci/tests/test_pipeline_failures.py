@@ -72,7 +72,7 @@ class StartupFailures(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'disposable'):
                 smoke_macos.main()
 
-    def run_smoke(self, exit_code):
+    def run_smoke(self, exit_code, fatal=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             app = root / 'Crossbow.app'
@@ -81,11 +81,17 @@ class StartupFailures(unittest.TestCase):
             process = MagicMock()
             process.poll.return_value = exit_code
             process.returncode = exit_code
+            def launch(*args, **kwargs):
+                if fatal:
+                    kwargs['stderr']  # Both streams are redirected into one log.
+                    kwargs['stdout'].write('crossbow fatal: fixture startup failure\n')
+                    kwargs['stdout'].flush()
+                return process
             with contextlib.ExitStack() as stack:
                 stack.enter_context(patch.object(sys, 'platform', 'darwin'))
                 stack.enter_context(patch.object(sys, 'argv', ['smoke', str(app)]))
                 stack.enter_context(patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}))
-                stack.enter_context(patch.object(smoke_macos.subprocess, 'Popen', return_value=process))
+                stack.enter_context(patch.object(smoke_macos.subprocess, 'Popen', side_effect=launch))
                 stack.enter_context(patch.object(smoke_macos.time, 'sleep'))
                 stack.enter_context(patch.object(smoke_macos.os, 'killpg'))
                 stack.enter_context(patch.object(smoke_macos.Path, 'home', return_value=root))
@@ -102,6 +108,10 @@ class StartupFailures(unittest.TestCase):
         for code in [0, -6, 7]:
             with self.subTest(code=code), self.assertRaisesRegex(RuntimeError, 'exited during startup'):
                 self.run_smoke(code)
+
+    def test_fatal_dialog_is_not_a_successful_start(self):
+        with self.assertRaisesRegex(RuntimeError, 'fatal startup error'):
+            self.run_smoke(None, fatal=True)
 
     def test_surviving_process_is_stopped(self):
         self.run_smoke(None)

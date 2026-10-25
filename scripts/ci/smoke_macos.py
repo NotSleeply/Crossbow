@@ -26,14 +26,23 @@ def main():
     with tempfile.TemporaryDirectory(prefix='crossbow-smoke-') as home:
         env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=home + '/config',
                    XDG_DATA_HOME=home + '/data', XDG_CACHE_HOME=home + '/cache')
-        with (diagnostics / 'startup.log').open('w') as log:
+        log_path = diagnostics / 'startup.log'
+        with log_path.open('w') as log:
             process = subprocess.Popen([str(executable)], env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                for _ in range(15):
+                for second in range(16):
                     if process.poll() is not None:
                         raise RuntimeError(f'Packaged app exited during startup: {process.returncode}')
-                    time.sleep(1)
+                    # A fatal-error modal may keep the process alive. Reject its
+                    # stderr marker instead of treating that dialog as success.
+                    output = log_path.read_text(errors='replace')
+                    if any(marker in output for marker in (
+                            'crossbow fatal:', 'panicked at', 'fatal runtime error:',
+                            'Terminating app due to uncaught exception')):
+                        raise RuntimeError('Packaged app reported a fatal startup error; see startup.log')
+                    if second < 15:
+                        time.sleep(1)
                 print('Packaged app stayed running for 15 seconds in an empty configuration')
             finally:
                 if process.poll() is None:
