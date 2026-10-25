@@ -1,29 +1,63 @@
 # 发版流程
 
-## macOS（脚本自动化）
+## 正式 macOS 发布
 
-```bash
-VERSION=v0.9.2 ./scripts/release-macos.sh
-```
+正式产物统一由 `.github/workflows/release.yml` 生成，继续使用 Tauri 的 Developer ID 签名、公证与更新器。`scripts/release-macos.sh` 仅校验或调用此流程，不再本地重新签名后上传旧的更新归档。
 
-一次性前置：
-1. 钥匙串含 **Developer ID Application** 证书（Xcode → Accounts → Manage Certificates 创建）
-2. 公证凭据入钥匙串：
+1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 的两个 Crossbow package、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
+2. 离线校验（Python 3.11+）：
    ```bash
-   xcrun notarytool store-credentials CROSSBOW_NOTARY \
-     --apple-id <AppleID> --password <App专用密码> --team-id M8H9MSJT3S
+   VERSION=vX.Y.Z bash scripts/release-macos.sh --check
    ```
-   （App 专用密码在 appleid.apple.com → 登录与安全 → App 专用密码 生成）
-3. 更新器私钥 `~/.tauri/crossbow.key`；`gh` 已登录
+3. PR 通过并合并后，在明确准备发版时创建、推送对应的稳定版本 tag：
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+   tag 推送会自动触发 release；无需再运行 dispatch。
+4. 需要重试尚未发布的版本时，使用 Actions 的 Re-run jobs，或在对应 tag 的检出目录执行：
+   ```bash
+   VERSION=vX.Y.Z bash scripts/release-macos.sh --dispatch
+   ```
+   dispatch 要求远端 tag 存在、指向本地 HEAD，且本地已跟踪文件无未提交改动。脚本不自动提交、打 tag 或推送。已有 Release 拒绝覆盖；失败发布若留下不完整 Release，应先人工检查处理，不要改写已发布 tag。
 
-脚本依次：构建（含更新器签名）→ Developer ID 签名（hardened runtime）→ 公证 + staple → DMG → latest.json（手工确认 notes）→ 提交/tag → GitHub Release。
+### CI 门禁
 
-> 注意：tag 推送会触发 CI 的 unsigned 构建（供参考），正式产物以本脚本本地签名的为准。
+- 开始构建前检查凭据是否存在，解析 tag 的不可变 commit，校验源码版本一致。
+- 复用 build 工作流，在同一 commit 上运行脚本回归、workflow 静态检查、双平台 core clippy/test、桌面后端测试与 unsigned 构建。
+- PR/分支 CI 取消旧运行；正式发版不取消正在运行的同版本任务。
+- Tauri 完成应用与 DMG 签名、应用公证；DMG 再独立提交公证和装订。
+- 校验实际 `.app` 的版本、主程序和 sidecar 执行权限、arm64 架构、签名、公证票据和 Gatekeeper 接受状态。
+- 只读挂载 DMG，将其中 `.app` 与更新归档逐文件比较（含符号链接、执行权限）；解压更新归档后再次验证签名、公证票据。
+- 在临时 GitHub-hosted macOS runner 上，分别启动 DMG 和更新归档中的应用，用空 HOME/XDG 数据目录观察 15 秒；启动即退出会阻止发布并上传日志。此检查不代表 WebView 已交互就绪，也不覆盖 UI 卡死、旧配置迁移、TUN 或实际联网，仍需人工验收。
+- `latest.json` 必须匹配版本、平台、更新 URL 和签名文件；最终只发布检查后的文件，并附 `SHA256SUMS`。此处检查签名元数据一致性，更新器签名的密码学校验仍由 Tauri 更新器完成。
+- 完整获取历史和 tag，使用当前 tag 的最近祖先 tag 生成中文更新日志。
+
+### Secrets
+
+在 GitHub → Settings → Secrets and variables → Actions 配置：
+
+| Secret | 用途 |
+|---|---|
+| `APPLE_CERTIFICATE` | Developer ID Application 的 base64 `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 导出密码；空密码证书可留空 |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | Apple ID、App 专用密码和 Team ID，用于公证 |
+| `TAURI_SIGNING_PRIVATE_KEY` | Tauri 更新器私钥；当前按空私钥密码配置 |
+
+证书导入和临时钥匙串由 Tauri bundler 管理，避免重复手动导入造成签名阻塞。凭据只存在检查不验证证书有效期/权限；实际签名与公证步骤会验证。
+
+### 失败诊断与下载校验
+
+- DMG 公证失败时保存提交结果，并按 submission id 获取 Apple 的详细日志；应用公证失败见 Tauri 构建步骤输出。
+- `release-diagnostics-*` / `startup-diagnostics` artifact 保留 7 天；验证后的发布产物保留 30 天。
+- 更新 sidecar 版本时，必须同步更新 `scripts/ci/download_sidecar.py` 的目标文件名、SHA-256 和 `core_download.rs` 的版本。摘要来自上游对应 Release 的资产 digest；镜像也必须通过同一摘要校验。
+- CI macOS `.app` 使用 tar 上传，以保留执行权限与符号链接；它是未正式签名的测试产物。
+- 下载全部发布文件后可执行：`shasum -a 256 -c SHA256SUMS`。SHA-256 便于检测文件损坏，不替代 Developer ID 和更新器签名。
 
 ## Windows
 
-待 M1.5（当前仅 CI 产物，未签名）。
+当前运行 CI 构建验证，上传未签名 NSIS/MSI 测试包；正式签名发版尚未接入。
 
 ## iOS
 
-M2：App Store / TestFlight 分发，NE entitlement 申请通过后配置。
+后续通过 App Store / TestFlight 分发，NE entitlement 申请通过后配置。
