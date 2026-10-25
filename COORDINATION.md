@@ -12,10 +12,12 @@
 ## 当前认领
 
 - **codex**: #76 发布 v0.9.4（`codex/release-v0.9.4`；应用版本文件、release 工作流与发布产物验证；Windows 适配暂缓）
-- **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
+- **zcode**: Windows 阶段 1（#78-#82 规划；#80/#82/#25 → PR #88 `feat/windows-enablement`，#79 → PR #91 `feat/windows-release-channel`，CI 全绿待验收合并）
 
 ## 最近完成
 
+- 2026-10-25: zcode #87 更新安装后自动重启（PR #87 已合并）；#68/#69/#70 review 修复已合并；v0.9.2-v0.9.4 CI 发版管线验证（tag 触发，~19 分钟）。
+- 2026-10-25: zcode Windows 规划落 issue #78-#82（阶段 0 闪退排查 / 阶段 1 功能对齐 / 阶段 2 TUN）。
 - 2026-10-25: codex #74 修复空配置首次启动 app.pid 父目录未创建引发的 SIGABRT，并保持旧目录迁移优先；已同步两个分支；#71 已先合并，首启修复由 #73 进入 main，以实际安装包启动检查复验。
 
 - 2026-10-25: codex #72 PR #73 发布加固已推送；补齐 Windows UTF-8 读取与 macOS 实机测试平台限制，19 项脚本回归通过；共享后端夹具已按 Windows 文件名/压缩格式和 Unix 进程能力修复，双平台 CI 复验中。
