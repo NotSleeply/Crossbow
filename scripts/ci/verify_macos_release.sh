@@ -8,16 +8,30 @@ SIGNATURE="$ARCHIVE.sig"
 DMG="target/release/bundle/dmg/Crossbow_${TAG#v}_aarch64.dmg"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
 
+# stapler validate 连 Apple GK 票据服务，runner 出口瞬时抖动会让其失败
+# （NSURLError -1005 / exit 68），重试规避暂态故障（Refs #102）
+staple_validate() {
+  local target="$1" attempt
+  for attempt in 1 2 3; do
+    if xcrun stapler validate "$target"; then
+      return 0
+    fi
+    echo "stapler validate failed (attempt $attempt/3): $target"
+    sleep 15
+  done
+  return 1
+}
+
 check_signed_app() {
   python3 scripts/ci/release_checks.py app "$1" --tag "$TAG"
   codesign --verify --deep --strict --verbose=2 "$1"
-  xcrun stapler validate "$1"
+  staple_validate "$1"
   spctl --assess --type execute --verbose=2 "$1"
   [ "$(lipo -archs "$1/Contents/MacOS/crossbow-desktop")" = arm64 ]
 }
 check_signed_app "$APP"
 codesign --verify --strict --verbose=2 "$DMG"
-xcrun stapler validate "$DMG"
+staple_validate "$DMG"
 
 MOUNT=$(mktemp -d)
 UNPACK=$(mktemp -d)
