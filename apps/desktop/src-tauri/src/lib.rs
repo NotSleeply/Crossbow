@@ -2053,10 +2053,14 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
         let missing = {
             let st = h.state::<AppState>();
             let tray = st.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+            // 「缺测」= 无延迟且非失败（timeout/failed 徽标的节点已测过，
+            // 不能再计入缺失，否则自动补测会无限循环）
             tray.snapshot("", "当前")
                 .rows
                 .iter()
-                .filter(|r| r.ms.is_none() && r.badge != "失败")
+                .filter(|r| {
+                    r.ms.is_none() && r.badge != "timeout" && r.badge != "failed"
+                })
                 .count()
         };
         #[cfg(target_os = "macos")]
