@@ -73,6 +73,17 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         tun.insert(Value::from("auto-route"), Value::from(true));
         tun.insert(Value::from("auto-redirect"), Value::from(true));
         tun.insert(Value::from("auto-detect-interface"), Value::from(true));
+        // 显式双栈：mihomo 默认的 inet6 地址存在但 macOS 上 auto-route 不会
+        // 自动装 v6 路由（实测 IPv6 被阻断）——补 inet6 地址 + 分流路由，
+        // 对齐 sing-box inbound 的双栈行为（#21 实测 / #59）。
+        tun.insert(
+            Value::from("inet6-address"),
+            Value::Sequence(vec![Value::from("fdfe:dcba:9876::1/126")]),
+        );
+        tun.insert(
+            Value::from("inet6-route-address"),
+            Value::Sequence(vec![Value::from("::/1"), Value::from("8000::/1")]),
+        );
         tun.insert(
             Value::from("route-exclude-address"),
             Value::Sequence(vec![Value::from("192.168.0.0/16")]),
@@ -92,6 +103,9 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         let mut dns = Mapping::new();
         dns.insert(Value::from("enable"), Value::from(true));
         dns.insert(Value::from("enhanced-mode"), Value::from("fake-ip"));
+        // AAAA 记录默认被过滤（ipv6: false）——浏览器拿不到 v6 地址，
+        // 双栈隧道形同虚设；打开后 AAAA 经 fake-ip/tun 走节点。
+        dns.insert(Value::from("ipv6"), Value::from(true));
         patch.insert(Value::from("tun"), Value::Mapping(tun));
         patch.insert(Value::from("dns"), Value::Mapping(dns));
     }
@@ -310,6 +324,12 @@ mod tun_tests {
         assert!(out.contains("dns-hijack:"));
         assert!(out.contains("tcp://any:53"));
         assert!(out.contains("enhanced-mode: fake-ip"), "TUN 需 DNS 劫持");
+        // 双栈（#59）：inet6 地址 + v6 分流路由 + DNS 放行 AAAA
+        assert!(out.contains("fdfe:dcba:9876::1/126"));
+        assert!(out.contains("inet6-route-address:"));
+        assert!(out.contains("::/1"));
+        assert!(out.contains("8000::/1"));
+        assert!(out.contains("ipv6: true"));
     }
 
     #[test]
