@@ -11,7 +11,7 @@
 
 ## 当前认领
 
-- **codex**: 无（#72 已推送 PR #73，待 CI 与审查；#66 通知重构另见 PR #71）
+- **codex**: #72 / PR #73 CI 失败修复（`codex/harden-release-pipeline`；`scripts/ci`、`.github/workflows/build.yml`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
