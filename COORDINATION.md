@@ -11,10 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #72 CI 与发布加固（`codex/harden-release-pipeline`；`.github/workflows`、`.github/dependabot.yml`、`scripts/ci`、`scripts/release-macos.sh`、`docs/RELEASE.md`）
+- **codex**: 无（#72 已推送 PR #73，待 CI 与审查；#66 通知重构另见 PR #71）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
+
+- 2026-10-25: codex #72 发布测试门禁、版本与安装包一致性校验、隔离启动检查、公证诊断、sidecar 摘要与发布入口统一（PR #73，`codex/harden-release-pipeline`；17 项本地回归及 actionlint 通过，未触发正式发版）。
 
 - 2026-10-24: codex #54 托盘 0ms 失败显示、TUN 与系统代理独立开关、子菜单对勾统一（PR #55，`codex/tray-tun-proxy-controls`，待验收）
 - 2026-10-24: PR #53 已合并且 Netlify 预览成功；PR #55 已变基到 main，并补充 TUN LAN 网关保留与 macOS 分片默认路由识别（Refs #21 #23）。
