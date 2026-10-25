@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
@@ -78,7 +79,7 @@ export default function LogsPage() {
     // stale setup from subscribing after the page has already been replaced.
     const subscribe = unlisten.then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
-      return ipc.subscribeLogs().catch(console.error);
+      return ipc.subscribeLogs().catch((error) => notify.error(error, "logs-stream"));
     });
 
     return () => {
