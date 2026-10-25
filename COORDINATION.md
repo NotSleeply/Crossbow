@@ -11,7 +11,7 @@
 
 ## 当前认领
 
-- **codex**: 无（PR #71 / #73 已同步 main，CI 与冲突修复已推送，双平台复验中）
+- **codex**: #66 / #72 PR #71、#73 Windows 测试夹具修复（`codex/harden-release-pipeline`；`core_download.rs`、`core_manager.rs`，随后同步本人通知分支）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
