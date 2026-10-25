@@ -899,6 +899,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "raw-window-handle",
+ "regex",
  "rfd",
  "serde",
  "serde_json",

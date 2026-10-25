@@ -21,6 +21,7 @@ mod core_manager;
 mod diagnose;
 mod log_files;
 mod mihomo_api;
+mod notifications;
 mod update_check;
 mod scheduler;
 mod sysproxy;
@@ -381,9 +382,9 @@ fn import_url_blocking(state: &AppState, url: &str, name: Option<&str>) -> Resul
 
 /// 导入 URL 订阅：拉取 → 校验 → 落库。
 #[tauri::command]
-fn import_profile_url(
+async fn import_profile_url(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     url: String,
     name: Option<String>,
 ) -> Result<Profile, String> {
@@ -394,9 +395,9 @@ fn import_profile_url(
 
 /// 导入本地/粘贴的配置内容。
 #[tauri::command]
-fn import_profile_content(
+async fn import_profile_content(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     name: String,
     content: String,
 ) -> Result<Profile, String> {
@@ -416,9 +417,9 @@ fn profile_name_from_path(path: &str) -> String {
 
 /// 导入本地配置文件（文件选择器与拖拽导入共用）。
 #[tauri::command]
-fn import_profile_file(
+async fn import_profile_file(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     path: String,
 ) -> Result<Profile, String> {
     let content =
@@ -518,7 +519,7 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
 
 /// 刷新订阅并落库；正在运行则热重启应用新配置。
 #[tauri::command]
-fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<Profile, String> {
+async fn update_profile(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Profile, String> {
     let profile = refresh_profile_blocking(&state, &id)?;
     refresh_tray(&app);
     Ok(profile)
@@ -798,7 +799,9 @@ async fn set_engine(
 async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        notifications::publish(&app, notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tun-switch"));
         let result = crate::tun::toggle_tun(&state, enable);
+        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
         let actual = state.store.lock().unwrap().data().engine.tun_enable;
         let _ = app.emit("tun://status", actual);
         let _ = app.emit("sysproxy://status", state.sysproxy.status());
@@ -880,7 +883,7 @@ fn set_profile_interval(
 }
 
 #[tauri::command]
-fn set_active_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+async fn set_active_profile(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     let running = state.core().status() == CoreStatus::Running;
     {
         let mut store = state.store.lock().unwrap();
@@ -999,8 +1002,8 @@ fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
 // ---------- 诊断 ----------
 
 #[tauri::command]
-fn run_diagnosis(state: State<AppState>) -> Vec<diagnose::CheckResult> {
-    diagnose::run(&state)
+async fn run_diagnosis(state: State<'_, AppState>) -> Result<Vec<diagnose::CheckResult>, String> {
+    Ok(diagnose::run(&state))
 }
 
 #[tauri::command]
@@ -1106,6 +1109,13 @@ fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
 /// 下载安装内核（前端用 invoke 阻塞调用，期间显示进度提示）。
 #[tauri::command]
 async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBinaryInfo, String> {
+    notifications::publish(&app, notifications::Notice::new(notifications::Kind::Progress, "core.install", "core-download"));
+    let handle = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || core_install_inner(handle, engine)).await.map_err(|e| e.to_string()).and_then(|result| result);
+    notifications::result(&app, "core-download", if result.is_ok() { "core.installReady" } else { "core.install" }, result.as_ref().map(|_| ()).map_err(Clone::clone));
+    result
+}
+fn core_install_inner(app: AppHandle, engine: Option<String>) -> Result<CoreBinaryInfo, String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let kind = match engine.as_deref() {
         Some("singbox") => core_download::CoreKind::SingBox,
@@ -1113,6 +1123,9 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     };
     let h = app.clone();
     let info = core_download::install_core(&data_dir, kind, &move |p: InstallProgress| {
+        let mut notice = notifications::Notice::new(notifications::Kind::Progress, "core.install", "core-download");
+        notice.description = p.stage.clone();
+        notifications::publish(&h, notice);
         let _ = h.emit("core://install-progress", p);
     })?;
     // 安装后重新装载 CoreManager 的二进制路径：直接替换状态里的管理器。
@@ -1215,20 +1228,20 @@ fn proxies_snapshot(state: State<AppState>) -> Result<Vec<mihomo_api::GroupView>
 }
 
 #[tauri::command]
-fn select_proxy(state: State<AppState>, group: String, name: String) -> Result<(), String> {
+async fn select_proxy(state: State<'_, AppState>, group: String, name: String) -> Result<(), String> {
     controller_client(&state)?.select_proxy(&group, &name)
 }
 
 #[tauri::command]
-fn test_group_delay(
-    state: State<AppState>,
+async fn test_group_delay(
+    state: State<'_, AppState>,
     group: String,
 ) -> Result<BTreeMap<String, u64>, String> {
     controller_client(&state)?.test_group_delay(&group)
 }
 
 #[tauri::command]
-fn test_node_delay(state: State<AppState>, node: String) -> Result<u64, String> {
+async fn test_node_delay(state: State<'_, AppState>, node: String) -> Result<u64, String> {
     controller_client(&state)?.test_node_delay(&node)
 }
 
@@ -1349,7 +1362,7 @@ fn update_state_get(app: AppHandle) -> Option<update_check::UpdateInfo> {
 async fn update_check_now(app: AppHandle) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (_, auto_download) = update_check::update_settings(&app);
-        update_check::check_once(&app, auto_download)
+        update_check::check_once(&app, auto_download, false)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1359,7 +1372,7 @@ async fn update_check_now(app: AppHandle) -> Result<Option<String>, String> {
 fn update_start_download(app: AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         if let Err(e) = update_check::download_and_prepare(&app) {
-            eprintln!("update download: {e}");
+            eprintln!("update download: {}", notifications::redact(&e));
         }
     });
     Ok(())
@@ -1451,7 +1464,7 @@ fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), 
 
 /// 修改混合端口：持久化 → 运行中则热重启 → 系统代理开启则跟随换端口。
 #[tauri::command]
-fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(), String> {
+async fn set_mixed_port(app: AppHandle, state: State<'_, AppState>, port: u16) -> Result<(), String> {
     if port < 1024 {
         return Err("端口不能小于 1024".into());
     }
@@ -1484,7 +1497,7 @@ fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(
 }
 
 #[tauri::command]
-fn set_allow_lan(state: State<AppState>, enabled: bool) -> Result<(), String> {
+async fn set_allow_lan(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     {
         let mut store = state.store.lock().unwrap();
         store.data_mut().engine.allow_lan = enabled;
@@ -1556,11 +1569,13 @@ fn handle_crossbow_url(app: &AppHandle, raw: &str) {
         let state = app.state::<AppState>();
         match import_url_blocking(&state, &target, None) {
             Ok(_) => {
-                let _ = app.emit("profile://imported", target);
+                let mut notice = notifications::Notice::new(notifications::Kind::Success, "import.done", "deep-link-import");
+                notice.description = notifications::redact(&target);
+                notifications::publish(&app, notice);
                 refresh_tray(&app);
             }
             Err(e) => {
-                let _ = app.emit("profile://import-failed", format!("{target}: {e}"));
+                notifications::result(&app, "deep-link-import", "import.failed", Err(format!("{target}: {e}")));
             }
         }
     });
@@ -1602,10 +1617,12 @@ fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
 
 #[tauri::command]
 async fn sysproxy_toggle(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    toggle_sysproxy_state(&state)?;
+    notifications::publish(&app, notifications::Notice::new(notifications::Kind::Progress, "tray.proxy", "system-proxy"));
+    let result = toggle_sysproxy_state(&state);
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(&app);
-    Ok(())
+    notifications::result(&app, "system-proxy", "tray.proxy", result.clone());
+    result
 }
 
 #[tauri::command]
@@ -1649,12 +1666,14 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         update_logs_persistence(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
+            notifications::resolve_core_failure(&handle);
             #[cfg(target_os = "macos")]
             refresh_tray_nodes(&handle, false);
         }
         // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
         // 避免系统流量指向已死的代理端口导致用户断网。
         if let CoreStatus::Crashed(msg) = status {
+            notifications::result(&handle, "core-failure", "core.crashed", Err(msg.clone()));
             let Some(state) = handle.try_state::<AppState>() else {
                 return;
             };
@@ -1701,10 +1720,10 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
                         std::thread::sleep(std::time::Duration::from_millis(200));
                     }
                 }
-                let _ = handle.emit(
-                            "core://safe-mode",
-                            "覆写导致内核启动失败，已临时禁用全部覆写（安全模式）。修复覆写后保存即恢复正常。",
-                        );
+                let mut notice = notifications::Notice::new(notifications::Kind::Warning, "core.safeMode", "core-safe-mode");
+                notice.duration = Some(0);
+                notice.actions = vec![notifications::Action::Profiles];
+                notifications::publish(&handle, notice);
                 refresh_tray(&handle);
             }
         }
@@ -1911,7 +1930,10 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                             let _ = handle
                                                 .emit("sysproxy://status", state.sysproxy.status());
                                             refresh_tray(&handle);
-                                            let _ = handle.emit("tun://health-notice", true);
+                                            let mut notice = notifications::Notice::new(notifications::Kind::Warning, "tun.disabled", "tun-health");
+                                            notice.duration = Some(0);
+                                            notice.actions = vec![notifications::Action::Diagnostics];
+                                            notifications::publish(&handle, notice);
                                         }
                                         Err(disable_error) => {
                                             failures = 0;
@@ -1930,7 +1952,7 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                                 .emit("sysproxy://status", state.sysproxy.status());
                                             refresh_tray(&handle);
                                             if !reported_disable_failure {
-                                                let _ = handle.emit("tun://health-notice", false);
+                                                notifications::result(&handle, "tun-health", "tun.disableFailed", Err(disable_error.clone()));
                                                 reported_disable_failure = true;
                                             }
                                         }
@@ -2075,14 +2097,14 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
         };
         #[cfg(target_os = "macos")]
         if missing > 0 {
-            run_tray_delay_test(&h);
+            run_tray_delay_test(&h, false);
         }
     });
 }
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
 #[cfg(target_os = "macos")]
-fn run_tray_delay_test(handle: &AppHandle) {
+fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
     let Some(state) = handle.try_state::<AppState>() else {
         return;
     };
@@ -2094,6 +2116,8 @@ fn run_tray_delay_test(handle: &AppHandle) {
         tray.generation()
     };
     update_tray_node_menu(handle, true);
+    let operation = format!("tray-latency-{generation}");
+    if notify_user { notifications::publish(handle, notifications::Notice::new(notifications::Kind::Progress, "tray.latency", &operation)); }
 
     // 并发池测速：每个节点独立请求，完成一个就立即原地刷新菜单——
     // 不再等全组返回（组延迟接口是一次请求测全部，节点多时末尾节点
@@ -2120,6 +2144,15 @@ fn run_tray_delay_test(handle: &AppHandle) {
                 }
             }
         }
+        if let Err(error) = &client {
+            let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+            if tray.generation() == generation { tray.end_test(); }
+            drop(tray);
+            if notify_user { notifications::result(&h, &operation, "tray.latency", Err(error.clone())); }
+            let data = tray_menu_data(&state);
+            tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+            return;
+        }
         let total = targets.len();
         if total == 0 {
             let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
@@ -2129,11 +2162,13 @@ fn run_tray_delay_test(handle: &AppHandle) {
             drop(tray);
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+            if notify_user { notifications::result(&h, &operation, "tray.latency", Ok(())); }
             return;
         }
 
         // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
         let watchdog_handle = h.clone();
+        let watchdog_operation = operation.clone();
         let watchdog_secs = 20 + (total as u64).div_ceil(10) * 6;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(watchdog_secs));
@@ -2146,6 +2181,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
             }
             tray.end_test();
             drop(tray);
+            if notify_user { notifications::result(&watchdog_handle, &watchdog_operation, "tray.latencyTimeout", Err("Latency test exceeded its deadline".into())); }
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&watchdog_handle, &data.title, &data.rows, data.testing);
         });
@@ -2196,6 +2232,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
 
         // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
         let mut done = 0usize;
+        let mut failures = 0usize;
         for (node, result) in rx {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
@@ -2205,11 +2242,18 @@ fn run_tray_delay_test(handle: &AppHandle) {
                 if tray.generation() != generation {
                     return; // 新一轮测速已接管，放弃本轮剩余结果
                 }
+                if result.as_ref().map(|delay| *delay == 0).unwrap_or(true) { failures += 1; }
                 tray.apply_single_result(&node, result);
             }
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
             done += 1;
+            if notify_user {
+                let mut notice = notifications::Notice::new(notifications::Kind::Progress, "tray.latency", &operation);
+                notice.progress = Some(done as f64 / total as f64 * 100.0);
+                notice.description = format!("{done}/{total}");
+                notifications::publish(&h, notice);
+            }
             if done >= total {
                 break;
             }
@@ -2224,6 +2268,11 @@ fn run_tray_delay_test(handle: &AppHandle) {
         }
         tray.end_test();
         drop(tray);
+        if notify_user {
+            let mut notice = notifications::Notice::new(if failures > 0 { notifications::Kind::Warning } else { notifications::Kind::Success }, "tray.latency", &operation);
+            notice.description = format!("{}/{total} OK", total - failures);
+            notifications::publish(&h, notice);
+        }
         let data = tray_menu_data(&state);
         tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
     });
@@ -2562,14 +2611,8 @@ fn show_no_more(app: &AppHandle) {
     }
 }
 
-fn show_tray_toggle_error(app: &AppHandle, title: &'static str, error: String) {
-    let _ = app.run_on_main_thread(move || {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title(title)
-            .set_description(&error)
-            .show();
-    });
+fn show_tray_toggle_error(app: &AppHandle, source: &str, code: &str, error: String) {
+    notifications::result(app, source, code, Err(error));
 }
 
 fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
@@ -2578,10 +2621,11 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "toggle-proxy" => {
             let handle = app.clone();
             std::thread::spawn(move || {
+                notifications::publish(&handle, notifications::Notice::new(notifications::Kind::Progress, "tray.proxy", "tray-proxy"));
                 if let Err(error) = toggle_sysproxy(&handle) {
                     eprintln!("tray system proxy toggle failed: {error}");
-                    show_tray_toggle_error(&handle, "系统代理切换失败", error);
-                }
+                    show_tray_toggle_error(&handle, "tray-proxy", "tray.proxy", error);
+                } else { notifications::result(&handle, "tray-proxy", "tray.proxy", Ok(())); }
             });
             Ok(())
         }
@@ -2590,6 +2634,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             {
                 let handle = app.clone();
                 std::thread::spawn(move || {
+                    notifications::publish(&handle, notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tray-tun"));
                     let state = handle.state::<AppState>();
                     let enabled = state.store.lock().unwrap().data().engine.tun_enable;
                     let result = crate::tun::toggle_tun(&state, !enabled);
@@ -2599,15 +2644,21 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
                     refresh_tray(&handle);
                     if let Err(error) = result {
                         eprintln!("tray TUN toggle failed: {error}");
-                        show_tray_toggle_error(&handle, "TUN 切换失败", error);
-                    }
+                        show_tray_toggle_error(&handle, "tray-tun", "tray.tun", error);
+                    } else { notifications::result(&handle, "tray-tun", "tray.tun", Ok(())); }
                 });
             }
             Ok(())
         }
         "mode-direct" | "mode-rule" | "mode-global" => {
             let mode = id.strip_prefix("mode-").unwrap().to_string();
-            set_core_mode(app.clone(), app.state::<AppState>(), mode)
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                notifications::publish(&handle, notifications::Notice::new(notifications::Kind::Progress, "core.mode", "tray-mode"));
+                let result = set_core_mode(handle.clone(), handle.state::<AppState>(), mode);
+                notifications::result(&handle, "tray-mode", "core.mode", result);
+            });
+            Ok(())
         }
         "open" => {
             show_main_window(app);
@@ -2633,7 +2684,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "tray-delay-test" => {
             #[cfg(target_os = "macos")]
-            run_tray_delay_test(app);
+            run_tray_delay_test(app, true);
             Ok(())
         }
         other => {
@@ -2651,7 +2702,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
                     let result = controller_client(&h.state::<AppState>())
                         .and_then(|c| c.select_proxy(&group, &name));
                     if let Err(error) = result {
-                        eprintln!("select tray node {name}: {error}");
+                        show_tray_toggle_error(&h, "tray-node", "tray.node", error);
                     } else {
                         // 节点子菜单仅 macOS 构建；选择成功后就地刷新打开中的菜单。
                         #[cfg(target_os = "macos")]
@@ -2660,14 +2711,21 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 });
                 Ok(())
             } else if let Some(pid) = other.strip_prefix("profile-") {
-                set_active_profile(app.clone(), app.state::<AppState>(), pid.to_string())
+                let handle = app.clone();
+                let profile = pid.to_string();
+                std::thread::spawn(move || {
+                    notifications::publish(&handle, notifications::Notice::new(notifications::Kind::Progress, "tray.profile", "tray-profile"));
+                    let result = tauri::async_runtime::block_on(set_active_profile(handle.clone(), handle.state::<AppState>(), profile));
+                    notifications::result(&handle, "tray-profile", "tray.profile", result);
+                });
+                Ok(())
             } else {
                 Ok(())
             }
         }
     };
     if let Err(e) = result {
-        eprintln!("tray action {id}: {e}");
+        show_tray_toggle_error(app, "tray-action", "tray.action", e);
     }
 }
 
@@ -2700,6 +2758,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            notifications::install(app.handle());
             // 一次性迁移：旧标识符（com.crossbow.app）数据目录 → 新标识符
             let legacy_target = app.path().app_data_dir().map_err(|e| e.to_string())?;
             migrate_legacy_data_dir(&legacy_target);
@@ -2840,6 +2899,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                notifications::window_destroyed(window.app_handle(), window.label());
+            }
+            if window.label() != "main" { return; }
             // 关窗：默认驻留托盘；开启「轻量模式」时交接退出（留核）。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
@@ -2856,6 +2919,13 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            notifications::notification_publish,
+            notifications::notification_snapshot,
+            notifications::notification_dismiss,
+            notifications::notification_pause,
+            notifications::notification_action,
+            notifications::notification_ack_navigation,
+            notifications::notification_resize,
             list_profiles,
             active_profile_id,
             import_profile_url,

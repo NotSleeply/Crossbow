@@ -1,3 +1,4 @@
+import { notify } from "./notifications/service";
 import { useEffect, useState } from "react";
 import HomePage from "./pages/Home";
 import ProxiesPage from "./pages/Proxies";
@@ -20,6 +21,7 @@ export function dragWindow(e: React.MouseEvent) {
 }
 import { ipc, type UiSettings } from "./ipc";
 import { Icon } from "./components/Icon";
+import { NotificationHistory, useNotificationNavigation } from "./notifications/NotificationProvider";
 
 const NAV = [
   {
@@ -65,7 +67,6 @@ function applyTheme(theme: UiSettings["theme"]) {
 export default function App() {
   const t = useT();
   const [page, setPage] = useState<PageId>("home");
-  const [toast, setToast] = useState<string | null>(null);
   const [coreLabel, setCoreLabel] = useState<string>("");
 
   const refreshCoreLabel = () => {
@@ -76,7 +77,7 @@ export default function App() {
           .coreBinaryInfoFor(e.engine)
           .then((info) => setCoreLabel(`${e.engine === "singbox" ? "sing-box" : "mihomo"} ${shortVersion(info?.version)}`)),
       )
-      .catch(() => {});
+      .catch((error) => notify.error(error, "app-settings-read"));
   };
 
   useEffect(() => {
@@ -94,7 +95,7 @@ export default function App() {
   // 托盘「发现新版本」等入口跳转设置页
   useEffect(() => {
     const un = ipc.onGoto((p) => {
-      if ((p as PageId) === "settings") setPage("settings");
+      if (NAV.some((group) => group.items.some((item) => item.id === p))) setPage(p as PageId);
     });
     return () => {
       void un.then((f) => f());
@@ -103,7 +104,7 @@ export default function App() {
 
   useEffect(() => {
     initLang();
-    ipc.getUiSettings().then((u) => applyTheme(u.theme)).catch(() => {});
+    ipc.getUiSettings().then((u) => applyTheme(u.theme)).catch((error) => notify.error(error, "app-settings-read"));
     const un = ipc.onTheme(applyTheme);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystem = () => applyTheme("system");
@@ -115,24 +116,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const un1 = ipc.onProfileImported((url) =>
-      setToast(t("toast.imported", { url: url.slice(0, 60) })),
-    );
-    const un2 = ipc.onProfileImportFailed((msg) => setToast(t("toast.importFailed", { msg })));
-    const un3 = ipc.onSafeMode((msg) => setToast(msg));
-    const un4 = ipc.onTunHealthNotice((disabled) =>
-      setToast(t(disabled ? "toast.tunAutoDisabled" : "toast.tunAutoDisableFailed")),
-    );
-    return () => {
-      for (const un of [un1, un2, un3, un4]) void un.then((f) => f());
+    const navigate = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail;
+      if (NAV.some((group) => group.items.some((item) => item.id === next))) setPage(next as PageId);
     };
-  }, [t]);
+    window.addEventListener("cb:goto", navigate);
+    return () => window.removeEventListener("cb:goto", navigate);
+  }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 7000);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
+  useNotificationNavigation((next) => {
+    if (NAV.some((group) => group.items.some((item) => item.id === next))) setPage(next as PageId);
+  });
 
   return (
     <div className="flex h-full">
@@ -187,8 +181,9 @@ export default function App() {
             })}
           </div>
         ))}
+        <div className="mt-auto"><NotificationHistory /></div>
         <div
-          className="mt-auto flex items-center gap-2 border-t px-2.5 pt-3 text-[11.5px]"
+          className="flex items-center gap-2 border-t px-2.5 pt-3 text-[11.5px]"
           style={{ borderColor: "var(--cb-line)", color: "var(--cb-faint)" }}
         >
           <span className="cb-dot idle" />
@@ -211,25 +206,7 @@ export default function App() {
         {page === "logs" && <LogsPage />}
         {page === "settings" && <SettingsPage />}
 
-        {toast && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="cb-selectable fixed left-1/2 top-9 z-50 flex -translate-x-1/2 items-center rounded-xl border px-4 py-2.5 text-xs"
-            style={{
-              background: "var(--cb-surface-2)",
-              borderColor: "var(--cb-line-strong)",
-              color: "var(--cb-text)",
-              boxShadow: "0 12px 32px rgba(0,0,0,.38)",
-            }}
-          >
-            <span className="mr-2 text-amber-400" aria-hidden="true">●</span>
-            {toast}
-            <button className="ml-3 opacity-60 hover:opacity-100" onClick={() => setToast(null)}>
-              ✕
-            </button>
-          </div>
-        )}
+
       </main>
     </div>
   );

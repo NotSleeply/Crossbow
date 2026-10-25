@@ -14,7 +14,10 @@ use tauri::Manager as _;
 use tauri_plugin_updater::Update;
 use tauri_plugin_updater::UpdaterExt;
 
+use crate::notifications::{self, Action, Kind, Notice};
 use crate::tr;
+use std::sync::atomic::{AtomicBool, Ordering};
+static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UpdateInfo {
@@ -51,7 +54,7 @@ pub fn spawn_checker(app: &AppHandle) {
         loop {
             let (auto_check, auto_download) = update_settings(&h);
             if auto_check {
-                let _ = check_once(&h, auto_download);
+                let _ = check_once(&h, auto_download, true);
             }
             std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
         }
@@ -59,7 +62,11 @@ pub fn spawn_checker(app: &AppHandle) {
 }
 
 /// 手动/定时共用的单次检查。auto_download=true 时发现新版立即后台下载。
-pub fn check_once(app: &AppHandle, auto_download: bool) -> Result<Option<String>, String> {
+pub fn check_once(
+    app: &AppHandle,
+    auto_download: bool,
+    notify_available: bool,
+) -> Result<Option<String>, String> {
     let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
     // Updater requests have no default timeout. Limit only the check, so a slow
     // download is not aborted by the same deadline.
@@ -84,6 +91,12 @@ pub fn check_once(app: &AppHandle, auto_download: bool) -> Result<Option<String>
                     progress: None,
                 }),
             );
+            if notify_available {
+                let mut notice = Notice::new(Kind::Info, "update.available", "update-available");
+                notice.description = format!("v{version}");
+                notice.actions = vec![Action::Settings];
+                notifications::publish(app, notice);
+            }
             if auto_download {
                 let h = app.clone();
                 std::thread::spawn(move || {
@@ -103,6 +116,35 @@ pub fn check_once(app: &AppHandle, auto_download: bool) -> Result<Option<String>
 
 /// 下载当前已发现的新版本；完成后置 downloaded=true 并提示重启。
 pub fn download_and_prepare(app: &AppHandle) -> Result<(), String> {
+    if DOWNLOADING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    notifications::publish(
+        app,
+        Notice::new(Kind::Progress, "update.download", "update-download"),
+    );
+    let result = download_inner(app);
+    DOWNLOADING.store(false, Ordering::SeqCst);
+    match &result {
+        Ok(()) => {
+            let mut notice = Notice::new(Kind::Success, "update.ready", "update-download");
+            notice.actions = vec![Action::Settings];
+            notifications::publish(app, notice);
+        }
+        Err(error) => {
+            if let Some(mut info) = current(app) {
+                info.progress = None;
+                set_current(app, Some(info));
+            }
+            let mut notice = Notice::new(Kind::Error, "update.failed", "update-download");
+            notice.details = error.clone();
+            notice.actions = vec![Action::RetryDownload, Action::Settings];
+            notifications::publish(app, notice);
+        }
+    }
+    result
+}
+fn download_inner(app: &AppHandle) -> Result<(), String> {
     let update = PENDING
         .lock()
         .ok()
@@ -111,6 +153,7 @@ pub fn download_and_prepare(app: &AppHandle) -> Result<(), String> {
 
     let h = app.clone();
     let mut downloaded: u64 = 0;
+    let mut last_notice = std::time::Instant::now() - Duration::from_secs(1);
     let bytes = tauri::async_runtime::block_on(update.download(
         move |chunk, total| {
             downloaded += chunk as u64;
@@ -119,7 +162,19 @@ pub fn download_and_prepare(app: &AppHandle) -> Result<(), String> {
                     progress: Some((downloaded, total.unwrap_or(0))),
                     ..info
                 };
-                set_current(&h, Some(info));
+                if let Ok(mut current) = CURRENT.lock() {
+                    *current = Some(info.clone());
+                }
+                let _ = h.emit("update://state", &info);
+                if last_notice.elapsed() >= Duration::from_millis(250) {
+                    last_notice = std::time::Instant::now();
+                    let mut notice =
+                        Notice::new(Kind::Progress, "update.download", "update-download");
+                    notice.progress = total
+                        .filter(|size| *size > 0)
+                        .map(|size| downloaded as f64 / size as f64 * 100.0);
+                    notifications::publish(&h, notice);
+                }
             }
         },
         || {},
@@ -173,7 +228,11 @@ pub fn tray_label(app: &AppHandle) -> Option<String> {
         .and_then(|l| l)?;
     Some(format!(
         "{} v{}",
-        tr(&lang, "发现新版本 · 点击前往更新", "New version · click to update"),
+        tr(
+            &lang,
+            "发现新版本 · 点击前往更新",
+            "New version · click to update"
+        ),
         info.version
     ))
 }

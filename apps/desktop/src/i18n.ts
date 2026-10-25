@@ -467,7 +467,10 @@ export function useT() {
 }
 
 /** 启动时调用：读取持久化语言并跟随设置页修改。 */
+let initialized = false;
 export function initLang() {
+  if (initialized) return;
+  initialized = true;
   ipc
     .getUiSettings()
     .then((u) => setLang((u.lang as Lang) ?? "zh"))

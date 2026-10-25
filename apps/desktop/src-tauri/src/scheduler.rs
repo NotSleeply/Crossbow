@@ -106,10 +106,14 @@ fn tick(app: &AppHandle, retry: &mut RetryState) {
                 entry.0 = entry.0.saturating_add(1);
                 let delay = backoff_delay_secs(entry.0);
                 entry.1 = now + delay;
-                eprintln!(
-                    "auto-update {id} failed ({}): {e}; retry in {delay}s",
-                    entry.0
+                let mut notice = crate::notifications::Notice::new(
+                    crate::notifications::Kind::Warning,
+                    "profile.updateFailed",
+                    &format!("profile-auto-update-{id}"),
                 );
+                notice.details = e;
+                notice.actions = vec![crate::notifications::Action::Profiles];
+                crate::notifications::publish(app, notice);
             }
         }
         // 3) 通知前端刷新（无论成败——失败也要更新卡片上的结果展示）

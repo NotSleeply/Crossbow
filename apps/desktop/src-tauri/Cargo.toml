@@ -14,10 +14,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 serde.workspace = true
 serde_json.workspace = true
 ureq = "2"
+regex = "1"
 socket2 = "0.6"
 uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"
@@ -71,7 +72,7 @@ objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString
 raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
