@@ -2593,9 +2593,12 @@ fn lightweight_quit(app: &AppHandle) {
         show_no_more(app);
         return;
     };
-    state
-        .handoff
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    // A retained notification window means this is no longer the last
+    // window. Do not leave the one-shot exit guard armed for the next Cmd-Q.
+    state.handoff.store(
+        app.get_webview_window("notifications").is_none(),
+        std::sync::atomic::Ordering::SeqCst,
+    );
     state.ws.unsubscribe_all();
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.destroy(); // 直接销毁，绕过 CloseRequested 防递归

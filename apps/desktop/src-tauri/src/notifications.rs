@@ -3,7 +3,7 @@
 use regex::Regex;
 use std::collections::{HashSet, VecDeque};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -249,6 +249,8 @@ impl Queue {
 pub struct Notifications {
     queue: Mutex<Queue>,
     dispatching: AtomicBool,
+    creating_overlay: AtomicBool,
+    overlay_retry_after: AtomicU64,
 }
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -329,6 +331,21 @@ fn show_overlay(window: &WebviewWindow) {
     #[cfg(not(any(target_os = "macos", windows)))]
     let _ = window.show();
 }
+fn hide_overlay(window: &WebviewWindow) {
+    // Native ShowWindow does not update tao's cached visibility flags; pair it
+    // with a native hide rather than relying on an unchanged cached flag.
+    #[cfg(windows)]
+    if let Ok(handle) = window.hwnd() {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                handle.0 as _,
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE,
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = window.hide();
+}
 fn position_overlay(app: &AppHandle, window: &WebviewWindow) {
     let monitor = app
         .cursor_position()
@@ -359,27 +376,52 @@ fn route(app: &AppHandle, elapsed: u64) {
         .unwrap_or_else(|e| e.into_inner())
         .active()
         .is_empty();
-    if !main_visible && has_notices && app.get_webview_window(OVERLAY).is_none() {
-        let built = tauri::WebviewWindowBuilder::new(
-            app,
-            OVERLAY,
-            tauri::WebviewUrl::App("index.html?notifications=1".into()),
-        )
-        .title("Crossbow Notifications")
-        .inner_size(472.0, 480.0)
-        .visible(false)
-        .focused(false)
-        .decorations(false)
-        .resizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .transparent(true)
-        .shadow(false)
-        .build();
-        match built {
-            Ok(window) => position_overlay(app, &window),
-            Err(error) => eprintln!("notification overlay: {error}"),
-        }
+    if !main_visible
+        && has_notices
+        && app.get_webview_window(OVERLAY).is_none()
+        && now_ms() >= service.overlay_retry_after.load(Ordering::SeqCst)
+        && !service.creating_overlay.swap(true, Ordering::SeqCst)
+    {
+        // WebView2 window creation must be initiated off the event loop.
+        // Serialize creation so heartbeat dispatch cannot build duplicates.
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let app = &handle;
+            let built = tauri::WebviewWindowBuilder::new(
+                app,
+                OVERLAY,
+                tauri::WebviewUrl::App("index.html?notifications=1".into()),
+            )
+            .title("Crossbow Notifications")
+            .inner_size(472.0, 480.0)
+            .visible(false)
+            .focused(false)
+            .decorations(false)
+            .resizable(false)
+            .skip_taskbar(true)
+            .always_on_top(true)
+            .transparent(true)
+            .shadow(false)
+            .build();
+            match built {
+                Ok(window) => {
+                    let positioned = handle.clone();
+                    let _ =
+                        handle.run_on_main_thread(move || position_overlay(&positioned, &window));
+                }
+                Err(error) => {
+                    eprintln!("notification overlay: {error}");
+                    handle
+                        .state::<Notifications>()
+                        .overlay_retry_after
+                        .store(now_ms() + 5000, Ordering::SeqCst);
+                }
+            }
+            handle
+                .state::<Notifications>()
+                .creating_overlay
+                .store(false, Ordering::SeqCst);
+        });
     }
     let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
     let target = if main_visible && queue.ready.contains("main") {
@@ -414,7 +456,7 @@ fn route(app: &AppHandle, elapsed: u64) {
             show_overlay(&window);
         }
         if !visible && window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
+            hide_overlay(&window);
         }
     }
     // Snapshots are revisioned so renderers ignore unchanged heartbeat delivery.
@@ -504,12 +546,16 @@ pub fn notification_pause(
     }
 }
 #[tauri::command]
-pub fn notification_action(app: AppHandle, service: State<Notifications>, action: Action) {
+pub async fn notification_action(
+    app: AppHandle,
+    service: State<'_, Notifications>,
+    action: Action,
+) -> Result<(), String> {
     if matches!(action, Action::RetryDownload) {
         std::thread::spawn(move || {
             let _ = crate::update_check::download_and_prepare(&app);
         });
-        return;
+        return Ok(());
     }
     let page = match action {
         Action::Settings => "settings",
@@ -524,6 +570,7 @@ pub fn notification_action(app: AppHandle, service: State<Notifications>, action
         queue.revision += 1;
     }
     crate::show_main_window(&app);
+    Ok(())
 }
 #[tauri::command]
 pub fn notification_ack_navigation(window: WebviewWindow, service: State<Notifications>) {
