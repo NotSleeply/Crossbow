@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/tray-tun-proxy-controls |
+| /Users/ayu/Crossbow-codex | codex | codex/harden-release-pipeline |
 
 ## 当前认领
 
-- **codex**: PR #55 变基与 #21/#23 后续 TUN 修复（`codex/tray-tun-proxy-controls`；`runtime.rs`、`tun.rs`）
+- **codex**: #72 CI 与发布加固（`codex/harden-release-pipeline`；`.github/workflows`、`.github/dependabot.yml`、`scripts/ci`、`scripts/release-macos.sh`、`docs/RELEASE.md`）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
