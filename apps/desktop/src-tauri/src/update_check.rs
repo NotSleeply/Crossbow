@@ -196,7 +196,9 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
 }
 
 /// 重启并安装（macOS：替换 .app 后自动重启）。
-pub fn install(_app: &AppHandle) -> Result<(), String> {
+/// 用户实测（#86）：install 仅替换 .app，不会自动退出/重启——
+/// 必须显式 restart()。运行中的内核经描述符由新实例收养，无缝衔接。
+pub fn install(app: &AppHandle) -> Result<(), String> {
     let bytes = DOWNLOADED
         .lock()
         .ok()
@@ -207,7 +209,9 @@ pub fn install(_app: &AppHandle) -> Result<(), String> {
         .ok()
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
-    update.install(bytes).map_err(|e| e.to_string())
+    update.install(bytes).map_err(|e| e.to_string())?;
+    // 替换成功：以新包重启（内部完成清理后退出并拉起新实例）
+    app.restart()
 }
 
 pub fn update_settings(app: &AppHandle) -> (bool, bool) {
