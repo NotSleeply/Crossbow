@@ -343,13 +343,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin_dir = dir.path().join("binaries");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        std::fs::write(bin_dir.join("sing-box"), b"fake").unwrap();
-        std::fs::write(bin_dir.join("mihomo"), b"fake").unwrap();
+        std::fs::write(bin_dir.join(core_bin_file("sing-box")), b"fake").unwrap();
+        std::fs::write(bin_dir.join(core_bin_file("mihomo")), b"fake").unwrap();
         for key in ["singbox", "sing-box"] {
             let p = resolve_core_for(dir.path(), Some(key))
                 .unwrap_or_else(|| panic!("engine {key} should resolve"));
             assert!(
-                p.file_name().map(|f| f == "sing-box").unwrap_or(false),
+                is_core_bin(&p, "sing-box"),
                 "engine {key} resolved to {}",
                 p.display()
             );
@@ -364,17 +364,17 @@ mod tests {
         let bins = dir.path().join("binaries");
         std::fs::create_dir_all(&bins).unwrap();
         // 只有 mihomo：查 sing-box 必须为 None（不跨引擎回退）
-        std::fs::write(bins.join("mihomo"), b"x").unwrap();
+        std::fs::write(bins.join(core_bin_file("mihomo")), b"x").unwrap();
         assert!(
             resolve_core_for(dir.path(), Some("singbox")).is_none(),
             "sing-box must not fall back to mihomo"
         );
         let m = resolve_core_for(dir.path(), Some("mihomo")).unwrap();
-        assert!(m.ends_with("mihomo"));
+        assert!(is_core_bin(&m, "mihomo"));
         // 两个都在：各归各
-        std::fs::write(bins.join("sing-box"), b"x").unwrap();
+        std::fs::write(bins.join(core_bin_file("sing-box")), b"x").unwrap();
         let sb = resolve_core_for(dir.path(), Some("singbox")).unwrap();
-        assert!(sb.ends_with("sing-box"));
+        assert!(is_core_bin(&sb, "sing-box"));
     }
 
     #[test]
@@ -383,7 +383,10 @@ mod tests {
         if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
             assert_eq!(name, "mihomo-darwin-arm64-v1.19.32.gz");
         }
-        assert!(name.ends_with(".gz"));
+        if cfg!(windows) && cfg!(target_arch = "x86_64") {
+            assert_eq!(name, "mihomo-windows-amd64-v1.19.32.zip");
+        }
+        assert!(name.ends_with(if cfg!(windows) { ".zip" } else { ".gz" }));
     }
 
     #[test]
