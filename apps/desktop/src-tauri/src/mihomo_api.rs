@@ -90,6 +90,25 @@ impl Controller {
         serde_json::from_str(&text).map_err(|e| format!("decode {path}: {e}"))
     }
 
+    /// The live device may differ from the configured auto-assigned name.
+    /// Never infer ownership from the saved TUN switch or a shared IP range.
+    #[cfg(any(target_os = "macos", test))]
+    pub fn active_tun_device(&self) -> Result<Option<String>, String> {
+        let config = self.get_json("/configs")?;
+        let tun = &config["tun"];
+        if tun["enable"].as_bool() != Some(true) {
+            return Ok(None);
+        }
+        Ok(tun["device"]
+            .as_str()
+            .filter(|name| {
+                name.strip_prefix("utun").is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                })
+            })
+            .map(str::to_owned))
+    }
+
     /// 切换运行模式（direct / rule / global）。运行时生效，不落盘。
     /// 热切换 TUN（PATCH /configs）：内核不重启，mihomo 运行时重建
     /// tun 栈。关 TUN 由此绕开「杀 root 内核 → 端口交接 → 重启探测」
@@ -379,6 +398,49 @@ fn build_path(segments: &[&str]) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn tun_device_requires_enabled_live_interface() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        for (body, expected) in [
+            (r#"{"tun":{"enable":true,"device":"utun4"}}"#, Some("utun4")),
+            (r#"{"tun":{"enable":false,"device":"utun4"}}"#, None),
+            (r#"{"tun":{"enable":true,"device":"utun"}}"#, None),
+            (r#"{"tun":{"enable":true,"device":"en0"}}"#, None),
+            (r#"{"tun":{"enable":true}}"#, None),
+            (r#"{}"#, None),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 512];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut buf).unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&buf[..n]);
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(request.starts_with("GET /configs HTTP/1.1"));
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer test-secret"));
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            let client = Controller {
+                port,
+                secret: "test-secret".into(),
+            };
+            assert_eq!(client.active_tun_device().unwrap().as_deref(), expected);
+            server.join().unwrap();
+        }
+    }
 
     #[test]
     fn path_encoding_handles_cjk_and_spaces() {
