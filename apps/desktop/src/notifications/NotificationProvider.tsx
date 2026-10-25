@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, forwardRef, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { currentLang, initLang, useT } from "../i18n";
@@ -37,12 +37,18 @@ function NotificationViewport() {
   const stack = useRef<HTMLDivElement>(null);
   const [leaving, setLeaving] = useState<Notification[]>([]);
   const previous = useRef<Notification[]>([]);
+  // 各卡片的实测矩形：退场克隆按它钉位，避免克隆丢失原卡片的
+  // 宽度/位置/边距而在淡出瞬间闪出一条全宽灰条
+  const rects = useRef(new Map<string, DOMRect>());
   useT(); // Refresh the labels when the application's language changes.
   useEffect(() => {
     const removed = previous.current.filter((n) => !snapshot.active.some((a) => a.id === n.id));
     previous.current = snapshot.active;
     setLeaving(removed);
-    const timer = window.setTimeout(() => setLeaving([]), 180);
+    const timer = window.setTimeout(() => {
+      for (const n of removed) rects.current.delete(n.id);
+      setLeaving([]);
+    }, 180);
     return () => window.clearTimeout(timer);
   }, [snapshot.active]);
   useEffect(() => {
@@ -56,8 +62,39 @@ function NotificationViewport() {
   if (!snapshot.active.length && !leaving.length) return null;
   return <div className={`cb-notification-viewport ${isNotificationWindow ? "standalone" : ""}`} ref={stack}
     aria-label={text("history")}>
-    {snapshot.active.map((notice) => <NotificationCard key={notice.id} notice={notice} />)}
-    {leaving.map((notice) => <div className="cb-notification-leaving" key={`leaving-${notice.id}`}><NotificationCard notice={notice} inert /></div>)}
+    {snapshot.active.map((notice) => (
+      <NotificationCard
+        key={notice.id}
+        notice={notice}
+        ref={(el) => {
+          // 卸载（el=null）时保留最后一次实测矩形——退场克隆在卡片移除
+          // 之后才渲染，需要用它钉位；矩形在退场动画结束后统一清理
+          if (el) rects.current.set(notice.id, el.getBoundingClientRect());
+        }}
+      />
+    ))}
+    {(() => {
+      // rect 是窗口坐标；克隆的定位参照是 position:fixed 的 viewport，
+      // 需减去 viewport 原点换算成容器内偏移
+      const base = stack.current?.getBoundingClientRect();
+      return leaving.map((notice) => {
+        const rect = rects.current.get(notice.id);
+        const style =
+          rect && base
+            ? {
+                left: rect.left - base.left,
+                top: rect.top - base.top,
+                width: rect.width,
+                height: rect.height,
+              }
+            : undefined;
+        return (
+          <div className="cb-notification-leaving" key={`leaving-${notice.id}`} style={style}>
+            <NotificationCard notice={notice} inert />
+          </div>
+        );
+      });
+    })()}
   </div>;
 }
 
@@ -70,7 +107,8 @@ function StatusIcon({ kind }: { kind: Notification["kind"] }) {
     </>}
   </svg>;
 }
-function NotificationCard({ notice, history = false, inert = false }: { notice: Notification; history?: boolean; inert?: boolean }) {
+const NotificationCard = forwardRef<HTMLElement, { notice: Notification; history?: boolean; inert?: boolean }>(
+  function NotificationCard({ notice, history = false, inert = false }, ref) {
   const [expanded, setExpanded] = useState(false);
   const [copyState, setCopyState] = useState("");
   const hover = useRef(false);
@@ -85,7 +123,7 @@ function NotificationCard({ notice, history = false, inert = false }: { notice: 
   const title = notice.title || text(notice.code || notice.kind);
   const description = notice.description ? (notice.code === "core.install" ? text(`stage.${notice.description}`) : notice.description) : (notice.kind === "error" ? text("failedHint") : notice.code === "core.safeMode" ? text("safeMode.hint") : notice.code === "tun.disabled" ? text("tun.disabled.hint") : "");
   const detailsId = `notice-details-${notice.id}`;
-  return <article className={`cb-notification ${notice.kind} ${history ? "history" : ""}`} aria-hidden={inert || undefined}
+  return <article ref={ref} className={`cb-notification ${notice.kind} ${history ? "history" : ""}`} aria-hidden={inert || undefined}
     onMouseEnter={() => { hover.current = true; pause(); }} onMouseLeave={() => { hover.current = false; pause(); }}
     onFocus={() => { focused.current = true; pause(); }}
     onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { focused.current = false; pause(); } }}>
@@ -112,7 +150,7 @@ function NotificationCard({ notice, history = false, inert = false }: { notice: 
       onClick={() => void invoke("notification_dismiss", { id: notice.id }).catch(console.error)}>×</button>}
     {history && <time>{new Date(notice.createdAt).toLocaleTimeString(currentLang() === "en" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>}
   </article>;
-}
+  });
 
 export function NotificationHistory() {
   const [open, setOpen] = useState(false);
