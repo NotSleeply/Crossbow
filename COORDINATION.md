@@ -11,10 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #66 统一全局 Notification（`codex/unified-notifications`；`apps/desktop/src/` 通知组件及页面、`src-tauri/src/notifications.rs`、后台通知入口、开发文档）
+- **codex**: 无（#66 实现已推送 PR #71，待 CI 与用户验收）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
+
+- 2026-10-25: codex #66 全局通知服务、页面/托盘/后台提示迁移、独立浮层、脱敏与开发约定（PR #71，`codex/unified-notifications`；本地构建及 5 项专项回归通过，原生交互待验收）。
 
 - 2026-10-24: codex #54 托盘 0ms 失败显示、TUN 与系统代理独立开关、子菜单对勾统一（PR #55，`codex/tray-tun-proxy-controls`，待验收）
 - 2026-10-24: PR #53 已合并且 Netlify 预览成功；PR #55 已变基到 main，并补充 TUN LAN 网关保留与 macOS 分片默认路由识别（Refs #21 #23）。
