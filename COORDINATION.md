@@ -11,10 +11,12 @@
 
 ## 当前认领
 
-- **codex**: 无（#66 实现已推送 PR #71，待 CI 与用户验收）
+- **codex**: #66 / #72，PR #71 与 #73 CI/冲突修复（当前 `codex/unified-notifications`；日志页冲突合并、通知回归与发布测试平台修复）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
+
+- 2026-10-25: codex #72 PR #73 已修复 Windows 文本编码与 macOS 实机测试的平台限制，并同步 main；完整双平台 CI 复验中。
 
 - 2026-10-25: codex #66 全局通知服务、页面/托盘/后台提示迁移、独立浮层、脱敏与开发约定（PR #71，`codex/unified-notifications`；本地构建及 5 项专项回归通过，原生交互待验收）。
 

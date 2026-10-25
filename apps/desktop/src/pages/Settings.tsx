@@ -235,8 +235,23 @@ export default function SettingsPage() {
             }}
           />
         </Row>
-        <Row label={t("settings.tun")} hint={t("settings.tunHint")}>
+        <Row
+          label={t("settings.tun")}
+          hint={tunBusy ? t("settings.tunSwitching") : t("settings.tunHint")}
+        >
           <div className="flex items-center gap-2">
+            {tunBusy && (
+              <svg
+                className="h-3 w-3 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+              </svg>
+            )}
             {tunBusy && <span className="text-xs text-[var(--cb-text-dim)]">{t("settings.tunSwitching")}</span>}
             <Switch
               checked={tun?.enabled ?? false}
