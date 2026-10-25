@@ -9,23 +9,28 @@ DMG="target/release/bundle/dmg/Crossbow_${TAG#v}_aarch64.dmg"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
 
 # stapler validate 连 Apple GK 票据服务，runner 出口瞬时抖动会让其失败
-# （NSURLError -1005 / exit 68），重试规避暂态故障（Refs #102）
+# （NSURLError -1005 / exit 68）。5 档退避重试规避暂态故障（Refs #102 #104）
 staple_validate() {
   local target="$1" attempt
-  for attempt in 1 2 3; do
+  for attempt in 1 2 3 4 5; do
     if xcrun stapler validate "$target"; then
       return 0
     fi
-    echo "stapler validate failed (attempt $attempt/3): $target"
-    sleep 15
+    echo "stapler validate failed (attempt $attempt/5): $target"
+    sleep $((attempt * 20))
   done
   return 1
 }
 
+# $2 非空 = 副本（DMG 挂载/解包）：跳过 stapler validate——副本的 staple
+# 与主 app 逐字节相同（release_checks.py 已做全量内容比对），重复联网校验
+# 只放大 Apple GK 瞬时故障的失败面（Refs #104）
 check_signed_app() {
   python3 scripts/ci/release_checks.py app "$1" --tag "$TAG"
   codesign --verify --deep --strict --verbose=2 "$1"
-  staple_validate "$1"
+  if [ -z "${2:-}" ]; then
+    staple_validate "$1"
+  fi
   spctl --assess --type execute --verbose=2 "$1"
   [ "$(lipo -archs "$1/Contents/MacOS/crossbow-desktop")" = arm64 ]
 }
@@ -42,13 +47,13 @@ cleanup() {
 }
 trap cleanup EXIT
 hdiutil attach "$DMG" -mountpoint "$MOUNT" -readonly -nobrowse -quiet
-check_signed_app "$MOUNT/Crossbow.app"
+check_signed_app "$MOUNT/Crossbow.app" skip-staple
 # Match the updater against the app INSIDE the DMG, not just the build folder.
 python3 scripts/ci/release_checks.py updater "$MOUNT/Crossbow.app" --tag "$TAG" \
   --archive "$ARCHIVE" --signature "$SIGNATURE" --manifest latest.json --repo "$REPO"
 # The updater must independently retain its signature and launch after extraction.
 tar -xzf "$ARCHIVE" -C "$UNPACK"
-check_signed_app "$UNPACK/Crossbow.app"
+check_signed_app "$UNPACK/Crossbow.app" skip-staple
 python3 scripts/ci/smoke_macos.py "$MOUNT/Crossbow.app"
 python3 scripts/ci/smoke_macos.py "$UNPACK/Crossbow.app"
 
