@@ -11,12 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #66 / #72 PR #71、#73 Windows 测试夹具修复（`codex/harden-release-pipeline`；`core_download.rs`、`core_manager.rs`，随后同步本人通知分支）
+- **codex**: 无（PR #71 / #73 已同步 main，编码、平台测试与夹具修复已推送，双平台复验中）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
-- 2026-10-25: codex #72 PR #73 发布加固已推送；补齐 Windows UTF-8 读取与 macOS 实机测试平台限制，19 项脚本回归通过，双平台 CI 复验中。
+- 2026-10-25: codex #72 PR #73 发布加固已推送；补齐 Windows UTF-8 读取与 macOS 实机测试平台限制，19 项脚本回归通过；共享后端夹具已按 Windows 文件名/压缩格式和 Unix 进程能力修复，双平台 CI 复验中。
 - 2026-10-25: codex #66 PR #71 已同步 main 并保留日志连接状态、sing-box 日志聚合与统一通知；前端构建及通知专项回归通过，双平台 CI 复验中。
 
 - 2026-10-25: codex #66 全局通知服务、页面/托盘/后台提示迁移、独立浮层、脱敏与开发约定（PR #71，`codex/unified-notifications`；本地构建及 5 项专项回归通过，原生交互待验收）。
