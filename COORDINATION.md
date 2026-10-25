@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/release-v0.9.5 |
+| /Users/ayu/Crossbow-codex | codex | codex/home-update-polish |
 
 ## 当前认领
 
-- **codex**: #89 发布 v0.9.5（`codex/release-v0.9.5`；应用版本文件、release 流程与发布产物验证；Windows 功能适配暂缓）
+- **codex**: #92 清理构建警告及首页更新提示（`codex/home-update-polish`；mihomo_api.rs、tray_state.rs、Home.tsx、i18n.ts、样式文件）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
