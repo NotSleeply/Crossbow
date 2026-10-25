@@ -41,8 +41,13 @@ function NotificationViewport() {
   useEffect(() => {
     const removed = previous.current.filter((n) => !snapshot.active.some((a) => a.id === n.id));
     previous.current = snapshot.active;
-    setLeaving(removed);
-    const timer = window.setTimeout(() => setLeaving([]), 180);
+    if (!removed.length) return;
+    setLeaving((prev) => [...prev, ...removed]);
+    // 原位淡出：退场卡片留在正常文档流中播放动画（不占绝对定位层，
+    // 不会被 viewport 的 overflow 裁剪），动画结束后自然移除
+    const timer = window.setTimeout(() => {
+      setLeaving((prev) => prev.filter((l) => !removed.some((r) => r.id === l.id)));
+    }, 180);
     return () => window.clearTimeout(timer);
   }, [snapshot.active]);
   useEffect(() => {
@@ -56,8 +61,10 @@ function NotificationViewport() {
   if (!snapshot.active.length && !leaving.length) return null;
   return <div className={`cb-notification-viewport ${isNotificationWindow ? "standalone" : ""}`} ref={stack}
     aria-label={text("history")}>
-    {snapshot.active.map((notice) => <NotificationCard key={notice.id} notice={notice} />)}
-    {leaving.map((notice) => <div className="cb-notification-leaving" key={`leaving-${notice.id}`}><NotificationCard notice={notice} inert /></div>)}
+    {[...snapshot.active, ...leaving].map((notice) => {
+      const isLeaving = leaving.some((l) => l.id === notice.id);
+      return <NotificationCard key={notice.id} notice={notice} inert={isLeaving} leaving={isLeaving} />;
+    })}
   </div>;
 }
 
@@ -70,7 +77,7 @@ function StatusIcon({ kind }: { kind: Notification["kind"] }) {
     </>}
   </svg>;
 }
-function NotificationCard({ notice, history = false, inert = false }: { notice: Notification; history?: boolean; inert?: boolean }) {
+function NotificationCard({ notice, history = false, inert = false, leaving = false }: { notice: Notification; history?: boolean; inert?: boolean; leaving?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [copyState, setCopyState] = useState("");
   const hover = useRef(false);
@@ -85,7 +92,7 @@ function NotificationCard({ notice, history = false, inert = false }: { notice: 
   const title = notice.title || text(notice.code || notice.kind);
   const description = notice.description ? (notice.code === "core.install" ? text(`stage.${notice.description}`) : notice.description) : (notice.kind === "error" ? text("failedHint") : notice.code === "core.safeMode" ? text("safeMode.hint") : notice.code === "tun.disabled" ? text("tun.disabled.hint") : "");
   const detailsId = `notice-details-${notice.id}`;
-  return <article className={`cb-notification ${notice.kind} ${history ? "history" : ""}`} aria-hidden={inert || undefined}
+  return <article className={`cb-notification ${notice.kind} ${history ? "history" : ""} ${leaving ? "cb-notification-leaving" : ""}`} aria-hidden={inert || undefined}
     onMouseEnter={() => { hover.current = true; pause(); }} onMouseLeave={() => { hover.current = false; pause(); }}
     onFocus={() => { focused.current = true; pause(); }}
     onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { focused.current = false; pause(); } }}>
