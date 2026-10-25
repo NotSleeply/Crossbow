@@ -1,29 +1,40 @@
 # Crossbow 多 Agent 协作规范
 
 本仓库由多个 AI 会话（ZCode / Codex）共享。**每个会话在自己的 git worktree 中工作**，
-禁止在他人 worktree 或分支上操作。开工前必读本文件与 `coordination/` 会话流水。
+禁止在他人 worktree 或分支上操作。开工前必读本文件与 `COORDINATION.md`。
 
 ## 铁律
 
-1. **开工**：`git rev-parse --abbrev-ref HEAD` 确认自己 worktree 的分支；
-   `cat coordination/*.md` 了解当前认领与最近完成。
-2. **认领**：开始一项工作前，在自己的 `coordination/<会话名>.md` **末尾追加**一行
-   `[认领]`（日期 / issue / 分支 / 主要涉及文件）。该文件**直推 main**
-   （先 `git pull --rebase origin main`；仅限 docs，代码绝不直推 main），
-   **绝不随 PR 分支提交**。
+1. **开工**：在自己的 worktree 运行 `git rev-parse --abbrev-ref HEAD` 确认分支，
+   然后运行 `python3 scripts/coordination.py status` 查看本机所有会话当前认领。
+2. **认领**：先建 issue，再在自己的工作分支运行：
+   ```sh
+   python3 scripts/coordination.py claim --session codex --issue 123 \
+     --file apps/desktop/src --summary "说明本次工作范围"
+   ```
+   `--file` 可重复，路径相对仓库根目录；目录表示整个子树。会话名须唯一，
+   同时运行的多个 Codex 会话应使用不同名称。文件/目录、分支或 worktree 已被认领时，
+   必须先协调，不能跳过检查。实际范围扩大前，先完成旧认领并重新登记完整范围。
 3. **提交**：禁止 `git add -A`；逐文件 `git add <path>`；commit message
    用约定式格式并关联 issue（`Closes #NN` / `Refs #NN`）。
 4. **禁止**：
-   - 切换他人认领中的分支；
+   - 直接推送 `main` / `master`，包括代码、文档、协作规则和历史记录；
+   - 切换他人认领中的分支，或修改他人的 worktree；
    - force-push `main` 或他人分支；
    - 未经用户确认自行合并 PR；
-   - 修改或删除 `coordination/` 文件中任何既有行（**append-only**：
-     只在自己的文件末尾追加；他人的文件一行都不碰）；
-   - PR 分支携带 `COORDINATION.md` / `coordination/` 改动
-     （误提交须在合并前还原为 main 内容）。
-5. **PR**：base 一律 `main`；堆叠 PR 在父 PR 合并后立即 retarget 到 main。
-6. **收工**：推送分支 → 在自己的 `coordination/<会话名>.md` 追加
-   `[完成]` 行（关联 issue/PR），直推 main。
+   - 改写他人本地协作流水或释放他人认领；
+   - 将临时认领/完成记录写入受 Git 跟踪的文件，或把它们提交进 PR。
+5. **PR**：所有仓库改动一律走 PR，base 为 `main`；协作脚本和规则文档同样适用。
+   堆叠 PR 在父 PR 合并后立即 retarget 到 main。
+6. **收工**：推送自己的分支并创建/更新 PR 后，在原认领 worktree/分支运行：
+   ```sh
+   python3 scripts/coordination.py finish --session codex --pr 456 --summary "已提 PR，验证结果……"
+   ```
+   这只表示本次实现结束，不代表 PR 已合并。中止任务可省略 `--pr`，在说明里写明原因。
+
+临时流水位于 `git rev-parse --git-common-dir` 指向的共享 Git 元数据目录内，
+不提交、不推送。Issue / PR 是长期记录。旧 `coordination/` 流水已归档到
+`docs/coordination-history/`，其中的旧规则及未结束认领均不代表当前状态。
 
 ## 构建速查
 
