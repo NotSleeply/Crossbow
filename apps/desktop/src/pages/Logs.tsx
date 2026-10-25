@@ -24,6 +24,8 @@ interface SbPending {
   source: string;
   target: string;
   outbound: string;
+  /** 首次出现时刻（ms），超时强制成行用 */
+  seen: number;
 }
 
 /** sing-box 日志消费：把 inbound/router/outbound 同连接多行聚合为一条
@@ -44,7 +46,7 @@ function consumeSingBox(
   const entry = (): SbPending => {
     let e = pending.get(id);
     if (!e) {
-      e = { type: "", process: "", source: "", target: "", outbound: "" };
+      e = { type: "", process: "", source: "", target: "", outbound: "", seen: Date.now() };
       pending.set(id, e);
     }
     return e;
@@ -139,6 +141,22 @@ export default function LogsPage() {
       for (const e of entries) {
         // sing-box（clash_api）日志：同连接多行聚合后再进表（#57）
         if (!consumeSingBox(e.payload, pendingRef.current, out)) out.push(e);
+      }
+      // 超时成行：挂起超过 3s 的连接（outbound 先到/日志乱序等场景）
+      // 以已有部分信息强制成行，避免静默丢失；无目标也无出口的行
+      // （孤立 router 行等）不含连接信息，直接丢弃
+      const now = Date.now();
+      for (const [id, e] of [...pendingRef.current]) {
+        if (now - e.seen <= 3000) continue;
+        pendingRef.current.delete(id);
+        if (!e.target && !e.outbound) continue;
+        const left = e.source ? `${e.source}(${e.process})` : `(${e.process})`;
+        out.push({
+          type: "info",
+          payload: `[${e.type || "TCP"}] ${left} --> ${e.target || "?"} match Match using ${
+            e.outbound || "?"
+          }`,
+        });
       }
       // 防御：未凑齐 outbound 的连接积压过多时丢弃最旧的中间态
       if (pendingRef.current.size > MAX_PENDING) {
