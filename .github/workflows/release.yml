@@ -259,7 +259,10 @@ jobs:
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           python3 - "$SIG" "$WIN_SIG" "$NOW" "$VERSION" <<'EOF'
           import json, sys
-          sig, win_sig, now, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].lstrip("v")
+          # 具名变量贯穿全文，勿用内联 sys.argv——#91 加 WIN_SIG 时 3→4 参数
+          # 曾让 argv 引用整体右移（darwin URL 填成时间戳、win 签名填成版本串）
+          sig, win_sig, now, tag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+          version = tag.lstrip("v")
           notes = ""
           try:
               notes = open("/tmp/changelog.md").read().strip()
@@ -273,13 +276,13 @@ jobs:
                   "darwin-aarch64": {
                       "signature": sig,
                       "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
-                      + sys.argv[3]
+                      + tag
                       + "/Crossbow.app.tar.gz",
                   },
                   "windows-x86_64": {
-                      "signature": sys.argv[4],
+                      "signature": win_sig,
                       "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
-                      + sys.argv[3]
+                      + tag
                       + "/Crossbow_"
                       + version
                       + "_x64-setup.exe",
