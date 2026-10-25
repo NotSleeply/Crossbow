@@ -54,11 +54,20 @@ def check_updater(archive, signature, manifest, app, version, tag, repo):
     require(bool(sig), 'Updater signature is empty')
     data = json.loads(manifest.read_text(encoding='utf-8'))
     require(data['version'] == version, 'latest.json version mismatch')
-    require(set(data['platforms']) == {'darwin-aarch64'}, 'Unexpected updater platform list')
+    allowed_platforms = {'darwin-aarch64', 'windows-x86_64'}
+    require({'darwin-aarch64'} <= set(data['platforms']) <= allowed_platforms,
+            'Unexpected updater platform list')
     platform = data['platforms']['darwin-aarch64']
     expected = f'https://github.com/{repo}/releases/download/{tag}/{archive.name}'
     require(platform['url'] == expected and urlparse(expected).scheme == 'https', 'Updater URL mismatch')
     require(platform['signature'] == sig, 'latest.json signature does not match signature file')
+    windows = data['platforms'].get('windows-x86_64')
+    if windows is not None:
+        win_name = f'Crossbow_{version}_x64-setup.exe'
+        expected_win = f'https://github.com/{repo}/releases/download/{tag}/{win_name}'
+        require(windows['url'] == expected_win and urlparse(expected_win).scheme == 'https',
+                'Windows updater URL mismatch')
+        require(bool(str(windows['signature']).strip()), 'Windows updater signature is empty')
     # Compare every bundle entry, including permissions/symlinks. A valid signed
     # DMG must not be paired with an older or differently signed updater archive.
     with tarfile.open(archive, 'r:gz') as tar:
