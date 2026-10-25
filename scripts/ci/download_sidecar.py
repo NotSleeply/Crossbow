@@ -25,7 +25,7 @@ def verify(data, expected):
 
 
 def main():
-    runtime_source = (ROOT / 'apps/desktop/src-tauri/src/core_download.rs').read_text()
+    runtime_source = (ROOT / 'apps/desktop/src-tauri/src/core_download.rs').read_text(encoding='utf-8')
     runtime_version = re.search(r'CORE_VERSION: &str = "([^"]+)"', runtime_source)
     if runtime_version is None or runtime_version.group(1) != VERSION:
         raise ValueError('CI sidecar version must match core_download.rs CORE_VERSION')

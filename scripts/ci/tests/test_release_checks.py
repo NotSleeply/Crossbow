@@ -8,6 +8,8 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import zipfile
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import download_sidecar
@@ -125,6 +127,34 @@ class ReleaseChecks(unittest.TestCase):
         lock.write_text('package=[]')
         with self.assertRaisesRegex(ValueError, 'Cargo.lock'):
             checks.source_version(self.root)
+
+    def test_windows_default_encoding_does_not_break_sidecar_download(self):
+        source = self.root / 'apps/desktop/src-tauri/src/core_download.rs'
+        source.parent.mkdir(parents=True)
+        source.write_text('# 源码包含中文注释\npub const CORE_VERSION: &str = "v1.19.32";', encoding='utf-8')
+        # Prove this fixture reproduces the hosted runner's cp1252 failure.
+        with self.assertRaises(UnicodeDecodeError):
+            source.read_text(encoding='cp1252')
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr('mihomo.exe', b'fixture-executable')
+        data = buffer.getvalue()
+        digest = hashlib.sha256(data).hexdigest()
+        target = 'x86_64-pc-windows-msvc'
+        read_text = Path.read_text
+
+        def windows_read(path, *args, **kwargs):
+            kwargs.setdefault('encoding', 'cp1252')
+            return read_text(path, *args, **kwargs)
+
+        with patch.object(download_sidecar, 'ROOT', self.root), \
+             patch.object(download_sidecar, 'ASSETS', {target: ('fixture.zip', digest)}), \
+             patch.object(sys, 'argv', ['download_sidecar.py', target]), \
+             patch.object(download_sidecar.urllib.request, 'urlopen', return_value=io.BytesIO(data)), \
+             patch.object(Path, 'read_text', windows_read):
+            download_sidecar.main()
+        output = self.root / 'apps/desktop/src-tauri/binaries/mihomo-x86_64-pc-windows-msvc.exe'
+        self.assertEqual(output.read_bytes(), b'fixture-executable')
 
     def test_corrupted_sidecar_is_rejected(self):
         digest = hashlib.sha256(b'expected').hexdigest()

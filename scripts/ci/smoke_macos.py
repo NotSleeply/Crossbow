@@ -27,7 +27,7 @@ def main():
         env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=home + '/config',
                    XDG_DATA_HOME=home + '/data', XDG_CACHE_HOME=home + '/cache')
         log_path = diagnostics / 'startup.log'
-        with log_path.open('w') as log:
+        with log_path.open('w', encoding='utf-8') as log:
             process = subprocess.Popen([str(executable)], env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
             try:
@@ -36,7 +36,7 @@ def main():
                         raise RuntimeError(f'Packaged app exited during startup: {process.returncode}')
                     # A fatal-error modal may keep the process alive. Reject its
                     # stderr marker instead of treating that dialog as success.
-                    output = log_path.read_text(errors='replace')
+                    output = log_path.read_text(encoding='utf-8', errors='replace')
                     if any(marker in output for marker in (
                             'crossbow fatal:', 'panicked at', 'fatal runtime error:',
                             'Terminating app due to uncaught exception')):

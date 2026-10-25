@@ -19,10 +19,10 @@ def require(condition, message):
 
 
 def source_version(root=ROOT, tag=None):
-    config = json.loads((root / 'apps/desktop/src-tauri/tauri.conf.json').read_text())
-    package = json.loads((root / 'apps/desktop/package.json').read_text())
-    cargo = tomllib.loads((root / 'Cargo.toml').read_text())
-    lock = tomllib.loads((root / 'Cargo.lock').read_text())
+    config = json.loads((root / 'apps/desktop/src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+    package = json.loads((root / 'apps/desktop/package.json').read_text(encoding='utf-8'))
+    cargo = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))
+    lock = tomllib.loads((root / 'Cargo.lock').read_text(encoding='utf-8'))
     version = config['version']
     require(re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version), 'Invalid app version')
     require(package['version'] == cargo['workspace']['package']['version'] == version,
@@ -50,9 +50,9 @@ def check_app(app, version):
 def check_updater(archive, signature, manifest, app, version, tag, repo):
     check_app(app, version)
     require(archive.is_file() and archive.stat().st_size > 0, 'Updater archive is missing or empty')
-    sig = signature.read_text().strip()
+    sig = signature.read_text(encoding='utf-8').strip()
     require(bool(sig), 'Updater signature is empty')
-    data = json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text(encoding='utf-8'))
     require(data['version'] == version, 'latest.json version mismatch')
     require(set(data['platforms']) == {'darwin-aarch64'}, 'Unexpected updater platform list')
     platform = data['platforms']['darwin-aarch64']
