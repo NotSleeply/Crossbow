@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/release-v0.9.4 |
+| /Users/ayu/Crossbow-codex | codex | codex/resolve-pr85 |
 
 ## 当前认领
 
-- **codex**: #76 发布 v0.9.4（`codex/release-v0.9.4`；应用版本文件、release 工作流与发布产物验证；Windows 适配暂缓）
+- **codex**: #66 / PR #85 冲突修复（`codex/resolve-pr85`；通知前端与样式），同时核验已触发的 #76 / v0.9.4 发布；不操作他人 worktree
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
