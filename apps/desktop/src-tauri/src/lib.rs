@@ -1331,9 +1331,13 @@ fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
     Ok(())
 }
 
+// 必须异步 + spawn_blocking：detect 内部跑 ps/netstat 子进程（秒级），
+// 同步命令会在主线程执行直接卡死整个 UI（实测 hang 1.07s 报告）。
 #[tauri::command]
-fn coexist_detect() -> Vec<coexist::CoexistFinding> {
-    coexist::detect()
+async fn coexist_detect() -> Vec<coexist::CoexistFinding> {
+    tauri::async_runtime::spawn_blocking(coexist::detect)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
