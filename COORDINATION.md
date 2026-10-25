@@ -11,7 +11,7 @@
 
 ## 当前认领
 
-- **codex**: 无（PR #71 / #73 已同步 main，编码、平台测试与夹具修复已推送，双平台复验中）
+- **codex**: #74 首次启动数据目录修复（`codex/harden-release-pipeline`，同步本人 PR #71；`lib.rs` 与启动诊断脚本）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
