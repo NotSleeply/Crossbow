@@ -11,10 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #74 首次启动数据目录修复（`codex/harden-release-pipeline`，同步本人 PR #71；`lib.rs` 与启动诊断脚本）
+- **codex**: 无（PR #71 / #73 冲突已修复；#74 首启数据目录修复已同步，macOS CI 复验中；Windows 后续问题按用户要求暂缓）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
+
+- 2026-10-25: codex #74 修复空配置首次启动 app.pid 父目录未创建引发的 SIGABRT，并保持旧目录迁移优先；同步 PR #71/#73，以 macOS 实际安装包启动检查复验。
 
 - 2026-10-25: codex #72 PR #73 发布加固已推送；补齐 Windows UTF-8 读取与 macOS 实机测试平台限制，19 项脚本回归通过；共享后端夹具已按 Windows 文件名/压缩格式和 Unix 进程能力修复，双平台 CI 复验中。
 - 2026-10-25: codex #66 PR #71 已同步 main 并保留日志连接状态、sing-box 日志聚合与统一通知；前端构建及通知专项回归通过，双平台 CI 复验中。

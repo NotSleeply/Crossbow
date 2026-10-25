@@ -96,6 +96,7 @@ class StartupFailures(unittest.TestCase):
                 stack.enter_context(patch.object(smoke_macos.os, 'killpg'))
                 stack.enter_context(patch.object(smoke_macos.Path, 'home', return_value=root))
                 stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
                 old = Path.cwd()
                 os.chdir(root)
                 try:

@@ -32,14 +32,16 @@ def main():
                                        stderr=subprocess.STDOUT, start_new_session=True)
             try:
                 for second in range(16):
+                    output = log_path.read_text(encoding='utf-8', errors='replace')
                     if process.poll() is not None:
+                        sys.stderr.write(output[-12000:])
                         raise RuntimeError(f'Packaged app exited during startup: {process.returncode}')
                     # A fatal-error modal may keep the process alive. Reject its
                     # stderr marker instead of treating that dialog as success.
-                    output = log_path.read_text(encoding='utf-8', errors='replace')
                     if any(marker in output for marker in (
                             'crossbow fatal:', 'panicked at', 'fatal runtime error:',
                             'Terminating app due to uncaught exception')):
+                        sys.stderr.write(output[-12000:])
                         raise RuntimeError('Packaged app reported a fatal startup error; see startup.log')
                     if second < 15:
                         time.sleep(1)
