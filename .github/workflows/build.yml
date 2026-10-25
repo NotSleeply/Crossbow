@@ -89,6 +89,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Desktop backend tests
+        run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+
       - name: Build (unsigned)
         working-directory: apps/desktop
         run: pnpm tauri build --config tauri.ci.conf.json

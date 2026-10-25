@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useState } from "react";
 import { ipc, type CheckResult } from "../ipc";
 import { useT } from "../i18n";
@@ -12,11 +13,15 @@ export default function DiagnosticsPage() {
   const [fixing, setFixing] = useState<string | null>(null);
 
   const run = async () => {
+    if (running) return;
     setRunning(true);
+    notify.start("diagnostics-operation", t("diag.running"));
     try {
-      setResults(await ipc.runDiagnosis());
+      const checks = await ipc.runDiagnosis();
+      setResults(checks);
+      notify.publish({ kind: checks.every((check) => check.ok) ? "success" : "warning", title: t("diag.title"), description: `${checks.filter((check) => check.ok).length}/${checks.length} OK`, source: "diagnostics-operation", operationId: "diagnostics-operation" });
     } catch (e) {
-      console.error(e);
+      notify.error(e, "diagnostics-operation");
     } finally {
       setRunning(false);
     }
@@ -25,16 +30,19 @@ export default function DiagnosticsPage() {
   const applyFix = async (check: CheckResult) => {
     if (!check.fix) return;
     setFixing(check.id);
+    const backendOwnsNotice = check.fix === "toggle_sysproxy";
+    if (!backendOwnsNotice) notify.start("diagnostics-fix", t(`diag.fix.${check.fix}` as const));
     try {
       if (check.fix === "start_core") await ipc.coreStart();
       if (check.fix === "restart_core") {
-        await ipc.coreStop().catch(() => {});
+        await ipc.coreStop();
         await new Promise((r) => setTimeout(r, 500));
         await ipc.coreStart();
       }
       if (check.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
+      if (!backendOwnsNotice) notify.success(t(`diag.fix.${check.fix}` as const), "diagnostics-fix");
     } catch (e) {
-      console.error(e);
+      if (!backendOwnsNotice) notify.error(e, "diagnostics-fix");
     } finally {
       setFixing(null);
       void run(); // 修复后自动重跑

@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import VirtualList from "../components/VirtualList";
 import { fmtBytes, fmtDuration } from "../format";
@@ -23,7 +24,7 @@ export default function ConnectionsPage() {
   const latest = useRef<ConnSnapshot>(snapshot);
 
   useEffect(() => {
-    ipc.subscribeConnections().catch(console.error);
+    ipc.subscribeConnections().catch((error) => notify.error(error, "connections-stream"));
     const un = ipc.onConnections((s) => {
       latest.current = s;
       if (!paused) setSnapshot(s);
@@ -40,7 +41,7 @@ export default function ConnectionsPage() {
       // 乐观移除，等待下个快照校正
       setSnapshot((s) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) }));
     } catch (e) {
-      console.error(e);
+      notify.error(e, "connections-operation");
     }
   };
 

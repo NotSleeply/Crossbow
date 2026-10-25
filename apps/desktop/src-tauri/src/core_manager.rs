@@ -1466,6 +1466,7 @@ pub(crate) mod tests {
     }
 
     /// 收养场景：无 Child 只有 external_pid，stop() 应能收走外部内核。
+    #[cfg(unix)] // Uses /bin/sleep and the Unix external-pid lifecycle.
     #[test]
     fn stop_kills_adopted_external_core() {
         let dir = tempfile::tempdir().unwrap();
@@ -1492,6 +1493,7 @@ pub(crate) mod tests {
     }
 
     /// 交接语义：detached 后管理器 Drop 不得杀内核，且描述符已写。
+    #[cfg(unix)] // Uses /bin/sleep and kill(1) to probe detached children.
     #[test]
     fn detach_survives_manager_drop() {
         let dir = tempfile::tempdir().unwrap();

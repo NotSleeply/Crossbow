@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
@@ -179,9 +180,9 @@ export default function LogsPage() {
       return ipc
         .subscribeLogs()
         .then(() => {
-          if (active) setConnected(true);
+          if (active && subscriptionGeneration.current === generation) setConnected(true);
         })
-        .catch(console.error);
+        .catch((error) => notify.error(error, "logs-stream"));
     });
 
     return () => {

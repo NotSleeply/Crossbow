@@ -1,14 +1,14 @@
+import { notify } from "../notifications/service";
 import { useCallback, useEffect, useState } from "react";
 import { ipc, type GroupView } from "../ipc";
 import { useT } from "../i18n";
-import { PageHead, ErrorBar } from "./Home";
+import { PageHead } from "./Home";
 import { Icon } from "../components/Icon";
 
 /** 代理组页（v2）：组卡片 + 节点网格，点状态灯分色。 */
 export default function ProxiesPage() {
   const t = useT();
   const [groups, setGroups] = useState<GroupView[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
   const [selecting, setSelecting] = useState<string | null>(null);
@@ -16,10 +16,9 @@ export default function ProxiesPage() {
   const load = useCallback(async () => {
     try {
       setGroups(await ipc.proxiesSnapshot());
-      setError(null);
     } catch (e) {
       setGroups([]);
-      setError(String(e));
+      notify.error(e, "proxies-load");
     }
   }, []);
 
@@ -37,7 +36,10 @@ export default function ProxiesPage() {
     if (!group) return;
 
     setTesting(name);
-    setError(null);
+    const operationId = `latency-${name}`;
+    notify.start(operationId, t("proxies.testing"), name);
+    let finished = 0;
+    let failed = 0;
     setTestingNodes((current) => new Set([
       ...current,
       ...group.nodes.map((node) => nodeTestKey(name, node.name)),
@@ -49,15 +51,17 @@ export default function ProxiesPage() {
         const node = group.nodes[nextIndex++];
         try {
           const delay = await ipc.testNodeDelay(node.name);
+          if (delay === 0) failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
               nodes: g.nodes.map((n) => n.name === node.name
-                ? { ...n, delay_ms: delay, alive: true }
+                ? { ...n, delay_ms: delay, alive: delay > 0 }
                 : n),
             },
           ));
         } catch {
+          failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
@@ -67,6 +71,8 @@ export default function ProxiesPage() {
             },
           ));
         } finally {
+          finished++;
+          notify.publish({ kind: "progress", source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
           setTestingNodes((current) => {
             const next = new Set(current);
             next.delete(nodeTestKey(name, node.name));
@@ -81,6 +87,7 @@ export default function ProxiesPage() {
         { length: Math.min(10, group.nodes.length) },
         () => worker(),
       ));
+      notify.publish({ kind: failed ? "warning" : "success", source: operationId, operationId, title: t("proxies.testAll"), description: `${name} · ${group.nodes.length - failed}/${group.nodes.length} OK` });
     } finally {
       setTesting(null);
     }
@@ -88,12 +95,12 @@ export default function ProxiesPage() {
 
   const select = async (group: string, node: string) => {
     setSelecting(`${group}:${node}`);
-    setError(null);
     try {
       await ipc.selectProxy(group, node);
       setGroups((gs) => gs.map((g) => (g.name === group ? { ...g, now: node } : g)));
+      notify.success(node, `proxy-select-${group}`);
     } catch (e) {
-      setError(String(e));
+      notify.error(e, `proxy-select-${group}`);
       load();
     } finally {
       setSelecting(null);
@@ -111,7 +118,6 @@ export default function ProxiesPage() {
         </button>
       </PageHead>
 
-      {error && <ErrorBar msg={error} />}
 
       {groups.length === 0 ? (
         <div
@@ -119,7 +125,7 @@ export default function ProxiesPage() {
           style={{ color: "var(--cb-text-dim)" }}
         >
           <span>{t("proxies.noCore")}</span>
-          <span className="text-xs">{error ? String(error) : t("proxies.noCoreHint")}</span>
+          <span className="text-xs">{t("proxies.noCoreHint")}</span>
         </div>
       ) : (
         groups.map((g) => (

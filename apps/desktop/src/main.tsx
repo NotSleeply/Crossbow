@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { isNotificationWindow, NotificationProvider, NotificationWindow } from "./notifications/NotificationProvider";
+if (isNotificationWindow) document.documentElement.classList.add("notification-window");
 
 // ---------- 黑匣子：白屏类问题定位 ----------
 // 全局错误与心跳写入 Rust 侧 webview.log：
@@ -30,6 +32,6 @@ setInterval(() => report("heartbeat", "alive"), 2000);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {isNotificationWindow ? <NotificationWindow /> : <NotificationProvider><App /></NotificationProvider>}
   </React.StrictMode>,
 );

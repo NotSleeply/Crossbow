@@ -1037,32 +1037,40 @@ mod tests {
         assert!(!dir.path().join("journal.json").exists());
     }
 
-    /// 真实切换一次系统代理并还原（改动本机 networksetup 设置，测试结束即还原）。
-    /// 防护：若当前已有任何服务开启了代理（用户可能在用别的客户端），直接跳过。
-    #[test]
-    #[ignore = "touches real system proxy settings"]
-    fn live_networksetup_toggle_and_restore() {
-        let services = NetworkSetup.list_services().unwrap();
-        assert!(!services.is_empty(), "no network services found");
-        let already_on = services.iter().any(|svc| {
-            NetworkSetup::run(&["-getwebproxy", svc])
-                .map(|out| parse_proxy_enabled(&out))
-                .unwrap_or(false)
-        });
-        if already_on {
-            eprintln!("skip: system proxy already in use by another client");
-            return;
+    /// macOS 专属测试（networksetup 后端）——测试模块需在 Windows 上
+    /// 编译（统一通知的 CI 回归步骤跨平台跑），此处的 NetworkSetup
+    /// 引用必须随平台门控，否则 Windows 编译失败。
+    #[cfg(target_os = "macos")]
+    mod macos_networksetup {
+        use super::*;
+
+        /// 真实切换一次系统代理并还原（改动本机 networksetup 设置，测试结束即还原）。
+        /// 防护：若当前已有任何服务开启了代理（用户可能在用别的客户端），直接跳过。
+        #[test]
+        #[ignore = "touches real system proxy settings"]
+        fn live_networksetup_toggle_and_restore() {
+            let services = NetworkSetup.list_services().unwrap();
+            assert!(!services.is_empty(), "no network services found");
+            let already_on = services.iter().any(|svc| {
+                NetworkSetup::run(&["-getwebproxy", svc])
+                    .map(|out| parse_proxy_enabled(&out))
+                    .unwrap_or(false)
+            });
+            if already_on {
+                eprintln!("skip: system proxy already in use by another client");
+                return;
+            }
+
+            let dir = tempfile::tempdir().unwrap();
+            let mgr = SysProxyManager::new(NetworkSetup, dir.path().join("journal.json"));
+            mgr.enable(17899).unwrap();
+            assert!(mgr.status().enabled);
+            let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
+            assert!(parse_proxy_enabled(&out), "proxy should be enabled");
+
+            mgr.disable().unwrap();
+            let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
+            assert!(!parse_proxy_enabled(&out), "proxy should be restored");
         }
-
-        let dir = tempfile::tempdir().unwrap();
-        let mgr = SysProxyManager::new(NetworkSetup, dir.path().join("journal.json"));
-        mgr.enable(17899).unwrap();
-        assert!(mgr.status().enabled);
-        let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
-        assert!(parse_proxy_enabled(&out), "proxy should be enabled");
-
-        mgr.disable().unwrap();
-        let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
-        assert!(!parse_proxy_enabled(&out), "proxy should be restored");
     }
 }
