@@ -49,8 +49,11 @@ trap cleanup EXIT
 hdiutil attach "$DMG" -mountpoint "$MOUNT" -readonly -nobrowse -quiet
 check_signed_app "$MOUNT/Crossbow.app" skip-staple
 # Match the updater against the app INSIDE the DMG, not just the build folder.
+# win 签名等值校验：manifest 的 win64 签名必须与 Windows job 产物一致（Refs #106）
+WIN_SIG_FILE=$(ls dist-windows/Crossbow_*_x64-setup.exe.sig 2>/dev/null | head -1 || true)
 python3 scripts/ci/release_checks.py updater "$MOUNT/Crossbow.app" --tag "$TAG" \
-  --archive "$ARCHIVE" --signature "$SIGNATURE" --manifest latest.json --repo "$REPO"
+  --archive "$ARCHIVE" --signature "$SIGNATURE" --manifest latest.json --repo "$REPO" \
+  ${WIN_SIG_FILE:+--win-signature "$WIN_SIG_FILE"}
 # The updater must independently retain its signature and launch after extraction.
 tar -xzf "$ARCHIVE" -C "$UNPACK"
 check_signed_app "$UNPACK/Crossbow.app" skip-staple

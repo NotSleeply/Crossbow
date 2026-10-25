@@ -47,7 +47,7 @@ def check_app(app, version):
     return executable
 
 
-def check_updater(archive, signature, manifest, app, version, tag, repo):
+def check_updater(archive, signature, manifest, app, version, tag, repo, win_signature=None):
     check_app(app, version)
     require(archive.is_file() and archive.stat().st_size > 0, 'Updater archive is missing or empty')
     sig = signature.read_text(encoding='utf-8').strip()
@@ -62,6 +62,12 @@ def check_updater(archive, signature, manifest, app, version, tag, repo):
     require(platform['url'] == expected and urlparse(expected).scheme == 'https', 'Updater URL mismatch')
     require(platform['signature'] == sig, 'latest.json signature does not match signature file')
     windows = data['platforms'].get('windows-x86_64')
+    if win_signature is not None:
+        # 在发 Windows 产物的前提下，manifest 必须含 win64 条目且签名为真实
+        # minisign 内容（曾因 argv 错位填成版本串，Refs #106）
+        require(windows is not None, 'Windows artifacts staged but latest.json lacks windows-x86_64')
+        require(windows['signature'] == win_signature.read_text(encoding='utf-8').strip(),
+                'Windows signature does not match .sig file')
     if windows is not None:
         win_name = f'Crossbow_{version}_x64-setup.exe'
         expected_win = f'https://github.com/{repo}/releases/download/{tag}/{win_name}'
@@ -108,6 +114,7 @@ def main():
     parser.add_argument('--signature', type=Path)
     parser.add_argument('--manifest', type=Path)
     parser.add_argument('--repo', default='Richard-Zhang1019/Crossbow')
+    parser.add_argument('--win-signature', type=Path, help='Windows .sig file; require matching win64 manifest entry')
     args = parser.parse_args()
     version = source_version(tag=args.tag)
     if args.mode != 'source':
@@ -115,7 +122,8 @@ def main():
         check_app(args.app, version)
     if args.mode == 'updater':
         require(all([args.tag, args.archive, args.signature, args.manifest]), 'Updater check arguments missing')
-        check_updater(args.archive, args.signature, args.manifest, args.app, version, args.tag, args.repo)
+        check_updater(args.archive, args.signature, args.manifest, args.app, version, args.tag, args.repo,
+                      win_signature=args.win_signature)
     print(f'{args.mode} validation passed: {version}')
 
 
