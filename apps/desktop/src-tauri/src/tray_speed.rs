@@ -267,7 +267,8 @@ pub fn display_width(s: &str) -> usize {
 
 // 单个节点行数据（lib.rs 组装，tray_speed 负责原生渲染与原地刷新）。
 fn delay_color(ms: Option<u64>, badge: &str) -> Retained<NSColor> {
-    if badge == "失败" {
+    // 失败徽标原因（timeout / failed）——红色；旧的「失败」文案已废弃
+    if badge == "timeout" || badge == "failed" {
         return NSColor::systemRedColor();
     }
     match ms {
@@ -573,7 +574,7 @@ fn update_node_row_view(
     };
 
     let badge_text_width = set_badge_text(&badge, &row.badge);
-    let badge_width = (badge_text_width + 14.0).max(28.0);
+    let badge_width = (badge_text_width + 9.0).max(26.0);
     let badge_x = menu_width - badge_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
     let current_text = row
         .current_node
