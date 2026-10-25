@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Wry};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
+mod coexist;
 mod core_manager;
 mod diagnose;
 mod log_files;
@@ -1328,6 +1329,11 @@ fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
     let dir = log_files::logs_dir(&state.data_dir);
     log_files::sweep(&dir, days);
     Ok(())
+}
+
+#[tauri::command]
+fn coexist_detect() -> Vec<coexist::CoexistFinding> {
+    coexist::detect()
 }
 
 #[tauri::command]
@@ -2886,6 +2892,7 @@ pub fn run() {
             set_logs_retention,
             open_logs_dir,
             update_state_get,
+            coexist_detect,
             update_check_now,
             update_start_download,
             update_install,
