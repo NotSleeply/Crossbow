@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 /// 测速显示看门狗：超过该时长强制恢复「延迟测速」可点态。
-pub const TESTING_VISIBLE_SECS: u64 = 20;
+pub const TESTING_VISIBLE_SECS: u64 = 120;
 
 /// 托盘节点子菜单全部可变状态（单一锁）。
 #[derive(Default)]
@@ -33,7 +33,8 @@ pub struct TrayState {
     /// 延迟缓存（测速成功节点，毫秒）
     delays: BTreeMap<String, u64>,
     /// 最近一次测速失败节点（红色「失败」徽标）
-    failed: BTreeSet<String>,
+    /// 测速失败原因（"timeout" | "failed"）；成功节点从 map 移除。
+    failed: BTreeMap<String, String>,
     testing: bool,
     testing_since: Option<Instant>,
     /// 测速代次：看门狗与完成回调竞争结束权时，迟到的旧结果以此失效
@@ -113,18 +114,18 @@ impl TrayState {
     ) {
         let known: BTreeSet<&String> = members.iter().map(|(n, _)| n).collect();
         self.delays.retain(|n, _| known.contains(n));
-        self.failed.retain(|n| known.contains(n));
+        self.failed.retain(|n, _| known.contains(n));
         for (n, d) in &members {
             // A failed explicit test takes precedence over older controller
             // history until the next successful test updates this node.
-            if self.failed.contains(n) {
+            if self.failed.contains_key(n) {
                 continue;
             }
             if let Some(ms) = d.filter(|ms| *ms > 0) {
                 self.delays.entry(n.clone()).or_insert(ms);
             }
         }
-        self.failed.retain(|n| !self.delays.contains_key(n));
+        self.failed.retain(|n, _| !self.delays.contains_key(n));
 
         self.nodes = members.iter().map(|(n, _)| n.clone()).collect();
         self.now = now.unwrap_or_default();
@@ -132,7 +133,7 @@ impl TrayState {
         self.automatic_now = automatic.as_ref().and_then(|(_, now, _)| now.clone());
         if let Some((_, _, automatic_members)) = automatic {
             for (name, delay) in automatic_members {
-                if self.failed.contains(&name) {
+                if self.failed.contains_key(&name) {
                     continue;
                 }
                 if let Some(delay) = delay.filter(|ms| *ms > 0) {
@@ -164,22 +165,21 @@ impl TrayState {
         self.generation
     }
 
-    /// 测速结果落库：成功者写延迟；未返回者标记失败；同步当前选中。
-    pub fn apply_test_result(
-        &mut self,
-        delays: BTreeMap<String, u64>,
-        members: &[String],
-        now: Option<String>,
-    ) {
-        self.delays = delays.into_iter().filter(|(_, ms)| *ms > 0).collect();
-        self.failed.clear();
-        for m in members {
-            if !self.delays.contains_key(m) {
-                self.failed.insert(m.clone());
+    /// 单节点测速结果落库（增量）：成功写延迟并清失败标记；
+    /// 失败记原因（"timeout" | "failed"），徽标直接展示该原因。
+    pub fn apply_single_result(&mut self, node: &str, result: Result<u64, String>) {
+        match result {
+            Ok(ms) if ms > 0 => {
+                self.delays.insert(node.to_string(), ms);
+                self.failed.remove(node);
             }
-        }
-        if let Some(n) = now {
-            self.now = n;
+            Ok(_) => {
+                self.failed.insert(node.to_string(), "failed".into());
+            }
+            Err(reason) => {
+                self.delays.remove(node);
+                self.failed.insert(node.to_string(), reason);
+            }
         }
     }
 
@@ -224,11 +224,17 @@ impl TrayState {
                 } else {
                     None
                 };
-                let failed = self.failed.contains(n)
-                    || current_node
-                        .as_ref()
-                        .is_some_and(|current| self.failed.contains(current));
-                let display_delay = if failed {
+                let fail_reason = self
+                    .failed
+                    .get(n)
+                    .cloned()
+                    .or_else(|| {
+                        current_node
+                            .as_ref()
+                            .and_then(|current| self.failed.get(current))
+                            .cloned()
+                    });
+                let display_delay = if fail_reason.is_some() {
                     None
                 } else {
                     current_node
@@ -236,8 +242,12 @@ impl TrayState {
                         .and_then(|current| self.delays.get(current))
                         .or_else(|| self.delays.get(n))
                 };
-                let (badge, ms) = if failed && display_delay.is_none() {
-                    ("失败".to_string(), None)
+                let (badge, ms) = if display_delay.is_none() {
+                    // 失败徽标直接展示原因（timeout / failed），无记录视为未测
+                    (
+                        fail_reason.unwrap_or_else(|| "—".into()),
+                        None,
+                    )
                 } else {
                     match display_delay {
                         Some(ms) => (format!("{ms}ms"), Some(*ms)),
