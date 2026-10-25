@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Wry};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
+mod coexist;
 mod core_manager;
 mod diagnose;
 mod log_files;
@@ -794,7 +795,7 @@ async fn set_engine(
 
 /// TUN 开关（macOS）；系统代理有独立开关，可共用同一个内核。
 #[tauri::command]
-fn set_tun(app: AppHandle, state: State<AppState>, enable: bool) -> Result<(), String> {
+async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let result = crate::tun::toggle_tun(&state, enable);
@@ -917,12 +918,12 @@ fn active_profile_id(state: State<AppState>) -> Option<String> {
 // ---------- 内核与系统代理命令 ----------
 
 #[tauri::command]
-fn core_start(state: State<AppState>) -> Result<(), String> {
+async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
     start_core(&state)
 }
 
 #[tauri::command]
-fn core_stop(state: State<AppState>) -> Result<(), String> {
+async fn core_stop(state: State<'_, AppState>) -> Result<(), String> {
     state.core().stop();
     Ok(())
 }
@@ -1330,6 +1331,15 @@ fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
     Ok(())
 }
 
+// 必须异步 + spawn_blocking：detect 内部跑 ps/netstat 子进程（秒级），
+// 同步命令会在主线程执行直接卡死整个 UI（实测 hang 1.07s 报告）。
+#[tauri::command]
+async fn coexist_detect() -> Vec<coexist::CoexistFinding> {
+    tauri::async_runtime::spawn_blocking(coexist::detect)
+        .await
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn update_state_get(app: AppHandle) -> Option<update_check::UpdateInfo> {
     update_check::current(&app)
@@ -1591,7 +1601,7 @@ fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+async fn sysproxy_toggle(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     toggle_sysproxy_state(&state)?;
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(&app);
@@ -2886,6 +2896,7 @@ pub fn run() {
             set_logs_retention,
             open_logs_dir,
             update_state_get,
+            coexist_detect,
             update_check_now,
             update_start_download,
             update_install,

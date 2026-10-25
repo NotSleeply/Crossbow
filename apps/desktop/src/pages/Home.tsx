@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type CoexistFinding,
   CORE_MODES,
   ipc,
   type CoreMode,
@@ -30,6 +31,7 @@ export default function HomePage() {
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const [updateVer, setUpdateVer] = useState<string | null>(null);
+  const [coexist, setCoexist] = useState<CoexistFinding[]>([]);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
 
@@ -39,6 +41,14 @@ export default function HomePage() {
     return () => {
       void un.then((f) => f());
     };
+  }, []);
+
+  // 共存检测（#23）：挂载时 + 每 60 秒刷新；发现其他代理软件即横幅提示
+  useEffect(() => {
+    const check = () => ipc.coexistDetect().then(setCoexist).catch(() => {});
+    check();
+    const timer = setInterval(check, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -132,6 +142,24 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-3.5">
       <PageHead title={t("nav.home")} meta={`mixed :${proxy.port || 7897} · ${mode}`} />
+
+      {coexist.length > 0 && (
+        <div
+          className="cb-card px-4 py-3 text-xs leading-5"
+          style={{ borderColor: "var(--cb-warn)" }}
+        >
+          <span style={{ color: "var(--cb-warn)" }}>⚠ </span>
+          <b>{t("home.coexistTitle")}</b>
+          <ul className="mt-1 list-disc pl-5" style={{ color: "var(--cb-text-dim)" }}>
+            {coexist.map((f, i) => (
+              <li key={i}>{f.detail}</li>
+            ))}
+          </ul>
+          <div className="mt-1" style={{ color: "var(--cb-text-dim)" }}>
+            {t("home.coexistHint")}
+          </div>
+        </div>
+      )}
 
       {updateVer && (
         <div
