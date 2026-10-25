@@ -119,6 +119,34 @@ fn set_menu_label_text_with_offset(label: &NSTextField, text: &str, baseline_off
     }
 }
 
+/// 徽标文字：居中段落样式 + 基线下移；返回**实测**文本宽度。
+/// 徽标底色按实测宽度绘制——估算公式在 timeout/failed 等长文本上
+/// 会留出大块右侧空白，且 attributed 文本不受字段对齐属性控制，
+/// 必须在段落样式里显式居中。
+fn set_badge_text(badge: &NSTextField, text: &str) -> f64 {
+    unsafe {
+        let font = NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular);
+        let color = NSColor::whiteColor();
+        let value = NSString::from_str(text);
+        let offset = NSNumber::new_f64(-2.0);
+        let para = NSMutableParagraphStyle::new();
+        para.setAlignment(NSTextAlignment::Center);
+        let keys: &[&NSAttributedStringKey] = &[
+            NSFontAttributeName,
+            NSForegroundColorAttributeName,
+            NSParagraphStyleAttributeName,
+            NSBaselineOffsetAttributeName,
+        ];
+        let values: &[&AnyObject] = &[&font, &color, &para, &offset];
+        let attrs = NSDictionary::from_slices(keys, values);
+        use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
+        let attributed = NSAttributedString::new_with_attributes(&value, &attrs);
+        let width = attributed.size().width;
+        badge.setAttributedStringValue(&attributed);
+        width
+    }
+}
+
 // 主线程应用富文本标题（with_inner_tray_icon 的回调在主线程执行）。
 fn apply(status_item: &NSStatusItem, text: &str, show_speed: bool) {
     let Some(mtm) = MainThreadMarker::new() else {
@@ -544,7 +572,8 @@ fn update_node_row_view(
         return;
     };
 
-    let badge_width = (display_width(&row.badge) as f64 * 6.0 + 10.0).max(28.0);
+    let badge_text_width = set_badge_text(&badge, &row.badge);
+    let badge_width = (badge_text_width + 14.0).max(28.0);
     let badge_x = menu_width - badge_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
     let current_text = row
         .current_node
@@ -588,8 +617,6 @@ fn update_node_row_view(
         objc2_foundation::NSPoint::new(badge_x, 3.5),
         objc2_foundation::NSSize::new(badge_width, 16.0),
     ));
-    badge.setAlignment(NSTextAlignment::Center);
-    set_menu_label_text(&badge, &row.badge);
     let color = delay_color(ms, &row.badge);
     if let Some(layer) = layer_for(&badge) {
         let cg_color = color.CGColor();
