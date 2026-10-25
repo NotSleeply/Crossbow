@@ -795,7 +795,7 @@ async fn set_engine(
 
 /// TUN 开关（macOS）；系统代理有独立开关，可共用同一个内核。
 #[tauri::command]
-fn set_tun(app: AppHandle, state: State<AppState>, enable: bool) -> Result<(), String> {
+async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let result = crate::tun::toggle_tun(&state, enable);
@@ -918,12 +918,12 @@ fn active_profile_id(state: State<AppState>) -> Option<String> {
 // ---------- 内核与系统代理命令 ----------
 
 #[tauri::command]
-fn core_start(state: State<AppState>) -> Result<(), String> {
+async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
     start_core(&state)
 }
 
 #[tauri::command]
-fn core_stop(state: State<AppState>) -> Result<(), String> {
+async fn core_stop(state: State<'_, AppState>) -> Result<(), String> {
     state.core().stop();
     Ok(())
 }
@@ -1601,7 +1601,7 @@ fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+async fn sysproxy_toggle(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     toggle_sysproxy_state(&state)?;
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(&app);
