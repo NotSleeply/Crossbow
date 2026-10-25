@@ -801,7 +801,7 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
 /// kill_external 的 process_matches_binary 二次确认。
 #[cfg(target_os = "windows")]
 fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
-    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
@@ -817,7 +817,7 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
     let mut out: Vec<(u32, PathBuf)> = Vec::new();
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == -1_isize {
+        if snapshot == INVALID_HANDLE_VALUE {
             return out;
         }
         let mut entry: PROCESSENTRY32W = std::mem::zeroed();
@@ -988,7 +988,9 @@ fn process_matches_binary(pid: u32, expected: &Path) -> bool {
             std::fs::canonicalize(&actual),
             std::fs::canonicalize(expected),
         ) {
-            (Ok(actual), Ok(expected)) => actual.eq_ignore_ascii_case(&expected),
+            (Ok(actual), Ok(expected)) => {
+                actual.as_os_str().eq_ignore_ascii_case(expected.as_os_str())
+            }
             _ => actual.eq_ignore_ascii_case(&expected.to_string_lossy()),
         }
     }
