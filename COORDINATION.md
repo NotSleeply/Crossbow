@@ -11,12 +11,15 @@
 
 ## 当前认领
 
-- **codex**: #66 / #72，PR #71 与 #73 CI/冲突修复（当前 `codex/harden-release-pipeline`，随后 `codex/unified-notifications`；工作流、通知模块、平台测试与协作记录）
+- **codex**: 无（PR #71 / #73 已同步 main，CI 与冲突修复已推送，双平台复验中）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
 
-- 2026-10-25: codex #72 发布测试门禁、版本与安装包一致性校验、隔离启动检查、公证诊断、sidecar 摘要与发布入口统一（PR #73，`codex/harden-release-pipeline`；19 项本地回归及 actionlint 通过；补齐 Windows cp1252 默认编码回归，未触发正式发版）。
+- 2026-10-25: codex #72 PR #73 发布加固已推送；补齐 Windows UTF-8 读取与 macOS 实机测试平台限制，19 项脚本回归通过，双平台 CI 复验中。
+- 2026-10-25: codex #66 PR #71 已同步 main 并保留日志连接状态、sing-box 日志聚合与统一通知；前端构建及通知专项回归通过，双平台 CI 复验中。
+
+- 2026-10-25: codex #66 全局通知服务、页面/托盘/后台提示迁移、独立浮层、脱敏与开发约定（PR #71，`codex/unified-notifications`；本地构建及 5 项专项回归通过，原生交互待验收）。
 
 - 2026-10-24: codex #54 托盘 0ms 失败显示、TUN 与系统代理独立开关、子菜单对勾统一（PR #55，`codex/tray-tun-proxy-controls`，待验收）
 - 2026-10-24: PR #53 已合并且 Netlify 预览成功；PR #55 已变基到 main，并补充 TUN LAN 网关保留与 macOS 分片默认路由识别（Refs #21 #23）。
