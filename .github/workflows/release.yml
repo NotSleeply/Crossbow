@@ -75,8 +75,64 @@ jobs:
     with:
       ref: ${{ needs.preflight.outputs.commit }}
 
-  release-macos:
+  # Windows：NSIS 安装包 + 更新器签名（无代码签名证书，SmartScreen
+    # 策略见 #82；升级渠道 #79）
+  release-windows:
     needs: [preflight, checks]
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Download and verify mihomo sidecar
+        shell: pwsh
+        run: python scripts/ci/download_sidecar.py x86_64-pc-windows-msvc
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (updater-signed NSIS)
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: pnpm tauri build
+
+      - name: Verify updater signature files exist
+        shell: pwsh
+        run: |
+          Get-ChildItem target/release/bundle/nsis/*.exe, target/release/bundle/nsis/*.sig
+          if (-not (Test-Path "target/release/bundle/nsis/*.sig" -ErrorAction SilentlyContinue) -and -not (Get-ChildItem target/release/bundle/nsis -Filter *.sig)) { throw "missing updater signature" }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release-${{ env.VERSION }}
+          path: |
+            target/release/bundle/nsis/Crossbow_*_x64-setup.exe
+            target/release/bundle/nsis/Crossbow_*_x64-setup.exe.sig
+          if-no-files-found: error
+          retention-days: 30
+
+  release-macos:
+    needs: [preflight, checks, release-windows]
     permissions:
       contents: write
     runs-on: macos-15
@@ -188,15 +244,22 @@ jobs:
           PYEOF
           cat /tmp/changelog.md
 
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: windows-release-${{ env.VERSION }}
+          path: dist-windows/
+
       - name: Prepare latest.json
         env:
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           SIG=$(cat target/release/bundle/macos/Crossbow.app.tar.gz.sig)
+          WIN_SIG=$(cat dist-windows/Crossbow_*_x64-setup.exe.sig)
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          python3 - "$SIG" "$NOW" "$VERSION" <<'EOF'
+          python3 - "$SIG" "$WIN_SIG" "$NOW" "$VERSION" <<'EOF'
           import json, sys
-          sig, now, version = sys.argv[1], sys.argv[2], sys.argv[3].lstrip("v")
+          sig, win_sig, now, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].lstrip("v")
           notes = ""
           try:
               notes = open("/tmp/changelog.md").read().strip()
@@ -212,11 +275,24 @@ jobs:
                       "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
                       + sys.argv[3]
                       + "/Crossbow.app.tar.gz",
-                  }
+                  },
+                  "windows-x86_64": {
+                      "signature": sys.argv[4],
+                      "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
+                      + sys.argv[3]
+                      + "/Crossbow_"
+                      + version
+                      + "_x64-setup.exe",
+                  },
               },
           }
           open("latest.json", "w").write(json.dumps(manifest, indent=2))
           EOF
+
+      - name: Stage Windows installer into release set
+        run: |
+          cp dist-windows/Crossbow_*_x64-setup.exe dist-windows/Crossbow_*_x64-setup.exe.sig dist-release/
+          (cd dist-release && shasum -a 256 Crossbow_*_x64-setup.exe Crossbow_*_x64-setup.exe.sig >> SHA256SUMS && shasum -a 256 -c SHA256SUMS)
 
       - name: Verify installed and updater packages
         run: bash scripts/ci/verify_macos_release.sh
@@ -239,7 +315,8 @@ jobs:
             echo "## 下载"
             echo ""
             echo "- Apple Silicon：[Crossbow_${VERSION#v}_aarch64.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/Crossbow_${VERSION#v}_aarch64.dmg)"
-            echo '- 自动更新：已签名 `Crossbow.app.tar.gz` 与 `latest.json`'
+            echo "- Windows x64：[Crossbow_${VERSION#v}_x64-setup.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/Crossbow_${VERSION#v}_x64-setup.exe)（未做代码签名，SmartScreen 提示「仍要运行」即可）"
+            echo '- 自动更新：已签名 `Crossbow.app.tar.gz` / NSIS 安装包与 `latest.json`'
             echo '- 完整性校验：下载 SHA256SUMS 后执行 `shasum -a 256 -c SHA256SUMS`'
           } > /tmp/release-notes.md
           # Existing releases are not overwritten, including on workflow reruns.
