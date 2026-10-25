@@ -1,23 +1,29 @@
 # Crossbow 多 Agent 协作规范
 
 本仓库由多个 AI 会话（ZCode / Codex）共享。**每个会话在自己的 git worktree 中工作**，
-禁止在他人 worktree 或分支上操作。开工前必读本文件与 `COORDINATION.md`。
+禁止在他人 worktree 或分支上操作。开工前必读本文件与 `coordination/` 会话流水。
 
 ## 铁律
 
 1. **开工**：`git rev-parse --abbrev-ref HEAD` 确认自己 worktree 的分支；
-   读 `COORDINATION.md` 了解当前认领与最近完成。
-2. **认领**：开始一项工作前，在 `COORDINATION.md`「当前认领」区写明
-   （会话名 / issue / 分支 / 主要涉及文件）。改完立即提交该文件。
+   `cat coordination/*.md` 了解当前认领与最近完成。
+2. **认领**：开始一项工作前，在自己的 `coordination/<会话名>.md` **末尾追加**一行
+   `[认领]`（日期 / issue / 分支 / 主要涉及文件）。该文件**直推 main**
+   （先 `git pull --rebase origin main`；仅限 docs，代码绝不直推 main），
+   **绝不随 PR 分支提交**。
 3. **提交**：禁止 `git add -A`；逐文件 `git add <path>`；commit message
    用约定式格式并关联 issue（`Closes #NN` / `Refs #NN`）。
 4. **禁止**：
-   - 切换他人「当前认领」中的分支；
+   - 切换他人认领中的分支；
    - force-push `main` 或他人分支；
    - 未经用户确认自行合并 PR；
-   - 改写共享记忆/协作文件中他人写的条目（只追加或修正自己的）。
+   - 修改或删除 `coordination/` 文件中任何既有行（**append-only**：
+     只在自己的文件末尾追加；他人的文件一行都不碰）；
+   - PR 分支携带 `COORDINATION.md` / `coordination/` 改动
+     （误提交须在合并前还原为 main 内容）。
 5. **PR**：base 一律 `main`；堆叠 PR 在父 PR 合并后立即 retarget 到 main。
-6. **收工**：推送分支 → 更新 `COORDINATION.md`（认领区移到「最近完成」）。
+6. **收工**：推送分支 → 在自己的 `coordination/<会话名>.md` 追加
+   `[完成]` 行（关联 issue/PR），直推 main。
 
 ## 构建速查
 
