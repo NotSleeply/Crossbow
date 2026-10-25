@@ -49,7 +49,11 @@ export default function HomePage() {
       try {
         const findings = await ipc.coexistDetect();
         if (!active) return;
-        if (findings.length) {
+        // 通知降噪（用户反馈）：只在其他 TUN 实际接管默认路由时弹——
+        // 常驻服务/闲置内核进程属正常状态（退出 Verge 后其服务仍在），
+        // 每次启动都提示是狼来了
+        const tunnel = findings.find((finding) => finding.kind === "tunnel");
+        if (tunnel) {
           hadConflict = true;
           notify.publish({ kind: "warning", title: t("home.coexistTitle"), description: t("home.coexistHint"), details: findings.map((finding) => finding.detail).join("\n"), source: "coexist", operationId: "coexist", duration: 0, actions: ["diagnostics"] });
         } else if (hadConflict) {
