@@ -65,53 +65,66 @@ fn scan_process_lines(lines: &[&str]) -> (bool, Vec<String>) {
     (service, cores)
 }
 
+/// 由三类原始信号组装提示：**只提示真实冲突源**——闲置的常驻服务
+/// （未拉起内核）不占端口不接管流量，单独提示只会狼来了；其内核
+/// （verge-mihomo）跑起来时自然会以 core 条目出现。
+fn build_findings(
+    tunnel: Option<String>,
+    service: bool,
+    cores: Vec<String>,
+) -> Vec<CoexistFinding> {
+    let mut out = Vec::new();
+    if let Some(iface) = tunnel {
+        out.push(CoexistFinding {
+            kind: "tunnel".into(),
+            detail: format!(
+                "接口 {iface} 正在接管默认路由（其他代理/VPN 的 TUN 已开启）"
+            ),
+        });
+    }
+    if !cores.is_empty() {
+        out.push(CoexistFinding {
+            kind: "core".into(),
+            detail: format!("检测到其他代理的内核进程：{}", cores.join(" ｜ ")),
+        });
+    }
+    let _ = service;
+    out
+}
+
 /// 执行检测。非 unix 平台返回空（Windows 于 M1.5 补齐）。
 #[cfg(target_os = "macos")]
 pub fn detect() -> Vec<CoexistFinding> {
-    let mut out: Vec<CoexistFinding> = Vec::new();
-
     // 1) 其他隧道持有默认路由
-    if let Ok(output) = std::process::Command::new("netstat").args(["-rn", "-f", "inet"]).output() {
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() < 4 {
-                continue;
-            }
-            let destination = cols[0];
-            let interface = cols[cols.len() - 1];
-            if is_default_destination(destination) && interface.starts_with("utun") {
-                out.push(CoexistFinding {
-                    kind: "tunnel".into(),
-                    detail: format!(
-                        "接口 {interface} 正在接管默认路由（其他代理/VPN 的 TUN 已开启）"
-                    ),
-                });
-                break;
-            }
-        }
-    }
+    let tunnel = std::process::Command::new("netstat")
+        .args(["-rn", "-f", "inet"])
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                if cols.len() < 4 {
+                    return None;
+                }
+                let destination = cols[0];
+                let interface = cols[cols.len() - 1];
+                (is_default_destination(destination) && interface.starts_with("utun"))
+                    .then(|| interface.to_string())
+            })
+        });
 
     // 2) 常驻服务与其他内核进程
-    if let Ok(output) = std::process::Command::new("ps").args(["-axo", "command="]).output() {
-        let text = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = text.lines().collect();
-        let (service, cores) = scan_process_lines(&lines);
-        if service {
-            out.push(CoexistFinding {
-                kind: "service".into(),
-                detail: "Clash Verge 的特权服务正在常驻（clash-verge-service）".into(),
-            });
-        }
-        if !cores.is_empty() {
-            out.push(CoexistFinding {
-                kind: "core".into(),
-                detail: format!("检测到其他代理的内核进程：{}", cores.join(" ｜ ")),
-            });
-        }
-    }
+    let (service, cores) = std::process::Command::new("ps")
+        .args(["-axo", "command="])
+        .output()
+        .map(|output| {
+            let text = String::from_utf8_lossy(&output.stdout);
+            scan_process_lines(&text.lines().collect::<Vec<_>>())
+        })
+        .unwrap_or((false, Vec::new()));
 
-    out
+    build_findings(tunnel, service, cores)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -161,5 +174,32 @@ mod tests {
         let (service, cores) = scan_process_lines(&lines);
         assert!(!service);
         assert!(cores.is_empty());
+    }
+
+    /// 策略回归（用户反馈）：闲置常驻服务不提示——退出 Verge 应用后
+    /// 其特权服务仍常驻属正常状态，单独横幅是狼来了。
+    #[test]
+    fn idle_service_alone_not_reported() {
+        let findings = build_findings(None, true, Vec::new());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn tunnel_and_core_reported() {
+        let findings = build_findings(
+            Some("utun7".into()),
+            true,
+            vec!["/Library/.../verge-mihomo -d x".into()],
+        );
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].kind, "tunnel");
+        assert_eq!(findings[1].kind, "core");
+    }
+
+    #[test]
+    fn tunnel_alone_reported() {
+        let findings = build_findings(Some("utun9".into()), false, Vec::new());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, "tunnel");
     }
 }
