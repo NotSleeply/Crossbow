@@ -89,9 +89,8 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Notification queue regressions
-        run: |
-          cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml notifications::
+      - name: Desktop backend tests
+        run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
       - name: Build (unsigned)
         working-directory: apps/desktop
