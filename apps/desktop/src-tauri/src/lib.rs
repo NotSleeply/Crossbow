@@ -2081,72 +2081,132 @@ fn run_tray_delay_test(handle: &AppHandle) {
     };
     update_tray_node_menu(handle, true);
 
-    // 看门狗：Mihomo 请求有 30 秒超时。再留 5 秒；超时则恢复菜单并使旧结果失效。
-    let watchdog_handle = handle.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(35));
-        let Some(state) = watchdog_handle.try_state::<AppState>() else {
-            return;
-        };
-        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-        if tray.generation() != generation {
-            return; // 新一轮测速已接管
-        }
-        tray.end_test();
-        drop(tray);
-        let data = tray_menu_data(&state);
-        tray_speed::update_node_menu(&watchdog_handle, &data.title, &data.rows, data.testing);
-    });
-
+    // 并发池测速：每个节点独立请求，完成一个就立即原地刷新菜单——
+    // 不再等全组返回（组延迟接口是一次请求测全部，节点多时末尾节点
+    // 要等很久才能看到任何结果）。
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else {
             return;
         };
-        let (group, members, automatic_group) = {
+        let mut targets: Vec<String> = {
             let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-            (
-                tray.group().to_string(),
-                tray.node_names(),
-                tray.automatic_group().map(str::to_string),
-            )
+            tray.node_names()
         };
         let client = controller_client(&state);
-        let mut measured = match &client {
-            Ok(client) => client.test_group_delay(&group),
-            Err(error) => Err(error.clone()),
-        };
-        if let (Some(auto_group), Ok(client), Ok(root_delays)) =
-            (automatic_group.as_deref(), &client, &mut measured)
-        {
+        // 自动选择组（URLTest）的成员并入待测集合（去重）
+        if let Ok(client) = &client {
             if let Ok(groups) = client.groups() {
-                if let Some(auto) = groups.iter().find(|candidate| candidate.name == auto_group) {
-                    root_delays.extend(
-                        auto.nodes.iter().filter_map(|node| {
-                            node.delay_ms.map(|delay| (node.name.clone(), delay))
-                        }),
-                    );
+                for g in groups.iter().filter(|g| g.kind.eq_ignore_ascii_case("URLTest")) {
+                    for node in &g.nodes {
+                        if !targets.contains(&node.name) {
+                            targets.push(node.name.clone());
+                        }
+                    }
                 }
             }
         }
-        let now = client
-            .as_ref()
-            .map_err(Clone::clone)
-            .and_then(|c| c.group_state(&group))
-            .ok()
-            .and_then(|(now, _)| now);
-
-        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-        // 与看门狗竞争结束权；迟到的旧结果不会覆盖新一轮测速。
-        if tray.generation() != generation {
+        let total = targets.len();
+        if total == 0 {
+            let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+            if tray.generation() == generation {
+                tray.end_test();
+            }
+            drop(tray);
+            let data = tray_menu_data(&state);
+            tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
             return;
         }
-        match measured {
-            Ok(delays) => tray.apply_test_result(delays, &members, now),
-            Err(e) => {
-                eprintln!("tray delay test failed: {e}");
-                tray.clear_failed();
+
+        // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
+        let watchdog_handle = h.clone();
+        let watchdog_secs = 20 + (total as u64).div_ceil(10) * 6;
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(watchdog_secs));
+            let Some(state) = watchdog_handle.try_state::<AppState>() else {
+                return;
+            };
+            let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+            if tray.generation() != generation {
+                return; // 新一轮测速已接管
             }
+            tray.end_test();
+            drop(tray);
+            let data = tray_menu_data(&state);
+            tray_speed::update_node_menu(&watchdog_handle, &data.title, &data.rows, data.testing);
+        });
+
+        let queue = std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::VecDeque::from(targets),
+        ));
+        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<u64, String>)>();
+        for _ in 0..total.min(10) {
+            let queue = queue.clone();
+            let tx = tx.clone();
+            let h_worker = h.clone();
+            std::thread::spawn(move || {
+                let client = match h_worker.try_state::<AppState>() {
+                    Some(s) => controller_client(&s),
+                    None => return,
+                };
+                loop {
+                    let Some(node) = queue
+                        .lock()
+                        .ok()
+                        .and_then(|mut q| q.pop_front())
+                    else {
+                        break;
+                    };
+                    let result = match &client {
+                        Ok(c) => c.test_node_delay(&node).map_err(|e| {
+                            let low = e.to_lowercase();
+                            if low.contains("timed out")
+                                || low.contains("timeout")
+                                || low.contains("deadline")
+                                || low.contains("504")
+                            {
+                                "timeout".to_string()
+                            } else {
+                                "failed".to_string()
+                            }
+                        }),
+                        Err(_) => Err("failed".to_string()),
+                    };
+                    if tx.send((node, result)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tx);
+
+        // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
+        let mut done = 0usize;
+        for (node, result) in rx {
+            let Some(state) = h.try_state::<AppState>() else {
+                return;
+            };
+            {
+                let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+                if tray.generation() != generation {
+                    return; // 新一轮测速已接管，放弃本轮剩余结果
+                }
+                tray.apply_single_result(&node, result);
+            }
+            let data = tray_menu_data(&state);
+            tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+            done += 1;
+            if done >= total {
+                break;
+            }
+        }
+        // 全部完成：恢复可点态（与看门狗竞争安全）
+        let Some(state) = h.try_state::<AppState>() else {
+            return;
+        };
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation {
+            return;
         }
         tray.end_test();
         drop(tray);
@@ -2154,6 +2214,7 @@ fn run_tray_delay_test(handle: &AppHandle) {
         tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
     });
 }
+
 
 #[cfg(target_os = "macos")]
 fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
