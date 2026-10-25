@@ -127,7 +127,38 @@ pub fn detect() -> Vec<CoexistFinding> {
     build_findings(tunnel, service, cores)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows：tasklist 按图像文件名识别其他代理。本应用侧车为
+/// mihomo-x86_64-pc-windows-msvc.exe 全名，与第三方 mihomo.exe/
+/// verge-mihomo.exe 不冲突，可按名直分。
+#[cfg(target_os = "windows")]
+pub fn detect() -> Vec<CoexistFinding> {
+    let Ok(output) = std::process::Command::new("tasklist")
+        .args(["/FO", "CSV", "/NH"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut cores: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let Some(image) = line.split('"').nth(1) else { continue };
+        let lower = image.to_lowercase();
+        let is_other_proxy = (lower.contains("verge") || lower == "mihomo.exe" || lower == "sing-box.exe")
+            && !lower.contains("crossbow");
+        if is_other_proxy && !cores.iter().any(|c| c.contains(&lower)) {
+            cores.push(image.to_string());
+        }
+    }
+    if cores.is_empty() {
+        return Vec::new();
+    }
+    vec![CoexistFinding {
+        kind: "core".into(),
+        detail: format!("检测到其他代理的内核进程：{}", cores.join(" ｜ ")),
+    }]
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn detect() -> Vec<CoexistFinding> {
     Vec::new()
 }
