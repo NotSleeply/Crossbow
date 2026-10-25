@@ -1039,6 +1039,7 @@ mod tests {
 
     /// 真实切换一次系统代理并还原（改动本机 networksetup 设置，测试结束即还原）。
     /// 防护：若当前已有任何服务开启了代理（用户可能在用别的客户端），直接跳过。
+    #[cfg(target_os = "macos")]
     #[test]
     #[ignore = "touches real system proxy settings"]
     fn live_networksetup_toggle_and_restore() {

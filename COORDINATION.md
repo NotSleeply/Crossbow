@@ -11,7 +11,7 @@
 
 ## 当前认领
 
-- **codex**: #72 / PR #73 后端测试平台修复（`codex/harden-release-pipeline`；`apps/desktop/src-tauri/src/sysproxy.rs`）
+- **codex**: #66 / #72，PR #71 与 #73 CI/冲突修复（当前 `codex/harden-release-pipeline`，随后 `codex/unified-notifications`；工作流、通知模块、平台测试与协作记录）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
