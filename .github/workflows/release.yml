@@ -289,13 +289,15 @@ jobs:
           open("latest.json", "w").write(json.dumps(manifest, indent=2))
           EOF
 
+      - name: Verify installed and updater packages
+        run: bash scripts/ci/verify_macos_release.sh
+
+      # 必须在 verify_macos_release.sh 之后：dist-release/ 由该脚本创建，
+      # 且其第 43 行会重写 SHA256SUMS——先汇入会被冲掉
       - name: Stage Windows installer into release set
         run: |
           cp dist-windows/Crossbow_*_x64-setup.exe dist-windows/Crossbow_*_x64-setup.exe.sig dist-release/
           (cd dist-release && shasum -a 256 Crossbow_*_x64-setup.exe Crossbow_*_x64-setup.exe.sig >> SHA256SUMS && shasum -a 256 -c SHA256SUMS)
-
-      - name: Verify installed and updater packages
-        run: bash scripts/ci/verify_macos_release.sh
 
       - name: Upload verified release assets
         uses: actions/upload-artifact@v7
