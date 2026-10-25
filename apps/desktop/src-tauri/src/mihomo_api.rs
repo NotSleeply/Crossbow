@@ -94,6 +94,26 @@ impl Controller {
     }
 
     /// 切换运行模式（direct / rule / global）。运行时生效，不落盘。
+    /// 热切换 TUN（PATCH /configs）：内核不重启，mihomo 运行时重建
+    /// tun 栈。关 TUN 由此绕开「杀 root 内核 → 端口交接 → 重启探测」
+    /// 整条链路（实测该链路 30s+ 且 root 内核杀不死时 bind 必失败）。
+    /// 仅 mihomo 支持 tun 热更新；sing-box 的 clash_api 不支持。
+    pub fn patch_tun_enable(&self, enable: bool) -> Result<(), String> {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "tun": { "enable": enable }
+        }))
+        .map_err(|e| e.to_string())?;
+        let resp = self
+            .req("PATCH", "/configs")
+            .send_bytes(&body)
+            .map_err(|e| format!("patch tun: {e}"))?;
+        if resp.status() < 300 {
+            Ok(())
+        } else {
+            Err(format!("patch tun: HTTP {}", resp.status()))
+        }
+    }
+
     pub fn patch_mode(&self, mode: &str) -> Result<(), String> {
         if !MODES.contains(&mode) {
             return Err(format!("unknown mode: {mode}"));

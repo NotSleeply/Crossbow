@@ -303,6 +303,56 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     } else {
         None
     };
+    // 热切换优先（#23 关闭链路根治）：内核在跑、控制器可用且当前是
+    // mihomo（sing-box 的 clash_api 不支持 tun 热更新）时，直接
+    // PATCH /configs 切换 tun——内核不重启，没有杀 root 内核/端口
+    // 交接/重启探测，毫秒级完成。关闭后内核继续以授权副本运行
+    // （非 TUN 模式），下次开 TUN 也可直接热开。
+    let core_binary = state.core().binary_path();
+    let hot_capable = was_running
+        && state.core().controller().is_some()
+        && crate::core_download::is_core_bin(&core_binary, "mihomo")
+        // 热开启要求内核已是 root 授权副本——普通内核热开 utun 会
+        // EPERM（实测：configure tun interface: operation not permitted）
+        && (!enable || crate::tun::is_setuid(&core_binary));
+    if hot_capable {
+        if let Some((port, secret)) = state.core().controller() {
+            let client = crate::mihomo_api::Controller { port, secret };
+            match client.patch_tun_enable(enable) {
+                Ok(()) if enable => {
+                    if let Err(error) = wait_tun_listener(state, &previous_routes) {
+                        // 回退热开并落回重启链换 root 副本重试（保留已挂起的
+                        // 系统代理快照，由重启链继续管理）
+                        let _ = client.patch_tun_enable(false);
+                        eprintln!("tun hot-enable failed to take effect, falling back to restart: {error}");
+                    } else {
+                        {
+                            let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+                            store.data_mut().engine.tun_enable = enable;
+                            store.save().map_err(|e| e.to_string())?;
+                        }
+                        if !previous_proxy.enabled {
+                            let _ = state.sysproxy.suspend_for_tun();
+                        }
+                        return Ok(());
+                    }
+                    // 热开失败：落回下方重启链换 root 副本重试
+                }
+                Ok(()) => {
+                    {
+                        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+                        store.data_mut().engine.tun_enable = enable;
+                        store.save().map_err(|e| e.to_string())?;
+                    }
+                    let _ = state.sysproxy.restore_after_tun();
+                    return Ok(());
+                }
+                Err(error) => {
+                    eprintln!("tun hot-toggle via controller failed, fallback to restart: {error}");
+                }
+            }
+        }
+    }
     if was_running && !state.core().stop() {
         if let Some(suspended) = suspended_proxy {
             state.sysproxy.restore_after_failed_tun(suspended)?;
