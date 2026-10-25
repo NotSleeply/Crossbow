@@ -1,0 +1,45 @@
+.cb-notification-viewport {
+  position: fixed; z-index: 100; top: 40px; left: 50%; transform: translateX(-50%);
+  width: min(464px, calc(100vw - 8px)); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none; max-height: calc(100vh - 56px); overflow-y: auto; padding: 8px 12px 24px;
+}
+.cb-notification-viewport.standalone { top: 0; max-height: calc(100vh - 8px); padding: 8px 12px 24px; }
+.cb-notification {
+  --notice-color: var(--cb-accent); display: flex; align-items: flex-start; gap: 10px;
+  padding: 14px; border-radius: 12px; border: 1px solid var(--cb-line-strong);
+  background: var(--cb-surface); color: var(--cb-text); pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,.16); animation: cb-notification-in 180ms ease-out;
+}
+.cb-notification.success { --notice-color: var(--cb-ok); }
+.cb-notification.warning { --notice-color: var(--cb-warn); }
+.cb-notification.error { --notice-color: var(--cb-bad); }
+.cb-notification-icon { width: 18px; height: 18px; flex: none; color: var(--notice-color); margin-top: 1px; }
+.cb-notification-body { flex: 1; min-width: 0; }
+.cb-notification-title { font-size: 13px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.cb-notification p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--cb-text-dim); overflow-wrap: anywhere; white-space: pre-wrap; }
+.cb-notification-count { margin-left: 8px; color: var(--cb-text-dim); font-size: 11px; font-weight: 400; }
+.cb-notification button, .cb-notification-history-head button { background: transparent; border: 0; cursor: pointer; font-size: 11px; color: var(--cb-accent); }
+.cb-notification button:focus-visible, .cb-notification-history-head button:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: 3px; border-radius: 3px; }
+.cb-notification button:hover { text-decoration: underline; }
+.cb-notification .cb-notification-close { color: var(--cb-text-dim); flex: none; font-size: 20px; line-height: 20px; width: 22px; height: 22px; }
+.cb-notification-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.cb-notification-actions:not(:empty) { margin-top: 8px; }
+.cb-notification-details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--cb-line); }
+.cb-notification-details pre { margin: 0 0 8px; max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 var(--cb-mono); }
+.cb-notification-details span { display: block; font-size: 11px; color: var(--cb-text-dim); }
+.cb-notification progress { display: block; width: 100%; height: 4px; accent-color: var(--cb-accent); margin-top: 10px; }
+.cb-notification-leaving { position: absolute; width: 100%; pointer-events: none; animation: cb-notification-out 180ms ease-in both; }
+.cb-notification-leaving * { pointer-events: none; }
+.cb-notification-history { position: relative; margin: 16px 10px 12px; }
+.cb-notification-history > button { width: 100%; text-align: left; color: var(--cb-text-dim); }
+.cb-notification-history-panel { position: fixed; z-index: 95; left: 16px; bottom: 64px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 112px); overflow-y: auto; padding: 12px; background: var(--cb-surface); border: 1px solid var(--cb-line-strong); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.2); }
+.cb-notification-history-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 12px; font-size: 13px; }
+.cb-notification-history-panel > p { font-size: 12px; padding: 12px; color: var(--cb-text-dim); }
+.cb-notification.history { margin-bottom: 8px; animation: none; box-shadow: none; }
+.cb-notification time { color: var(--cb-faint); font-size: 10px; }
+html.notification-window, html.notification-window body, html.notification-window #root { background: transparent; overflow: hidden; }
+.spinning { animation: cb-notification-spin 1s linear infinite; }
+@keyframes cb-notification-spin { to { transform: rotate(360deg); } }
+@keyframes cb-notification-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cb-notification-out { to { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .cb-notification, .cb-notification-leaving, .spinning { animation: none; } }

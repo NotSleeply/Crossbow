@@ -1,0 +1,6 @@
+{
+  "identifier": "notifications",
+  "description": "独立通知浮层只使用事件订阅；窗口操作由 Rust 控制。",
+  "windows": ["notifications"],
+  "permissions": ["core:event:default"]
+}

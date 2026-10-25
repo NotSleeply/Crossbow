@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useEffect, useRef, useState } from "react";
 import {
   ipc,
@@ -36,10 +37,8 @@ export default function SettingsPage() {
   const [updateState, setUpdateState] = useState<UpdateState | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const updateCheckInFlight = useRef(false);
-  const [updateCheckResult, setUpdateCheckResult] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
 
   const load = async () => {
     const e = await ipc.getEngineConfig().catch(() => null);
@@ -64,7 +63,7 @@ export default function SettingsPage() {
       setAutoCheck(u.auto_check);
       setAutoDownload(u.auto_download);
     }
-    ipc.updateStateGet().then(setUpdateState).catch(() => {});
+    ipc.updateStateGet().then(setUpdateState).catch((e) => notify.error(e, "update-state-read"));
     // engineBin 始终跟随目标引擎（失败/成功状态归一）；
     // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
     const target = engineTouched.current
@@ -93,74 +92,53 @@ export default function SettingsPage() {
   useEffect(() => {
     const un = ipc.onUpdateState((state) => {
       setUpdateState(state);
-      setUpdateCheckResult(null);
     });
     return () => {
       void un.then((off) => off());
     };
   }, []);
 
-  const flash = (ok: boolean, text: string, full?: string) => {
-    setMsg({ ok, text, full: full ?? text });
-    setTimeout(() => setMsg(null), 6000);
+  const saving = useRef(new Set<string>());
+  const saveSetting = async (key: string, title: string, task: () => Promise<unknown>, commit: () => void, success?: string) => {
+    if (saving.current.has(key)) return;
+    saving.current.add(key);
+    try {
+      const result = await notify.run(`setting-${key}`, title, task, success);
+      if (result.ok) commit();
+      else await load();
+    } finally { saving.current.delete(key); }
   };
 
   const runUpdateCheck = async () => {
     if (updateCheckInFlight.current) return;
     updateCheckInFlight.current = true;
     setUpdateChecking(true);
-    setUpdateCheckResult(null);
+    notify.start("update-check", t("settings.updateChecking"));
     try {
       const version = await ipc.updateCheckNow();
-      const state = await ipc.updateStateGet().catch(() => null);
+      const state = await ipc.updateStateGet();
       setUpdateState(state ?? (version ? { version, notes: null, downloaded: false, progress: null } : null));
-      setUpdateCheckResult({
-        ok: true,
-        text: version ? t("settings.newVersion", { v: version }) : t("settings.upToDate"),
-      });
+      notify.success(version ? t("settings.newVersion", { v: version }) : t("settings.upToDate"), "update-check");
     } catch (error) {
-      const detail = String(error);
-      const message = detail === "UPDATE_CHECK_TIMEOUT"
-        ? t("settings.updateTimeout")
-        : `${t("settings.updateFailed")}: ${detail}`;
-      setUpdateCheckResult({
-        ok: false,
-        text: message.length > 140 ? `${message.slice(0, 140)}…` : message,
-        full: message,
-      });
-    } finally {
-      updateCheckInFlight.current = false;
-      setUpdateChecking(false);
-    }
+      notify.error(String(error) === "UPDATE_CHECK_TIMEOUT" ? t("settings.updateTimeout") : error, "update-check", t("settings.updateFailed"));
+    } finally { updateCheckInFlight.current = false; setUpdateChecking(false); }
   };
 
   const applyPort = async () => {
     const port = Number(portDraft);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      flash(false, t("settings.invalidPort"));
+      notify.error(t("settings.invalidPort"), "setting-port", t("settings.port"));
       return;
     }
-    try {
-      await ipc.setMixedPort(port);
-      flash(true, `${t("settings.port")}: ${port}`);
-    } catch (e) {
-      flash(false, String(e));
-    }
+    if (port === engine?.mixed_port) return;
+    await saveSetting("port", t("settings.port"), () => ipc.setMixedPort(port), () => {
+      setEngine((old) => old ? { ...old, mixed_port: port } : old);
+    }, `${t("settings.port")}: ${port}`);
   };
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <PageHead title={t("settings.title")}>
-        {msg && (
-          <span
-            className="text-xs"
-            style={{ color: msg.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}
-            title={msg.full ?? undefined}
-          >
-            {msg.text}
-          </span>
-        )}
-      </PageHead>
+      <PageHead title={t("settings.title")} />
 
       <Group title={t("settings.coreSection")}>
         <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
@@ -178,7 +156,7 @@ export default function SettingsPage() {
                   setEngineBin(info);
                   setVersion(info?.version || t("settings.notInstalled"));
                 })
-                .catch(() => {});
+                .catch((e) => notify.error(e, "engine-info"));
             }}
             options={[
               { value: "mihomo", label: "mihomo (Clash Meta)" },
@@ -193,31 +171,18 @@ export default function SettingsPage() {
             <button
               disabled={installing !== null}
               onClick={async () => {
+                if (installing !== null) return;
                 setInstalling("starting…");
-                const un = await ipc.onInstallProgress((p) =>
-                  setInstalling(
-                    p.stage === "downloading" ? t("settings.downloading") : p.stage,
-                  ),
-                );
                 try {
                   const info = await ipc.coreInstall(selectedEngine);
                   setEngineBin(info);
                   setVersion(info.version || t("settings.coreReady"));
-                  flash(true, t("settings.coreReady"));
-                  // 下载完成 → 应用切换
-                  await ipc.setEngine(selectedEngine);
-                  await load();
-                  flash(true, `engine: ${selectedEngine}`);
+                  // Activation has its own lifecycle after the download completes.
+                  await saveSetting("engine", t("settings.engine"), () => ipc.setEngine(selectedEngine), () => { void load(); });
                 } catch (e) {
                   // 失败：回下载行（engineBin 重新查询所选引擎 → 仍是 missing）
-                  const raw = String(e);
-                  flash(
-                    false,
-                    raw.length > 140 ? `${raw.slice(0, 140)}…（悬停查看完整错误）` : raw,
-                    raw,
-                  );
+                  notify.error(e, "core-download", t("settings.downloadCore"));
                 } finally {
-                  un();
                   setInstalling(null);
                   setEngineBin(
                     await ipc
@@ -238,13 +203,7 @@ export default function SettingsPage() {
               <button
                 className="cb-btn acc px-3 py-1.5"
                 onClick={async () => {
-                  try {
-                    await ipc.setEngine(selectedEngine);
-                    await load();
-                    flash(true, `engine: ${selectedEngine}`);
-                  } catch (e) {
-                    flash(false, String(e));
-                  }
+                  await saveSetting("engine", t("settings.engine"), () => ipc.setEngine(selectedEngine), () => { void load(); });
                 }}
               >
                 启用
@@ -272,9 +231,7 @@ export default function SettingsPage() {
           <Switch
             checked={flags}
             onChange={async (v) => {
-              await ipc.setFlagEmoji(v).catch((e) => flash(false, String(e)));
-              setFlags(v);
-              flash(true, v ? "ON" : "OFF");
+              await saveSetting("flags", t("settings.flags"), () => ipc.setFlagEmoji(v), () => setFlags(v));
             }}
           />
         </Row>
@@ -304,10 +261,9 @@ export default function SettingsPage() {
                 setTunBusy(true);
                 try {
                   await ipc.setTun(v);
-                  flash(true, v ? t("settings.tunOn") : t("settings.tunOff"));
                   setTun(await ipc.tunStatus());
                 } catch (e) {
-                  flash(false, `${t(v ? "settings.tunFailed" : "settings.tunOffFailed")}: ${String(e)}`);
+                  notify.error(e, "tun-switch", t(v ? "settings.tunFailed" : "settings.tunOffFailed"));
                 } finally {
                   await load();
                   setTunBusy(false);
@@ -330,9 +286,7 @@ export default function SettingsPage() {
           <Switch
             checked={engine?.allow_lan ?? false}
             onChange={async (v) => {
-              await ipc.setAllowLan(v).catch((e) => flash(false, String(e)));
-              load();
-              flash(true, v ? t("settings.lanOn") : t("settings.lanOff"));
+              await saveSetting("lan", t("settings.lan"), () => ipc.setAllowLan(v), () => { void load(); }, v ? t("settings.lanOn") : t("settings.lanOff"));
             }}
           />
         </Row>
@@ -348,9 +302,8 @@ export default function SettingsPage() {
               { value: "dark", label: t("theme.dark") },
             ]}
             onChange={async (v) => {
-              const t = v as UiSettings["theme"];
-              await ipc.setTheme(t);
-              setTheme(t);
+              const next = v as UiSettings["theme"];
+              await saveSetting("theme", t("settings.theme"), () => ipc.setTheme(next), () => setTheme(next));
             }}
           />
         </Row>
@@ -363,8 +316,7 @@ export default function SettingsPage() {
             ]}
             onChange={async (v) => {
               const l = v as "zh" | "en";
-              await ipc.setLang(l).catch((e) => flash(false, String(e)));
-              setLangState(l);
+              await saveSetting("lang", t("settings.lang"), () => ipc.setLang(l), () => setLangState(l));
             }}
           />
         </Row>
@@ -375,8 +327,7 @@ export default function SettingsPage() {
           <Switch
             checked={logsSave}
             onChange={async (v) => {
-              await ipc.setLogsSave(v).catch((e) => flash(false, String(e)));
-              setLogsSave(v);
+              await saveSetting("logs", t("settings.logsSave"), () => ipc.setLogsSave(v), () => setLogsSave(v));
             }}
           />
         </Row>
@@ -389,13 +340,12 @@ export default function SettingsPage() {
             }))}
             onChange={async (v) => {
               const d = Number(v);
-              await ipc.setLogsRetention(d).catch((e) => flash(false, String(e)));
-              setLogsRetention(d);
+              await saveSetting("retention", t("settings.logsRetention"), () => ipc.setLogsRetention(d), () => setLogsRetention(d));
             }}
           />
         </Row>
         <Row label={t("settings.logsOpen")} hint={t("settings.logsOpenHint")}>
-          <button className="cb-btn" onClick={() => ipc.openLogsDir().catch(() => {})}>
+          <button className="cb-btn" onClick={() => ipc.openLogsDir().catch((e) => notify.error(e, "open-logs"))}>
             {t("settings.logsOpenBtn")}
           </button>
         </Row>
@@ -406,9 +356,7 @@ export default function SettingsPage() {
           <Switch
             checked={lightweight}
             onChange={async (v) => {
-              await ipc.setLightweightClose(v).catch((e) => flash(false, String(e)));
-              setLightweight(v);
-              flash(true, v ? "ON" : "OFF");
+              await saveSetting("lightweight", t("settings.lightweight"), () => ipc.setLightweightClose(v), () => setLightweight(v));
             }}
           />
         </Row>
@@ -416,14 +364,7 @@ export default function SettingsPage() {
           <Switch
             checked={autostart}
             onChange={async (v) => {
-              const ok = await ipc.autostartSet(v).then(() => true).catch((e) => {
-                flash(false, String(e));
-                return false;
-              });
-              if (ok) {
-                setAutostart(v);
-                flash(true, v ? t("settings.autostartOn") : t("settings.autostartOff"));
-              }
+              await saveSetting("autostart", t("settings.autostart"), () => ipc.autostartSet(v), () => setAutostart(v), v ? t("settings.autostartOn") : t("settings.autostartOff"));
             }}
           />
         </Row>
@@ -432,8 +373,7 @@ export default function SettingsPage() {
           <Switch
             checked={autoCheck}
             onChange={async (v) => {
-              await ipc.setUpdateAutoCheck(v).catch((e) => flash(false, String(e)));
-              setAutoCheck(v);
+              await saveSetting("auto-check", t("settings.autoCheck"), () => ipc.setUpdateAutoCheck(v), () => setAutoCheck(v));
             }}
           />
         </Row>
@@ -441,8 +381,7 @@ export default function SettingsPage() {
           <Switch
             checked={autoDownload}
             onChange={async (v) => {
-              await ipc.setUpdateAutoDownload(v).catch((e) => flash(false, String(e)));
-              setAutoDownload(v);
+              await saveSetting("auto-download", t("settings.autoDownload"), () => ipc.setUpdateAutoDownload(v), () => setAutoDownload(v));
             }}
           />
         </Row>
@@ -480,7 +419,8 @@ export default function SettingsPage() {
               {updateState && !updateState.downloaded && !updateChecking && (
                 <button
                   className="cb-btn py-1.5"
-                  onClick={() => ipc.updateStartDownload().catch((e) => flash(false, String(e)))}
+                  disabled={updateState.progress !== null}
+                  onClick={() => ipc.updateStartDownload().catch((e) => notify.error(e, "update-download"))}
                 >
                   {t("settings.updateDownload")}
                 </button>
@@ -489,23 +429,13 @@ export default function SettingsPage() {
                 <button
                   className="cb-btn py-1.5"
                   style={{ color: "var(--cb-accent)" }}
-                  onClick={() => ipc.updateInstall().catch((e) => flash(false, String(e)))}
+                  onClick={() => notify.run("update-install", t("settings.updateRestart"), () => ipc.updateInstall())}
                 >
                   {t("settings.updateRestart")}
                 </button>
               )}
             </div>
-            {(updateChecking || updateCheckResult) && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-right text-[11px] leading-4 break-words"
-                style={{ color: updateChecking ? "var(--cb-text-dim)" : updateCheckResult?.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}
-                title={updateCheckResult?.full}
-              >
-                {updateChecking ? t("settings.updateChecking") : updateCheckResult?.text}
-              </span>
-            )}
+
           </div>
         </Row>
       </Group>
@@ -530,7 +460,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3">
+    <div className="flex items-center justify-between px-4 py-3" role="group" aria-label={label}>
       <div>
         <div className="text-sm">{label}</div>
         {hint && (
@@ -547,6 +477,8 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 function Switch({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
+      role="switch"
+      aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`cb-toggle ${checked ? "on" : ""} ${disabled ? "opacity-60 cursor-wait" : ""}`}

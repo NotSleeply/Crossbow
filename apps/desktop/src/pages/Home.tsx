@@ -1,6 +1,6 @@
+import { notify, notificationText } from "../notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type CoexistFinding,
   CORE_MODES,
   ipc,
   type CoreMode,
@@ -25,13 +25,11 @@ export default function HomePage() {
   const [tun, setTun] = useState({ enabled: false, ready: false, coreRunning: false });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const [updateVer, setUpdateVer] = useState<string | null>(null);
-  const [coexist, setCoexist] = useState<CoexistFinding[]>([]);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
 
@@ -43,12 +41,26 @@ export default function HomePage() {
     };
   }, []);
 
-  // 共存检测（#23）：挂载时 + 每 60 秒刷新；发现其他代理软件即横幅提示
+  // Conflict feedback shares the same queue and is deduplicated across polls.
   useEffect(() => {
-    const check = () => ipc.coexistDetect().then(setCoexist).catch(() => {});
-    check();
-    const timer = setInterval(check, 60_000);
-    return () => clearInterval(timer);
+    let active = true;
+    let hadConflict = false;
+    const check = async () => {
+      try {
+        const findings = await ipc.coexistDetect();
+        if (!active) return;
+        if (findings.length) {
+          hadConflict = true;
+          notify.publish({ kind: "warning", title: t("home.coexistTitle"), description: t("home.coexistHint"), details: findings.map((finding) => finding.detail).join("\n"), source: "coexist", operationId: "coexist", duration: 0, actions: ["diagnostics"] });
+        } else if (hadConflict) {
+          hadConflict = false;
+          notify.success(notificationText("coexist.resolved"), "coexist");
+        }
+      } catch (error) { if (active) notify.error(error, "coexist-read"); }
+    };
+    void check();
+    const timer = window.setInterval(check, 60_000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   const refresh = useCallback(async () => {
@@ -75,7 +87,7 @@ export default function HomePage() {
     refresh();
     const un1 = ipc.onCoreStatus((status) => {
       setCore(status);
-      if (active) ipc.tunStatus().then(setTun).catch(() => {});
+      if (active) ipc.tunStatus().then(setTun).catch((e) => notify.error(e, "tun-state-read"));
     });
     const un2 = ipc.onSysproxyStatus(setProxy);
     const un3 = ipc.onCoreMode(setMode);
@@ -118,12 +130,11 @@ export default function HomePage() {
 
   const toggleProxy = async () => {
     setBusy(true);
-    setError(null);
     try {
       await ipc.sysproxyToggle();
       await refresh();
-    } catch (e) {
-      setError(String(e));
+    } catch {
+      // The command reports failure through the backend-owned notification.
     } finally {
       setBusy(false);
     }
@@ -142,24 +153,6 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-3.5">
       <PageHead title={t("nav.home")} meta={`mixed :${proxy.port || 7897} · ${mode}`} />
-
-      {coexist.length > 0 && (
-        <div
-          className="cb-card px-4 py-3 text-xs leading-5"
-          style={{ borderColor: "var(--cb-warn)" }}
-        >
-          <span style={{ color: "var(--cb-warn)" }}>⚠ </span>
-          <b>{t("home.coexistTitle")}</b>
-          <ul className="mt-1 list-disc pl-5" style={{ color: "var(--cb-text-dim)" }}>
-            {coexist.map((f, i) => (
-              <li key={i}>{f.detail}</li>
-            ))}
-          </ul>
-          <div className="mt-1" style={{ color: "var(--cb-text-dim)" }}>
-            {t("home.coexistHint")}
-          </div>
-        </div>
-      )}
 
       {updateVer && (
         <div
@@ -183,7 +176,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {error && <ErrorBar msg={error} />}
 
       {/* 状态卡 */}
       <section className="cb-card flex h-[88px] items-center gap-4 px-5 py-3">
@@ -210,7 +202,7 @@ export default function HomePage() {
             <button
               key={m.id}
               className={mode === m.id ? "on" : ""}
-              onClick={() => ipc.setCoreMode(m.id).catch((e) => setError(String(e)))}
+              onClick={() => notify.run("core-mode", notificationText("core.mode"), () => ipc.setCoreMode(m.id))}
             >
               {t(`mode.${m.id}` as const)}
             </button>
@@ -373,17 +365,6 @@ export function PageHead({ title, meta, children }: { title: string; meta?: stri
       )}
       <span className="flex-1" />
       {children}
-    </div>
-  );
-}
-
-export function ErrorBar({ msg }: { msg: string }) {
-  return (
-    <div
-      className="rounded-lg border px-3 py-2 text-xs"
-      style={{ borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)", color: "var(--cb-bad)" }}
-    >
-      {msg}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { notify } from "../notifications/service";
 import { useCallback, useEffect, useState } from "react";
 import {
   ipc,
@@ -25,7 +26,6 @@ export default function OverridePanel({
   const [nameDraft, setNameDraft] = useState("");
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const active = profiles.find((p) => p.id === activeId);
 
   const refresh = useCallback(async () => {
@@ -39,6 +39,7 @@ export default function OverridePanel({
   const create = async (kind: OverrideKind) => {
     if (!newName.trim()) return;
     setCreating(true);
+    notify.start("override-create", t("ov.title"));
     try {
       const def = await ipc.createOverride(newName.trim(), kind);
       setNewName("");
@@ -46,8 +47,9 @@ export default function OverridePanel({
       setEditingId(def.id);
       setDraft(def.content);
       onChanged();
+      notify.success(t("ov.title"), "override-create");
     } catch (e) {
-      setError(String(e));
+      notify.error(e, "override-create");
     } finally {
       setCreating(false);
     }
@@ -59,15 +61,17 @@ export default function OverridePanel({
    *                     → 成功：清除错误并热重启应用
    */
   const save = async (id: string) => {
+    notify.start("override-save", t("ov.title"));
     try {
       await ipc.updateOverride(id, draft);
       await ipc.validateOverrides();
       await ipc.applyOverrides();
       setEditingId(null);
+      notify.success(t("ov.title"), "override-save");
       await refresh();
       onChanged();
     } catch (e) {
-      setError(String(e));
+      notify.error(e, "override-save");
       await refresh(); // 拉取 last_error 展示 ⚠
       onChanged();
     }
@@ -79,8 +83,9 @@ export default function OverridePanel({
     try {
       await ipc.updateOverride(id, undefined, name.trim());
       await refresh();
+      notify.success(t("profiles.rename"), "override-rename");
     } catch (e) {
-      setError(String(e));
+      notify.error(e, "override-rename");
     }
   };
 
@@ -88,10 +93,11 @@ export default function OverridePanel({
     try {
       await ipc.removeOverride(id);
       setEditingId(null);
+      notify.success(t("ov.title"), "override-remove");
       await refresh();
       onChanged();
     } catch (e) {
-      setError(String(e));
+      notify.error(e, "override-remove");
     }
   };
 
@@ -100,8 +106,9 @@ export default function OverridePanel({
     try {
       await ipc.toggleOverrideBinding(activeId, oid, bound);
       onChanged();
+      notify.success(t("ov.title"), "override-bind");
     } catch (e) {
-      setError(String(e));
+      notify.error(e, "override-bind");
     }
   };
 
@@ -137,18 +144,6 @@ export default function OverridePanel({
         </button>
       </div>
 
-      {error && (
-        <div
-          className="mt-2 rounded-lg border px-3 py-2 text-xs"
-          style={{
-            borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)",
-            color: "var(--cb-bad)",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
       {overrides.length === 0 ? (
         <div className="mt-2 text-xs" style={{ color: "var(--cb-text-dim)" }}>
           {t("ov.empty")}
@@ -176,7 +171,8 @@ export default function OverridePanel({
                     onChange={(e) =>
                       ipc
                         .setOverrideEnabled(o.id, e.target.checked)
-                        .then(onChanged)
+                        .then(() => { onChanged(); notify.success(t("ov.enabled"), "override-enabled"); })
+                        .catch((error) => notify.error(error, "override-enabled"))
                     }
                     title={t("ov.enabled")}
                   />

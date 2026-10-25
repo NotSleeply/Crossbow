@@ -30,3 +30,11 @@
 
 问题/新功能先建 issue；实现的 PR 必须在标题或正文关联 issue（`Closes #NN`）。
 issue 状态以 GitHub 为准，本文件不重复维护 issue 列表。
+
+## 用户通知约定
+
+- 新增报错、操作结果和提示必须使用统一 Notification，见 `docs/NOTIFICATIONS.md`。
+- 前端使用 `src/notifications/service.ts`；后台/托盘使用 `notifications::publish/result`。
+- 同一异步操作共用 operationId；独立操作使用不同标识。后端已发结果的操作不要在前端重复发。
+- 禁止 catch 后继续更新开关或提示成功。失败后保留后端真实状态，并提供脱敏详情。
+- 页面不得新增私有 toast/flash/ErrorBar 或普通提示 MessageDialog；启动前致命错误和系统授权交互保留原生兜底。

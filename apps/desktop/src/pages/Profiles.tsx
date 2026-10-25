@@ -1,10 +1,11 @@
+import { notify } from "../notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile } from "../ipc";
 import Select from "../components/Select";
 import OverridePanel from "./OverridePanel";
 import { useT } from "../i18n";
-import { PageHead, ErrorBar } from "./Home";
+import { PageHead } from "./Home";
 
 function fmtBytesLocal(n: number): string {
   if (n <= 0) return "0 B";
@@ -29,7 +30,6 @@ export default function ProfilesPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,6 +60,7 @@ export default function ProfilesPage() {
 
   useEffect(() => {
     let un: (() => void) | undefined;
+    let disposed = false;
     getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type === "enter" || event.payload.type === "over") {
@@ -71,18 +72,16 @@ export default function ProfilesPage() {
           void importPaths(event.payload.paths);
         }
       })
-      .then((u) => (un = u));
-    return () => un?.();
+      .then((u) => { if (disposed) u(); else un = u; })
+      .catch((error) => notify.error(error, "profile-file-import"));
+    return () => { disposed = true; un?.(); };
   }, [importPaths]);
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
-    setError(null);
     try {
-      await fn();
+      await notify.run(`profile-${key}`, t("profiles.title"), fn);
       await refresh();
-    } catch (e) {
-      setError(String(e));
     } finally {
       setBusy(null);
     }
@@ -92,9 +91,10 @@ export default function ProfilesPage() {
   const chosenFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     for (const f of Array.from(files)) {
-      const text = await f.text();
-      const name = f.name.replace(/\.[^.]+$/, "");
-      await run(f.name, () => ipc.importProfileContent(name, text));
+      await run(f.name, async () => {
+        const text = await f.text();
+        return ipc.importProfileContent(f.name.replace(/\.[^.]+$/, ""), text);
+      });
     }
   };
 
@@ -161,7 +161,6 @@ export default function ProfilesPage() {
         {t("profiles.dropHint")}
       </div>
 
-      {error && <ErrorBar msg={error} />}
 
       {profiles.length === 0 ? (
         <div className="cb-card flex h-48 items-center justify-center text-sm"
@@ -175,12 +174,12 @@ export default function ProfilesPage() {
               key={p.id}
               profile={p}
               active={p.id === activeId}
-              busy={busy === p.id}
-              onUpdate={() => run(p.id, () => ipc.updateProfile(p.id))}
-              onActivate={() => run(p.id, () => ipc.setActiveProfile(p.id))}
-              onRemove={() => run(p.id, () => ipc.removeProfile(p.id))}
-              onSetInterval={(min) => run(p.id, () => ipc.setProfileInterval(p.id, min))}
-              onRename={(name) => run(p.id, () => ipc.renameProfile(p.id, name))}
+              busy={busy !== null && busy.endsWith(`-${p.id}`)}
+              onUpdate={() => run(`update-${p.id}`, () => ipc.updateProfile(p.id))}
+              onActivate={() => run(`activate-${p.id}`, () => ipc.setActiveProfile(p.id))}
+              onRemove={() => run(`remove-${p.id}`, () => ipc.removeProfile(p.id))}
+              onSetInterval={(min) => run(`interval-${p.id}`, () => ipc.setProfileInterval(p.id, min))}
+              onRename={(name) => run(`rename-${p.id}`, () => ipc.renameProfile(p.id, name))}
             />
           ))}
         </div>
