@@ -7,11 +7,11 @@
 | 路径 | 会话 | 分支 |
 |---|---|---|
 | /Users/ayu/Desktop/Crossbow | zcode | main |
-| /Users/ayu/Crossbow-codex | codex | codex/harden-release-pipeline |
+| /Users/ayu/Crossbow-codex | codex | codex/release-v0.9.4 |
 
 ## 当前认领
 
-- **codex**: 无（PR #71 / #73 冲突已修复；#74 首启数据目录修复已同步，macOS CI 复验中；Windows 后续问题按用户要求暂缓）
+- **codex**: #76 发布 v0.9.4（`codex/release-v0.9.4`；应用版本文件、release 工作流与发布产物验证；Windows 适配暂缓）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
