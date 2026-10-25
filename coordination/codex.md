@@ -23,3 +23,4 @@
 - 2026-10-25 [认领] #92 解决 PR #93 与 main 的协作记录迁移冲突（`codex/home-update-polish`；COORDINATION.md 按 main 稳定层还原，应用代码保持 PR 实现）。
 - 2026-10-25 [完成] #92 PR #93 已合入 main 协作记录迁移并解决冲突（`codex/home-update-polish`，ec74bee）；PR 差异仅应用代码，协作文件已与 main 一致，应用代码与此前通过构建及回归的版本完全一致。
 - 2026-10-25 [认领] #94 排除 Crossbow 自身 TUN 的共存误报（`codex/fix-own-tun-detection`；coexist.rs、mihomo_api.rs、lib.rs 及回归测试；只读核验实机网络，不切换用户代理）。
+- 2026-10-25 [完成] #94 已提交 PR #95（`codex/fix-own-tun-detection`）；实机控制器和启动日志确认 utun4 属于 Crossbow，自身接口精确排除、保留外部隧道检测；后端 58 项测试和 cargo check 通过（1 项实机代理测试忽略）。未修改当前网络设置或替换运行中的应用。

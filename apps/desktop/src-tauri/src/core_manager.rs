@@ -794,7 +794,60 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
     out
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows：Toolhelp32 进程快照枚举。快照只给图像名（无完整路径），
+/// 因此按「图像文件名 ∈ 候选路径的文件名集合」粗匹配（核心文件名
+/// mihomo/sing-box 在 Windows 上不与本应用冲突——本应用侧车为
+/// mihomo-x86_64-pc-windows-msvc.exe 全名），完整路径身份校验由
+/// kill_external 的 process_matches_binary 二次确认。
+#[cfg(target_os = "windows")]
+fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let names: std::collections::HashSet<String> = candidates
+        .iter()
+        .filter_map(|c| c.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+        .collect();
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<(u32, PathBuf)> = Vec::new();
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return out;
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                let image = String::from_utf16_lossy(
+                    &entry.szExeFile[..entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)],
+                );
+                if names.contains(&image.to_lowercase()) {
+                    // 完整路径稍后由 kill_external 的身份校验把关；此处先以
+                    // 候选中同名路径占位（Windows 校验按文件名兜底）
+                    if let Some(matched) = candidates
+                        .iter()
+                        .find(|c| c.file_name().map(|n| n.to_string_lossy().to_lowercase()) == Some(image.to_lowercase()))
+                    {
+                        out.push((entry.th32ProcessID, matched.clone()));
+                    }
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+    }
+    out
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn find_leftover_core_pids(_candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
     Vec::new()
 }
@@ -909,10 +962,41 @@ fn process_matches_binary(pid: u32, expected: &Path) -> bool {
     }
 }
 
-#[cfg(any(
-    target_os = "windows",
-    not(any(target_os = "macos", target_os = "linux"))
-))]
+#[cfg(target_os = "windows")]
+fn process_matches_binary(pid: u32, expected: &Path) -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut buf = [0_u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+        CloseHandle(handle);
+        if ok == 0 {
+            return false;
+        }
+        let actual = String::from_utf16_lossy(&buf[..len as usize]);
+        // Windows 路径大小写不敏感；canonicalize 失败时退化为不区分大小写的直比
+        match (
+            std::fs::canonicalize(&actual),
+            std::fs::canonicalize(expected),
+        ) {
+            (Ok(actual), Ok(expected)) => {
+                actual.as_os_str().eq_ignore_ascii_case(expected.as_os_str())
+            }
+            _ => actual.eq_ignore_ascii_case(&expected.to_string_lossy()),
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn process_matches_binary(_pid: u32, _expected: &Path) -> bool {
     false
 }
