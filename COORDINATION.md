@@ -11,10 +11,12 @@
 
 ## 当前认领
 
-- **codex**: #92 清理构建警告及首页更新提示（`codex/home-update-polish`；mihomo_api.rs、tray_state.rs、Home.tsx、i18n.ts、样式文件）
+- **codex**: 无（#92 已提交 PR #93，待审核）
 - **zcode**: 无（待命）；PR #42（标识符切换 com.richard.crossbow + 数据迁移）待合并
 
 ## 最近完成
+
+- 2026-10-25: codex #92 PR #93 清理未使用的代理状态接口并将首页更新入口改为紧凑信息条，展示下载进度/已就绪状态；前端构建、后端 53 项测试和 cargo check 通过（1 项实机测试忽略），中英文深浅主题及窄宽度浏览器检查通过。
 
 - 2026-10-25: codex #66 PR #85 已合入最新 main；退场 Provider/CSS 完全沿用 PR 原位淡出实现，前端构建与后端 53 项回归通过（1 项实机代理测试忽略），待 CI。
 - 2026-10-25: codex #76 v0.9.4 已发布并完成核验：正式 release 工作流通过，DMG/更新归档/签名/清单/校验和均已发布，latest.json 版本、URL 与 SHA-256 核验通过。
