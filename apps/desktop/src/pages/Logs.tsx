@@ -15,6 +15,71 @@ const LEVEL_COLOR: Record<string, string> = {
   error: "var(--cb-bad)",
 };
 
+const MAX_PENDING = 400;
+
+/** sing-box（clash_api）同连接多行的中间态（以行首连接 id 关联）。 */
+interface SbPending {
+  type: string;
+  process: string;
+  source: string;
+  target: string;
+  outbound: string;
+}
+
+/** sing-box 日志消费：把 inbound/router/outbound 同连接多行聚合为一条
+ *  mihomo 风格合成行（复用现有结构化渲染）；非 sing-box 格式或无法
+ *  识别的组件行返回 false 走原始兜底。 */
+function consumeSingBox(
+  payload: string,
+  pending: Map<string, SbPending>,
+  out: LogEntry[],
+): boolean {
+  const m = /^\[(\d+)\s+\d+ms\]\s+([^:]+):\s+(.*)$/.exec(payload);
+  if (!m) return false;
+  const [, id, comp, msg] = m;
+  const tagOf = (c: string) => {
+    const s = c.indexOf("[");
+    return s >= 0 ? c.slice(s + 1, c.lastIndexOf("]")) : "";
+  };
+  const entry = (): SbPending => {
+    let e = pending.get(id);
+    if (!e) {
+      e = { type: "", process: "", source: "", target: "", outbound: "" };
+      pending.set(id, e);
+    }
+    return e;
+  };
+  if (comp.startsWith("inbound/")) {
+    const tag = tagOf(comp); // tun-in / mixed-in
+    const e = entry();
+    e.type = tag === "tun-in" ? "TUN" : tag === "mixed-in" ? "MIXED" : tag.toUpperCase();
+    const TO = "inbound connection to ";
+    const FROM = "inbound connection from ";
+    if (msg.startsWith(TO)) e.target = msg.slice(TO.length);
+    if (msg.startsWith(FROM)) e.source = msg.slice(FROM.length);
+    return true;
+  }
+  if (comp === "router" && msg.startsWith("found process path: ")) {
+    const rest = msg.slice("found process path: ".length);
+    const path = rest.split(", user:")[0]?.trim() ?? "";
+    entry().process = path.split("/").pop() ?? path;
+    return true;
+  }
+  if (comp.startsWith("outbound/") && msg.startsWith("outbound connection to ")) {
+    const e = entry();
+    e.outbound = tagOf(comp) || comp;
+    e.target = msg.slice("outbound connection to ".length);
+    const left = e.source ? `${e.source}(${e.process})` : `(${e.process})`;
+    out.push({
+      type: "info",
+      payload: `[${e.type || "TCP"}] ${left} --> ${e.target} match Match using ${e.outbound}`,
+    });
+    pending.delete(id);
+    return true;
+  }
+  return false;
+}
+
 /** mihomo 连接日志的结构化视图；解析失败的行（warning/error 等）走原始整行。 */
 interface ParsedLog {
   network: string;
@@ -58,17 +123,32 @@ export default function LogsPage() {
     error: true,
   });
   const [keyword, setKeyword] = useState("");
+  const [connected, setConnected] = useState(false);
   const pinned = useRef(true);
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
+  // sing-box 同连接多行聚合的中间态（跨批次保留，#57）
+  const pendingRef = useRef(new Map<string, SbPending>());
 
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
     let active = true;
     // Register the Tauri event handler before the backend can emit its first batch.
     const unlisten = ipc.onLogs((entries) => {
+      const out: LogEntry[] = [];
+      for (const e of entries) {
+        // sing-box（clash_api）日志：同连接多行聚合后再进表（#57）
+        if (!consumeSingBox(e.payload, pendingRef.current, out)) out.push(e);
+      }
+      // 防御：未凑齐 outbound 的连接积压过多时丢弃最旧的中间态
+      if (pendingRef.current.size > MAX_PENDING) {
+        const drop = pendingRef.current.size - MAX_PENDING;
+        for (const k of [...pendingRef.current.keys()].slice(0, drop)) {
+          pendingRef.current.delete(k);
+        }
+      }
       setLines((prev) => {
-        const next = [...prev, ...entries];
+        const next = [...prev, ...out];
         return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
       });
     });
@@ -78,11 +158,17 @@ export default function LogsPage() {
     // stale setup from subscribing after the page has already been replaced.
     const subscribe = unlisten.then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
-      return ipc.subscribeLogs().catch(console.error);
+      return ipc
+        .subscribeLogs()
+        .then(() => {
+          if (active) setConnected(true);
+        })
+        .catch(console.error);
     });
 
     return () => {
       active = false;
+      setConnected(false);
       void unlisten.then((unlistenEvent) => unlistenEvent());
       // Delay unsubscription until any in-flight subscribe has settled. A
       // StrictMode remount advances the generation synchronously and keeps the
@@ -151,7 +237,7 @@ export default function LogsPage() {
         {shown.length === 0 ? (
           <div className="flex h-full items-center justify-center"
             style={{ color: "var(--cb-text-dim)" }}>
-            {t("logs.empty")}
+            {connected ? t("logs.empty") : t("logs.connecting")}
           </div>
         ) : (
           <>
@@ -188,7 +274,7 @@ export default function LogsPage() {
                   </span>
                   <span className="cb-log-process">
                     <span className="truncate">{parsed.process || "—"}</span>
-                    <span className="cb-log-source">{parsed.source}</span>
+                    <span className="cb-log-source">{parsed.source || "—"}</span>
                   </span>
                   <span className="truncate" style={{ color: "var(--cb-text)" }}>
                     {parsed.target}
