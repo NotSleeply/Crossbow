@@ -92,26 +92,48 @@ fn build_findings(
     out
 }
 
-/// 执行检测。非 unix 平台返回空（Windows 于 M1.5 补齐）。
+/// Only exclude the exact interface confirmed by Crossbow's live controller.
+/// Continue scanning after an own route so a second VPN is still reported.
+fn foreign_tunnel(table: &str, own_device: Option<&str>) -> Option<String> {
+    table.lines().find_map(|line| {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        let destination = *cols.first()?;
+        // Netif is column 4; the optional Expire column may follow it.
+        let interface = *cols.get(3)?;
+        (is_default_destination(destination)
+            && interface.starts_with("utun")
+            && Some(interface) != own_device)
+            .then(|| interface.to_string())
+    })
+}
+
+/// 执行检测。非 macOS 平台返回空（Windows 共存检测后续补齐）。
 #[cfg(target_os = "macos")]
-pub fn detect() -> Vec<CoexistFinding> {
-    // 1) 其他隧道持有默认路由
+pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
+    let core = state.core();
+    let own_device = if core.status() == crate::CoreStatus::Running {
+        core.controller().and_then(|(port, secret)| {
+            crate::mihomo_api::Controller { port, secret }
+                .active_tun_device()
+                .ok()
+                .flatten()
+        })
+    } else {
+        None
+    };
+
+    // Read ownership before the route table, without holding an AppState lock
+    // across controller I/O. A failed query never exempts all utun interfaces.
     let tunnel = std::process::Command::new("netstat")
         .args(["-rn", "-f", "inet"])
         .output()
         .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .and_then(|text| {
-            text.lines().find_map(|line| {
-                let cols: Vec<&str> = line.split_whitespace().collect();
-                if cols.len() < 4 {
-                    return None;
-                }
-                let destination = cols[0];
-                let interface = cols[cols.len() - 1];
-                (is_default_destination(destination) && interface.starts_with("utun"))
-                    .then(|| interface.to_string())
-            })
+        .filter(|output| output.status.success())
+        .and_then(|output| {
+            foreign_tunnel(
+                &String::from_utf8_lossy(&output.stdout),
+                own_device.as_deref(),
+            )
         });
 
     // 2) 常驻服务与其他内核进程
@@ -128,13 +150,51 @@ pub fn detect() -> Vec<CoexistFinding> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn detect() -> Vec<CoexistFinding> {
+pub fn detect(_state: &crate::AppState) -> Vec<CoexistFinding> {
     Vec::new()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const OWN_ROUTES: &str = "Destination Gateway Flags Netif Expire\ndefault 192.168.1.1 UGScg en0\n1 198.18.0.1 UGSc utun4\n2/7 198.18.0.1 UGSc utun4\n128.0/1 198.18.0.1 UGSc utun4\n";
+
+    #[test]
+    fn own_tun_and_idle_service_do_not_warn() {
+        let (service, cores) = scan_process_lines(&[
+            "/Applications/Crossbow.app/Contents/MacOS/mihomo",
+            "/Library/PrivilegedHelperTools/clash-verge-service",
+        ]);
+        assert!(
+            build_findings(foreign_tunnel(OWN_ROUTES, Some("utun4")), service, cores).is_empty()
+        );
+    }
+
+    #[test]
+    fn external_tun_is_found_after_own_routes() {
+        let table = format!("{OWN_ROUTES}default 10.0.0.1 UGSc utun7\n");
+        assert_eq!(
+            foreign_tunnel(&table, Some("utun4")).as_deref(),
+            Some("utun7")
+        );
+    }
+
+    #[test]
+    fn unconfirmed_ownership_does_not_hide_tunnels() {
+        assert_eq!(foreign_tunnel(OWN_ROUTES, None).as_deref(), Some("utun4"));
+        assert_eq!(
+            foreign_tunnel(OWN_ROUTES, Some("utun40")).as_deref(),
+            Some("utun4")
+        );
+    }
+
+    #[test]
+    fn netif_precedes_optional_expire_column() {
+        let table = "default 10.0.0.1 UGSc utun7 123\n";
+        assert_eq!(foreign_tunnel(table, None).as_deref(), Some("utun7"));
+        assert!(foreign_tunnel(table, Some("utun7")).is_none());
+    }
 
     #[test]
     fn default_destinations_recognized() {
