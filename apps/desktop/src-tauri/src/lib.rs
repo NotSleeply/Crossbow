@@ -2704,6 +2704,9 @@ pub fn run() {
             let legacy_target = app.path().app_data_dir().map_err(|e| e.to_string())?;
             migrate_legacy_data_dir(&legacy_target);
             let data_dir = app.path().app_data_dir()?;
+            // First launch has no legacy directory. Create it before app.pid;
+            // Store::open happens later and cannot prepare the pidfile parent.
+            std::fs::create_dir_all(&data_dir)?;
 
             // 双实例保险：single-instance 插件依赖对端实例的事件循环还活着
             // （主线程卡死/退出被误拦的旧实例接不住通知）。pidfile 不依赖对方，
