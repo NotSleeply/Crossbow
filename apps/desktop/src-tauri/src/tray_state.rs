@@ -84,16 +84,6 @@ impl TrayState {
         self.nodes.clone()
     }
 
-    /// 当前 URLTest 子组（若主组含自动选择项）。
-    pub fn automatic_group(&self) -> Option<&str> {
-        self.automatic_group.as_deref()
-    }
-
-    /// 清空失败标记（测速出错时调用，下次重测）。
-    pub fn clear_failed(&mut self) {
-        self.failed.clear();
-    }
-
     /// 探测并写入主组：由 lib.rs 注入探测闭包（按配置顺序找第一个有成员的组）。
     /// 返回 true 表示新探测到了主组。
     pub fn init_group(&mut self, probe: &dyn Fn() -> Option<String>) -> bool {
