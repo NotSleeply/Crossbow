@@ -28,7 +28,8 @@
 .cb-notification-details pre { margin: 0 0 8px; max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 var(--cb-mono); }
 .cb-notification-details span { display: block; font-size: 11px; color: var(--cb-text-dim); }
 .cb-notification progress { display: block; width: 100%; height: 4px; accent-color: var(--cb-accent); margin-top: 10px; }
-.cb-notification-leaving { position: absolute; width: 100%; pointer-events: none; animation: cb-notification-out 180ms ease-in both; }
+.cb-notification-leaving { position: absolute; pointer-events: none; animation: cb-notification-out 180ms ease-in both; margin: 0; }
+.cb-notification-leaving > .cb-notification { width: 100%; margin: 0; animation: none; }
 .cb-notification-leaving * { pointer-events: none; }
 .cb-notification-history { position: relative; margin: 16px 10px 12px; }
 .cb-notification-history > button { width: 100%; text-align: left; color: var(--cb-text-dim); }
