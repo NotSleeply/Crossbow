@@ -544,11 +544,20 @@ impl CoreManager {
         let Some(d) = Shared::read_descriptor(&self.shared.work_dir) else {
             return false;
         };
+        // Do not block GUI startup probing a descriptor whose process already exited
+        // or whose PID was reused by a different binary.
+        let gone = || !pid_is_alive(d.pid) || d.binary_path.as_ref()
+            .is_some_and(|path| process_matches_binary(d.pid, path) == Some(false));
+        if gone() {
+            let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
+            return false;
+        }
         let probe = ControllerProbe {
             port: d.port,
             secret: d.secret.clone(),
         };
-        if !probe.wait_ready(Duration::from_secs(15), || false, || false) {
+        let timeout = if cfg!(windows) { Duration::from_secs(2) } else { Duration::from_secs(15) };
+        if !probe.wait_ready(timeout, || false, gone) {
             if kill_external(d.pid, d.binary_path.as_deref()) {
                 let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             }
@@ -564,7 +573,7 @@ impl CoreManager {
         drop(inner);
         // 收养内核没有子进程句柄：死亡无人知晓，状态会永远停在「运行中」，
         // 系统代理守护也不会触发。起 pid 监视线程补上（身份比对防 pid 复用）。
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if let Some(path) = d.binary_path.clone() {
             watch_external(self.shared.clone(), d.pid, path);
         }
@@ -713,15 +722,29 @@ fn kill_pid(pid: u32) {
 }
 
 #[cfg(unix)]
-fn pid_is_alive(pid: u32) -> bool {
+pub(crate) fn pid_is_alive(pid: u32) -> bool {
     unsafe {
         let rc = libc::kill(pid as i32, 0);
         rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
 }
 
-#[cfg(not(unix))]
-fn pid_is_alive(_pid: u32) -> bool {
+#[cfg(windows)]
+pub(crate) fn pid_is_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{OpenProcess, GetExitCodeProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() { return GetLastError() != ERROR_INVALID_PARAMETER; }
+        let mut code = 0;
+        let queried = GetExitCodeProcess(process, &mut code);
+        CloseHandle(process);
+        queried == 0 || code == STILL_ACTIVE as u32
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn pid_is_alive(_pid: u32) -> bool {
     true // 无身份信息时宁可保留描述，也不把 PID 当作安全目标
 }
 
@@ -883,11 +906,11 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
                     &entry.szExeFile[..entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)],
                 );
                 if names.contains(&image.to_lowercase()) {
-                    // 完整路径稍后由 kill_external 的身份校验把关；此处先以
-                    // 候选中同名路径占位（Windows 校验按文件名兜底）
+                    // Pick the actual full-path match, not the first same-named candidate.
+                    // kill_external rechecks identity immediately before signalling.
                     if let Some(matched) = candidates
                         .iter()
-                        .find(|c| c.file_name().map(|n| n.to_string_lossy().to_lowercase()) == Some(image.to_lowercase()))
+                        .find(|candidate| process_matches_binary(entry.th32ProcessID, candidate) == Some(true))
                     {
                         out.push((entry.th32ProcessID, matched.clone()));
                     }
@@ -1076,11 +1099,15 @@ impl Shared {
 /// 收养角色未变时上报 Crashed（联动系统代理还原、托盘退订等守护）。
 /// stop()/重新 start() 会先解除收养角色（external_pid 置空/换新），
 /// 监视线程据此静默退场，不会误报。身份查询失败时保留存活状态，
-/// 不把权限不足当作退出；独立进程监视目前仅 Unix 启用。
-#[cfg(unix)]
+/// 不把权限不足当作退出；Windows 使用原生进程存活查询。
+#[cfg(any(unix, windows))]
 fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(3));
+        {
+            let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.stopping || inner.external_pid != Some(pid) { return; }
+        }
         if process_matches_binary(pid, &binary) != Some(false) && pid_is_alive(pid) {
             continue; // Permissions may temporarily prevent inspecting a root core.
         }
@@ -1222,6 +1249,7 @@ impl ControllerProbe {
         child_gone: impl Fn() -> bool,
     ) -> bool {
         let agent = ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
             .timeout(Duration::from_millis(800))
             .build();
         let url = format!("http://127.0.0.1:{}/version", self.port);
@@ -1440,6 +1468,34 @@ pub(crate) mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn dead_descriptor_is_removed_without_waiting_for_controller_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        let mut child = crate::process::command("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        #[cfg(windows)]
+        let mut child = crate::process::command("cmd.exe").args(["/C", "exit", "0"]).spawn().unwrap();
+        let pid = child.id(); child.wait().unwrap();
+        let manager = CoreManager::new(PathBuf::from("missing-core"), dir.path().into());
+        manager.shared.write_descriptor(pid, free_port().unwrap(), "test-secret", Path::new("missing-core")).unwrap();
+        let started = Instant::now();
+        assert!(!manager.adopt_external());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(!Shared::descriptor_path(dir.path()).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_liveness_detects_exit_with_child_handle_still_retained() {
+        let mut child = crate::process::command("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 5"])
+            .spawn().unwrap();
+        let pid = child.id();
+        assert!(pid_is_alive(pid));
+        child.kill().unwrap(); child.wait().unwrap();
+        assert!(!pid_is_alive(pid));
+    }
 
     /// 真内核测试共享网络与端口，必须串行执行（跨模块共享同一把锁）。
     pub(crate) static REAL_CORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

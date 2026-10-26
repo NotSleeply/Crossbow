@@ -48,14 +48,14 @@ pub struct OutboundInfo {
 
 impl Controller {
     fn agent() -> ureq::Agent {
-        ureq::AgentBuilder::new()
+        ureq::AgentBuilder::new().try_proxy_from_env(false)
             .timeout(Duration::from_secs(5))
             .build()
     }
 
     /// 测速用的长超时 agent（组测速可能到 5s+）。
     fn slow_agent() -> ureq::Agent {
-        ureq::AgentBuilder::new()
+        ureq::AgentBuilder::new().try_proxy_from_env(false)
             .timeout(Duration::from_secs(30))
             .build()
     }

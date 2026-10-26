@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [portDraft, setPortDraft] = useState<string>("");
   const [theme, setTheme] = useState<UiSettings["theme"]>("system");
   const [autostart, setAutostart] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>("…");
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [engineBin, setEngineBin] = useState<CoreBinaryInfo | null>(null);
@@ -81,6 +82,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     load();
+    let alive = true;
+    ipc.appVersion().then((version) => { if (alive) setAppVersion(version); })
+      .catch((error) => { if (alive) { setAppVersion("—"); notify.error(error, "app-version-read"); } });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -374,6 +379,9 @@ export default function SettingsPage() {
           />
         </Row>
         <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")} />
+        <Row label={t("settings.appVersion")} hint="Crossbow">
+          <span className="text-xs tabular-nums" style={{ fontFamily: "var(--cb-mono)", color: "var(--cb-text)" }}>{appVersion === "…" || appVersion === "—" ? appVersion : `v${appVersion}`}</span>
+        </Row>
         <Row label={t("settings.autoCheck")} hint={t("settings.autoCheckHint")}>
           <Switch
             checked={autoCheck}
