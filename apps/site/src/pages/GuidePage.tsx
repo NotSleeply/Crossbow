@@ -186,7 +186,7 @@ export default function GuidePage() {
         }}
       >
         <h3 style={{ fontSize: 18, fontWeight: 700 }}>还没安装？</h3>
-        <p style={{ color: "var(--dim)", fontSize: 13.5, margin: "8px auto 20px" }}>免费开源，macOS Apple Silicon 一键下载。</p>
+        <p style={{ color: "var(--dim)", fontSize: 13.5, margin: "8px auto 20px" }}>免费开源，提供 macOS Apple Silicon 与 Windows x64 安装包。</p>
         <a
           href={LATEST}
           target="_blank"

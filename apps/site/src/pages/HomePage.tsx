@@ -3,7 +3,7 @@ import heroApp from "../assets/hero-app.png";
 import { Link } from "react-router-dom";
 import { useLatestRelease } from "../hooks/useLatestRelease";
 import { DownloadIcon } from "../components";
-import { DMG_SHA256, DMG_URL, LATEST, MANIFEST_URL, REPO, RELEASES, VERSION } from "../site-meta";
+import { CHECKSUMS_URL, DMG_URL, LATEST, MANIFEST_URL, RELEASE_DATE, REPO, RELEASES, VERSION, WINDOWS_URL } from "../site-meta";
 
 const NAV = [
   { href: "#features", label: "特性" },
@@ -20,7 +20,7 @@ function Hero() {
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8, font: "12px var(--mono)", color: "var(--dim)", border: "1px solid var(--line-strong)", borderRadius: 99, padding: "5px 14px", marginBottom: 26 }}>
         <span style={{ color: "var(--accent)" }}>{version}</span>
         <span>开源 · GPL-3.0</span>
-        <span>macOS · Apple Silicon</span>
+        <span>macOS · Windows</span>
       </div>
       <h1 style={{ fontSize: 46, lineHeight: 1.18, fontWeight: 700, letterSpacing: "-.025em", maxWidth: 720, margin: "0 auto 20px" }}>
         轻量、克制、可靠的
@@ -37,7 +37,7 @@ function Hero() {
         </span>
       </h1>
       <p style={{ color: "var(--dim)", fontSize: 17, maxWidth: 560, margin: "0 auto 34px" }}>
-        Crossbow 为 macOS 提供 mihomo / sing-box 双内核、系统代理与 TUN 模式。
+        Crossbow 为 macOS 和 Windows 提供 mihomo / sing-box 双内核、系统代理与 TUN 模式。
         订阅管理、节点测速和网络诊断集中在一个界面，菜单栏随时查看实时速率。
       </p>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
@@ -70,7 +70,7 @@ function Hero() {
         </a>
       </div>
       <div style={{ marginTop: 14, font: "11.5px var(--mono)", color: "var(--faint)" }}>
-        免费开源 · 无追踪 · macOS Apple Silicon
+        免费开源 · 无追踪 · macOS Apple Silicon / Windows x64
       </div>
 
       <div
@@ -98,7 +98,7 @@ const FEATURES = [
     icon: <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />,
     icon2: <path d="M9 12l2 2 4-4" />,
     title: "系统代理与 TUN",
-    text: "系统代理适合日常使用；TUN 可接管更多应用流量。两种模式在设置中切换，TUN 首次开启需要管理员授权。",
+    text: "系统代理适合日常使用；TUN 可接管更多应用流量。macOS 下两者可同时开启、独立控制，TUN 首次开启需要管理员授权。",
   },
   {
     icon: <path d="M3 12h4l2-6 4 12 2-6h6" />,
@@ -187,7 +187,7 @@ function Steps() {
           <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>01</div>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>下载并安装</h3>
           <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            从 GitHub Releases 下载官方 dmg，打开后将 Crossbow 拖入「应用程序」，再从应用程序文件夹启动。
+            macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序。安装包均来自 GitHub Releases。
           </p>
         </div>
         <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "26px 22px" }}>
@@ -210,78 +210,45 @@ function Steps() {
 }
 
 function Download() {
-  const [copied, setCopied] = useState(false);
   const rel = useLatestRelease();
   const version = rel?.version ?? VERSION;
-  const dmgUrl = rel?.dmgUrl ?? (rel ? LATEST : DMG_URL);
-  const date = rel?.date ?? "2026-10-24";
-  const shaKnown = version === VERSION; // 静态值里的 SHA256 与该版本对应
-  const copy = () => {
-    navigator.clipboard?.writeText(DMG_SHA256).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
+  const date = rel?.date ?? RELEASE_DATE;
+  const checksumsUrl = rel ? rel.checksumsUrl : CHECKSUMS_URL;
+  const platforms = [
+    { name: "macOS", detail: "Apple Silicon · M 系列芯片", url: rel ? rel.dmgUrl : DMG_URL, label: "下载 DMG", note: "Developer ID 签名与公证；拖入应用程序后启动。" },
+    { name: "Windows", detail: "x64 · Windows 11 实机验收中", url: rel ? rel.windowsUrl : WINDOWS_URL, label: "下载 EXE", note: "尚无 Windows 代码签名；请核对官方来源及 SHA256SUMS。" },
+  ];
   return (
     <section id="download" style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 84px" }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
+      <div style={{ textAlign: "center", marginBottom: 36 }}>
         <span className="micro" style={{ display: "block", marginBottom: 12 }}>Download</span>
         <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>下载 Crossbow</h2>
-        <p style={{ color: "var(--dim)", marginTop: 12, fontSize: 15 }}>应用内也可一键检查更新（minisign 签名校验）</p>
+        <p style={{ color: "var(--dim)", marginTop: 12, fontSize: 15 }}>{version} · {date} · 应用内支持检查更新与签名校验</p>
       </div>
-      <div
-        style={{
-          maxWidth: 720, margin: "0 auto", textAlign: "center", padding: 36,
-          background: "linear-gradient(180deg, rgba(255,255,255,.02), transparent 50%), var(--surface)",
-          border: "1px solid var(--line-strong)", borderRadius: 16,
-        }}
-      >
-        <div style={{ font: "600 13px var(--mono)", color: "var(--accent)" }}>{version} · {date}</div>
-        <h3 style={{ fontSize: 22, fontWeight: 700, margin: "10px 0 6px" }}>Crossbow for macOS</h3>
-        <div style={{ color: "var(--dim)", fontSize: 13 }}>Apple Silicon (M 系列) · macOS</div>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", margin: "26px 0 18px", flexWrap: "wrap" }}>
-          <a
-            href={dmgUrl}
-            target="_blank"
-            rel="noopener"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-              padding: "12px 24px", fontSize: 14.5, fontWeight: 600, color: "#06111f",
-              background: "linear-gradient(180deg, #85adff, #6d97ff)",
-              boxShadow: "0 4px 20px rgba(122,162,255,.3), inset 0 1px 0 rgba(255,255,255,.35)",
-            }}
-          >
-            <DownloadIcon />
-            下载 dmg
-          </a>
-          <a
-            href={RELEASES}
-            target="_blank"
-            rel="noopener"
-            style={{ display: "inline-flex", alignItems: "center", borderRadius: 10, padding: "12px 24px", fontSize: 14.5, fontWeight: 600, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--line-strong)" }}
-          >
-            全部版本
-          </a>
-        </div>
-        {shaKnown && (
-          <div
-            onClick={copy}
-            title="点击复制"
-            style={{
-              font: "11px var(--mono)", color: "var(--faint)", wordBreak: "break-all",
-              background: "var(--surface-2)", border: "1px solid var(--line)",
-              borderRadius: 8, padding: "8px 12px", display: "inline-block", cursor: "pointer",
-            }}
-          >
-            {copied ? "SHA256 · 已复制 ✓" : `SHA256 · 点击复制：${DMG_SHA256.slice(0, 32)}…`}
+      <div className="download-platforms">
+        {platforms.map((platform) => (
+          <div key={platform.name} className="download-platform">
+            <div className="micro">{platform.detail}</div>
+            <h3 style={{ fontSize: 22, margin: "10px 0" }}>Crossbow for {platform.name}</h3>
+            <p style={{ color: "var(--dim)", fontSize: 13, flex: 1 }}>{platform.note}</p>
+            <a className="download-button" href={platform.url ?? LATEST} target="_blank" rel="noopener">
+              <DownloadIcon /> {platform.url ? platform.label : "查看发布详情"}
+            </a>
           </div>
-        )}
-        <div style={{ marginTop: 16, fontSize: 12.5 }}>
-          <a href={RELEASES} target="_blank" rel="noopener" style={{ color: "var(--accent)", margin: "0 8px" }}>历史版本</a>
-          {" · "}
-          <a href={MANIFEST_URL} target="_blank" rel="noopener" style={{ color: "var(--accent)", margin: "0 8px" }}>更新清单</a>
-        </div>
+        ))}
       </div>
+      <div style={{ textAlign: "center", marginTop: 22, fontSize: 13, color: "var(--dim)" }}>
+        <a href={LATEST} target="_blank" rel="noopener">更新说明</a>
+        {" · "}
+        {checksumsUrl && <><a href={checksumsUrl} target="_blank" rel="noopener">SHA256SUMS</a>{" · "}</>}
+        <a href={MANIFEST_URL} target="_blank" rel="noopener">更新清单</a>
+        {" · "}
+        <a href={RELEASES} target="_blank" rel="noopener">历史版本</a>
+      </div>
+      <p style={{ maxWidth: 780, margin: "24px auto 0", color: "var(--dim)", fontSize: 13, textAlign: "center" }}>
+        v0.10.1 聚焦 Windows 标题栏主题、后台闪窗、系统代理与日志刷新，并补齐交互反馈。
+        修复的实机效果请按 <a href={`${REPO}/blob/main/docs/WINDOWS-TESTING.md`} target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>Windows 验收步骤</a>检查。
+      </p>
     </section>
   );
 }
@@ -297,15 +264,15 @@ const FAQS = [
   },
   {
     q: "支持 TUN 模式吗？",
-    a: <>macOS 版可在设置中开启 TUN，首次开启需要管理员授权。TUN 与系统代理互斥；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。v0.9.2 公开安装包早于最近的 TUN 恢复修复；测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
+    a: <>macOS 版可在设置中开启 TUN，首次开启需要管理员授权。可与本应用的系统代理同时开启、独立控制；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
   },
   {
     q: "有 Windows / iOS 版本吗？",
-    a: <>在路线图中：Windows 为 M1.5，iOS 为 M2（复用同一套核心逻辑）。目前 macOS 版本已可日常使用。</>,
+    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收。iOS 目前为工程骨架。</>,
   },
   {
     q: "升级会丢配置吗？",
-    a: <>现有配置会继续保存在 ~/Library/Application Support/com.richard.crossbow/；旧版 com.crossbow.app 数据会在升级时迁移。配置保存前有快照，建议升级前仍自行备份。</>,
+    a: <>macOS 配置会继续保存在 ~/Library/Application Support/com.richard.crossbow/；旧版 com.crossbow.app 数据会在升级时迁移。配置保存前有快照，建议升级前仍自行备份。</>,
   },
   {
     q: "如何参与或反馈？",
