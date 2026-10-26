@@ -8,8 +8,8 @@
 //! 收拢后的规则：
 //! - 所有托盘状态变更走 `TrayState` 的方法（单一写入口，整把锁）
 //! - 菜单渲染 = `snapshot()` 纯函数：状态 → 菜单数据，无副作用
-//! - 测速生命周期：`begin_test`（单飞）→ 后台测速 → `apply_test_result`
-//!   或看门狗 `expire_testing`；generation 让迟到的旧结果失效
+//! - 测速生命周期：`begin_test`（单飞）→ 逐节点 `apply_single_result` → `end_test`
+//!   或看门狗 `expire_test`；结束时递增 generation，让迟到的旧结果失效
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -36,6 +36,8 @@ pub struct TrayState {
     /// 测速失败原因（"timeout" | "failed"）；成功节点从 map 移除。
     failed: BTreeMap<String, String>,
     testing: bool,
+    /// 本轮尚未完成的测速目标，结果逐个到达时移除。
+    pending: BTreeSet<String>,
     testing_since: Option<Instant>,
     /// 测速代次：看门狗与完成回调竞争结束权时，迟到的旧结果以此失效
     generation: u64,
@@ -58,6 +60,8 @@ pub struct TrayNodeRow {
     pub ms: Option<u64>,
     /// 是否当前选中（菜单勾选态）
     pub selected: bool,
+    /// 该行仍有本轮测速结果待返回；渲染为 loading 而非旧延迟。
+    pub pending: bool,
 }
 
 /// 渲染托盘节点子菜单所需的纯数据快照。
@@ -139,15 +143,41 @@ impl TrayState {
             return false;
         }
         self.testing = true;
+        self.pending = self.nodes.iter().cloned().collect();
         self.testing_since = Some(Instant::now());
         self.generation += 1;
         true
     }
 
-    /// 结束测速态（看门狗或正常完成都调用）。
+    /// 并入自动组成员后登记完整目标；旧代次不得覆盖新一轮的 pending。
+    pub fn set_test_targets(&mut self, generation: u64, targets: &[String]) -> bool {
+        if !self.testing || self.generation != generation {
+            return false;
+        }
+        self.pending = targets.iter().cloned().collect();
+        true
+    }
+
+    /// 结束时清空 loading 并使迟到的结果和看门狗失效。
     pub fn end_test(&mut self) {
+        if self.testing {
+            self.generation += 1;
+        }
         self.testing = false;
         self.testing_since = None;
+        self.pending.clear();
+    }
+
+    /// 只允许仍在运行的当前代次超时；已完成节点保留结果，未完成节点标记超时。
+    pub fn expire_test(&mut self, generation: u64) -> bool {
+        if !self.testing || self.generation != generation {
+            return false;
+        }
+        for node in std::mem::take(&mut self.pending) {
+            self.apply_single_result(&node, Err("timeout".into()));
+        }
+        self.end_test();
+        true
     }
 
     /// 当前代次（迟到的旧结果以此判断是否仍然有效）。
@@ -158,12 +188,14 @@ impl TrayState {
     /// 单节点测速结果落库（增量）：成功写延迟并清失败标记；
     /// 失败记原因（"timeout" | "failed"），徽标直接展示该原因。
     pub fn apply_single_result(&mut self, node: &str, result: Result<u64, String>) {
+        self.pending.remove(node);
         match result {
             Ok(ms) if ms > 0 => {
                 self.delays.insert(node.to_string(), ms);
                 self.failed.remove(node);
             }
             Ok(_) => {
+                self.delays.remove(node);
                 self.failed.insert(node.to_string(), "failed".into());
             }
             Err(reason) => {
@@ -214,16 +246,17 @@ impl TrayState {
                 } else {
                     None
                 };
-                let fail_reason = self
-                    .failed
-                    .get(n)
-                    .cloned()
-                    .or_else(|| {
-                        current_node
+                let pending = self.testing_visible()
+                    && (self.pending.contains(n)
+                        || current_node
                             .as_ref()
-                            .and_then(|current| self.failed.get(current))
-                            .cloned()
-                    });
+                            .is_some_and(|name| self.pending.contains(name)));
+                let fail_reason = self.failed.get(n).cloned().or_else(|| {
+                    current_node
+                        .as_ref()
+                        .and_then(|current| self.failed.get(current))
+                        .cloned()
+                });
                 let display_delay = if fail_reason.is_some() {
                     None
                 } else {
@@ -232,12 +265,11 @@ impl TrayState {
                         .and_then(|current| self.delays.get(current))
                         .or_else(|| self.delays.get(n))
                 };
-                let (badge, ms) = if display_delay.is_none() {
+                let (badge, ms) = if pending {
+                    ("…".to_string(), None)
+                } else if display_delay.is_none() {
                     // 失败徽标直接展示原因（timeout / failed），无记录视为未测
-                    (
-                        fail_reason.unwrap_or_else(|| "—".into()),
-                        None,
-                    )
+                    (fail_reason.unwrap_or_else(|| "—".into()), None)
                 } else {
                     match display_delay {
                         Some(ms) => (format!("{ms}ms"), Some(*ms)),
@@ -256,6 +288,7 @@ impl TrayState {
                     badge,
                     ms,
                     selected: *n == self.now,
+                    pending,
                 }
             })
             .collect::<Vec<_>>();
@@ -333,4 +366,115 @@ fn location_group_key(name: &str) -> Option<String> {
 fn strip_recycle_icon(name: &str) -> String {
     name.trim_start_matches(|character| matches!(character, '♻' | '\u{FE0F}' | ' '))
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> TrayState {
+        let mut state = TrayState::default();
+        state.apply_group_data(
+            Some("JP".into()),
+            vec![
+                ("Auto".into(), Some(100)),
+                ("JP".into(), Some(100)),
+                ("HK".into(), Some(200)),
+            ],
+            Some((
+                "Auto".into(),
+                Some("JP".into()),
+                vec![("JP".into(), Some(100)), ("HK".into(), Some(200))],
+            )),
+        );
+        state
+    }
+
+    fn row(state: &TrayState, name: &str) -> TrayNodeRow {
+        state
+            .snapshot("Nodes", "Current")
+            .rows
+            .into_iter()
+            .find(|row| row.name == name)
+            .unwrap()
+    }
+
+    #[test]
+    fn pending_nodes_hide_cached_results_and_finish_independently() {
+        let mut state = fixture();
+        assert!(state.begin_test());
+        assert!(!state.begin_test());
+        assert!(state
+            .snapshot("Nodes", "Current")
+            .rows
+            .iter()
+            .all(|row| row.pending && row.ms.is_none()));
+        state.apply_single_result("JP", Ok(75));
+        assert!(!row(&state, "JP").pending);
+        assert_eq!(row(&state, "JP").ms, Some(75));
+        assert!(row(&state, "HK").pending);
+        state.apply_single_result("HK", Err("timeout".into()));
+        assert!(!row(&state, "HK").pending);
+        assert_eq!(row(&state, "HK").badge, "timeout");
+    }
+
+    #[test]
+    fn automatic_row_waits_for_its_current_member() {
+        let mut state = fixture();
+        state.begin_test();
+        state.apply_single_result("Auto", Ok(90));
+        assert!(row(&state, "Auto").pending);
+        state.apply_single_result("JP", Ok(80));
+        assert!(!row(&state, "Auto").pending);
+        assert_eq!(row(&state, "Auto").ms, Some(80));
+        assert!(row(&state, "HK").pending);
+    }
+
+    #[test]
+    fn timeout_marks_only_unfinished_nodes_and_invalidates_late_callbacks() {
+        let mut state = fixture();
+        state.begin_test();
+        let generation = state.generation();
+        state.apply_single_result("JP", Ok(70));
+        assert!(state.expire_test(generation));
+        assert_eq!(row(&state, "JP").ms, Some(70));
+        assert_eq!(row(&state, "HK").badge, "timeout");
+        assert!(state
+            .snapshot("Nodes", "Current")
+            .rows
+            .iter()
+            .all(|row| !row.pending));
+        assert!(!state.testing_visible());
+        assert_ne!(state.generation(), generation);
+        assert!(!state.expire_test(generation));
+    }
+
+    #[test]
+    fn completed_test_cannot_be_expired_or_overwrite_the_next_test_targets() {
+        let mut state = fixture();
+        state.begin_test();
+        let generation = state.generation();
+        state.apply_single_result("JP", Ok(60));
+        state.end_test();
+        assert!(!state.expire_test(generation));
+        assert_eq!(row(&state, "JP").ms, Some(60));
+        assert!(state.begin_test());
+        assert!(!state.set_test_targets(generation, &[]));
+        assert!(row(&state, "JP").pending);
+        let next_generation = state.generation();
+        assert!(state.set_test_targets(next_generation, &["JP".into()]));
+        assert!(!row(&state, "HK").pending);
+        assert!(row(&state, "JP").pending);
+    }
+
+    #[test]
+    fn zero_delay_is_a_failed_result_and_removes_loading() {
+        let mut state = fixture();
+        state.begin_test();
+        state.apply_single_result("JP", Ok(0));
+        let result = row(&state, "JP");
+        assert!(!result.pending);
+        assert_eq!(result.badge, "failed");
+        assert_eq!(result.ms, None);
+    }
 }

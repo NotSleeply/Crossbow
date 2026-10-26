@@ -2226,6 +2226,13 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
             return;
         }
 
+        {
+            let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+            if !tray.set_test_targets(generation, &targets) {
+                return;
+            }
+        }
+
         // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
         let watchdog_handle = h.clone();
         let watchdog_operation = operation.clone();
@@ -2236,10 +2243,9 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
                 return;
             };
             let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-            if tray.generation() != generation {
-                return; // 新一轮测速已接管
+            if !tray.expire_test(generation) {
+                return; // 已完成或新一轮测速已接管
             }
-            tray.end_test();
             drop(tray);
             if notify_user { notifications::result(&watchdog_handle, &watchdog_operation, "tray.latencyTimeout", Err("Latency test exceeded its deadline".into())); }
             let data = tray_menu_data(&state);
