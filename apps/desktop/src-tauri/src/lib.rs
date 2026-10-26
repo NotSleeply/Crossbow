@@ -42,6 +42,8 @@ use ws_bridge::WsHub;
 pub struct AppState {
     /// 轻量交接退出：RunEvent::Exit 时跳过清理（内核留给系统收养）。
     handoff: std::sync::atomic::AtomicBool,
+    /// Explicit updater restart handoff; separate from the one-shot window guard.
+    update_handoff: std::sync::atomic::AtomicBool,
     /// 安全模式：坏覆写导致内核启动失败后，跳过覆写链启动一次。
     safe_mode: std::sync::atomic::AtomicBool,
     pub store: Mutex<Store>,
@@ -2570,6 +2572,18 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Called after installation succeeds and before requesting an event-loop restart.
+/// Persisting the descriptor must succeed before Exit may skip normal cleanup.
+pub(crate) fn prepare_update_restart(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    let handed_off = state.core().prepare_handoff()?.is_some();
+    state
+        .update_handoff
+        .store(handed_off, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
 /// 系统代理总开关（托盘与首页共用）。
 fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -2830,6 +2844,24 @@ pub fn run() {
                 eprintln!("recovered stale system proxy from previous session");
             }
 
+            // A handed-over core can still have TUN enabled after a prior
+            // upgrade cleared the preference. Reconcile from the live API.
+            #[cfg(target_os = "macos")]
+            if adopted && core_download::is_core_bin(&core.binary_path(), "mihomo") {
+                if let Some((port, secret)) = core.controller() {
+                    match (mihomo_api::Controller { port, secret }).tun_enabled() {
+                        Ok(Some(enabled)) if store.data().engine.tun_enable != enabled => {
+                            store.data_mut().engine.tun_enable = enabled;
+                            store.save()?;
+                        }
+                        Err(_) => eprintln!(
+                            "could not reconcile adopted TUN state; keeping saved preference"
+                        ),
+                        _ => {}
+                    }
+                }
+            }
+
             // The saved preference alone does not mean a tunnel exists. On a
             // cold start without an adopted core, require an explicit new TUN
             // start so Settings cannot claim that an inactive tunnel is on.
@@ -2846,6 +2878,7 @@ pub fn run() {
 
             app.manage(AppState {
                 handoff: std::sync::atomic::AtomicBool::new(false),
+                update_handoff: std::sync::atomic::AtomicBool::new(false),
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
@@ -3036,7 +3069,10 @@ pub fn run() {
                         state.ws.unsubscribe_all();
                         let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
                         let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
-                        if !handoff {
+                        let updating = state
+                            .update_handoff
+                            .load(std::sync::atomic::Ordering::SeqCst);
+                        if !handoff && !updating {
                             let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
                             if tun_enabled {
                                 // Once the privileged TUN core is gone, restore
