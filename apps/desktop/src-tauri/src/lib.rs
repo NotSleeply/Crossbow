@@ -105,6 +105,28 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
     }
 }
 
+/// Keep the OS-owned title bar and the webview on the same theme.
+fn apply_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
+    #[cfg(windows)]
+    {
+        let native = match theme {
+            "dark" => Some(tauri::Theme::Dark),
+            "light" => Some(tauri::Theme::Light),
+            _ => None,
+        };
+        let _ = win.set_theme(native);
+    }
+    #[cfg(target_os = "macos")]
+    apply_macos_window_appearance(win, theme);
+    let dark = match theme {
+        "dark" => true,
+        "light" => false,
+        _ => win.theme().ok() == Some(tauri::Theme::Dark),
+    };
+    let (r, g, b) = if dark { (10, 12, 16) } else { (246, 247, 249) };
+    let _ = win.set_background_color(Some(tauri::utils::config::Color(r, g, b, 255)));
+}
+
 /// 活动订阅里 proxy-groups 的声明顺序（代理页排序与托盘主组探测共用）。
 fn profile_group_order(handle: &AppHandle) -> Vec<String> {
     let Some(state) = handle.try_state::<AppState>() else {
@@ -143,7 +165,7 @@ fn pid_alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("tasklist")
+        crate::process::command("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
             .output()
             .map(|o| {
@@ -1148,7 +1170,7 @@ fn core_install_inner(app: AppHandle, engine: Option<String>) -> Result<CoreBina
 /// 内核版本（执行 `<bin> -v` 首行）；sing-box 只认 `version` 子命令，依次尝试。
 fn core_version_of(bin: &PathBuf) -> Option<String> {
     for flag in ["-v", "version"] {
-        let Ok(out) = std::process::Command::new(bin).arg(flag).output() else {
+        let Ok(out) = crate::process::command(bin).arg(flag).output() else {
             continue;
         };
         if !out.status.success() {
@@ -1293,9 +1315,8 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
         store.data_mut().ui.theme = theme.clone();
         store.save().map_err(|e| e.to_string())?;
     }
-    #[cfg(target_os = "macos")]
     if let Some(win) = app.get_webview_window("main") {
-        apply_macos_window_appearance(&win, &theme);
+        apply_window_appearance(&win, &theme);
     }
     let _ = app.emit("ui://theme", theme);
     Ok(())
@@ -1426,14 +1447,14 @@ fn open_logs_dir(state: State<AppState>) -> Result<(), String> {
     let _ = std::fs::create_dir_all(&dir);
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
+        crate::process::command("open")
             .arg(&dir)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("explorer")
+        crate::process::command("explorer")
             .arg(&dir)
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -1533,7 +1554,7 @@ fn core_version(state: State<AppState>) -> Result<String, String> {
     if !bin.exists() {
         return Err("内核未安装".into());
     }
-    let out = std::process::Command::new(&bin)
+    let out = crate::process::command(&bin)
         .arg("-v")
         .output()
         .map_err(|e| e.to_string())?;
@@ -2587,13 +2608,12 @@ fn show_main_window(app: &AppHandle) {
             let builder = builder.hidden_title(true);
             let built = builder.build();
             // 重建窗口同样应用深色标题栏
-            #[cfg(target_os = "macos")]
             if let Ok(win) = built.as_ref() {
                 let theme = app
                     .try_state::<AppState>()
                     .map(|state| state.store.lock().unwrap().data().ui.theme.clone())
                     .unwrap_or_else(|| "system".to_string());
-                apply_macos_window_appearance(win, &theme);
+                apply_window_appearance(win, &theme);
             }
             let _ = built;
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
@@ -2841,9 +2861,8 @@ pub fn run() {
             let update_settings_init = store.data().update.clone();
 
             // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
-            #[cfg(target_os = "macos")]
             if let Some(win) = app.get_webview_window("main") {
-                apply_macos_window_appearance(&win, &store.data().ui.theme);
+                apply_window_appearance(&win, &store.data().ui.theme);
             }
 
             // 内核二进制定位：优先按持久化引擎精确解析；引擎对应内核缺失时

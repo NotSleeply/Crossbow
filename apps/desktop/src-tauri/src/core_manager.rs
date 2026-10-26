@@ -7,7 +7,9 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::Child;
+#[cfg(test)]
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -160,7 +162,7 @@ impl Shared {
                 .and_then(|mut f| f.write_all(content.as_bytes()))
                 .map_err(|e| format!("write config: {e}"))?;
         }
-        let mut cmd = Command::new(&self.binary_path);
+        let mut cmd = crate::process::command(&self.binary_path);
         // 两内核 CLI 不同：mihomo `-d workdir -f config`；sing-box `run -D workdir -c config`
         if crate::core_download::is_core_bin(&self.binary_path, "sing-box") {
             cmd.arg("run")
@@ -185,12 +187,6 @@ impl Shared {
             .try_clone()
             .map_err(|e| format!("clone core log: {e}"))?;
         cmd.stdout(log_file).stderr(log_err);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
         let child = cmd.spawn().map_err(|e| format!("spawn core: {e}"))?;
         let pid = child.id();
         {
@@ -710,7 +706,7 @@ fn kill_pid(pid: u32) {
     }
     #[cfg(not(unix))]
     {
-        let _ = std::process::Command::new("taskkill")
+        let _ = crate::process::command("taskkill")
             .args(["/F", "/PID", &pid.to_string()])
             .output();
     }
@@ -743,7 +739,7 @@ fn privileged_shell_script(command: &str) -> String {
 #[cfg(target_os = "macos")]
 fn escalate_admin_kill(pid: u32) {
     let script = format!("kill -9 {pid}");
-    let out = std::process::Command::new("osascript")
+    let out = crate::process::command("osascript")
         .args(["-e", &privileged_shell_script(&script)])
         .output();
     if let Err(e) = out {
@@ -922,7 +918,10 @@ fn escalate_clear_port(port: u16) -> bool {
         "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); killed=0; for p in $pids; do c=$(ps -p $p -o command=); case $c in *com.crossbow.app/tun-binaries/*|*com.richard.crossbow/tun-binaries/*|*/Crossbow.app/Contents/MacOS/mihomo*|*/Crossbow.app/Contents/MacOS/sing-box*) kill -9 $p && killed=1;; esac; done; test $killed -eq 1"
     );
     let apple = privileged_shell_script(&shell);
-    let out = std::process::Command::new("osascript").arg("-e").arg(apple).output();
+    let out = crate::process::command("osascript")
+        .arg("-e")
+        .arg(apple)
+        .output();
     match out {
         Ok(o) if o.status.success() => true,
         Ok(o) => {
@@ -948,7 +947,7 @@ fn escalate_clear_port(_port: u16) -> bool {
 /// root 进程对普通权限不可见（由 escalate_clear_port 兜底）。
 #[cfg(unix)]
 fn port_listeners_via_lsof(port: u16) -> Vec<(u32, String)> {
-    let Ok(out) = std::process::Command::new("lsof")
+    let Ok(out) = crate::process::command("lsof")
         .args(["-n", "-P", "-i", &format!("TCP:{port}"), "-sTCP:LISTEN"])
         .output()
     else {
@@ -960,7 +959,7 @@ fn port_listeners_via_lsof(port: u16) -> Vec<(u32, String)> {
         let cols: Vec<&str> = line.split_whitespace().collect();
         if cols.len() > 1 {
             if let Ok(pid) = cols[1].parse::<u32>() {
-                let cmd = std::process::Command::new("ps")
+                let cmd = crate::process::command("ps")
                     .args(["-p", &pid.to_string(), "-o", "command="])
                     .output()
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
