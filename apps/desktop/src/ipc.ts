@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -36,6 +37,14 @@ export interface TrafficInfo {
   download: number;
   total: number;
   expire: number;
+}
+
+export interface SiteResult {
+  id: string;
+  status: "ok" | "restricted" | "http_error" | "error";
+  http_status: number | null;
+  latency_ms: number | null;
+  error: string | null;
 }
 
 export type CoreState = "Stopped" | "Starting" | "Running" | "Crashed";
@@ -246,6 +255,8 @@ export const ipc = {
   setLogsRetention: (days: number) => invoke<void>("set_logs_retention", { days }),
   openLogsDir: () => invoke<void>("open_logs_dir"),
   coreStop: () => invoke<void>("core_stop"),
+  appVersion: () => getVersion(),
+  testSite: (id: string) => invoke<SiteResult>("test_site", { id }),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),
   sysproxyToggle: () => invoke<void>("sysproxy_toggle"),

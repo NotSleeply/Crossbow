@@ -497,3 +497,12 @@ input[type="checkbox"] {
   font-size: 10.5px;
   line-height: 16px;
 }
+
+.cb-site-card {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 12px; min-width: 0; border: 1px solid var(--cb-line); border-radius: 9px;
+  background: var(--cb-surface-2); color: var(--cb-text); transition: border-color 120ms;
+}
+.cb-site-card:not(:disabled):hover { border-color: var(--cb-accent-line); }
+.cb-site-card:disabled { cursor: default; }
+.cb-site-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; }

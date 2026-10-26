@@ -19,6 +19,9 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 mod coexist;
 mod core_manager;
 mod diagnose;
+mod site_tests;
+#[cfg(windows)]
+mod windows_appearance;
 mod log_files;
 mod mihomo_api;
 mod notifications;
@@ -124,6 +127,8 @@ fn apply_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
         "light" => false,
         _ => win.theme().ok() == Some(tauri::Theme::Dark),
     };
+    #[cfg(windows)]
+    windows_appearance::apply(win, dark);
     let (r, g, b) = if dark { (10, 12, 16) } else { (246, 247, 249) };
     let _ = win.set_background_color(Some(tauri::utils::config::Color(r, g, b, 255)));
 }
@@ -158,24 +163,8 @@ fn profile_group_order(handle: &AppHandle) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
-fn pid_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-    #[cfg(windows)]
-    {
-        crate::process::command("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-            .output()
-            .map(|o| {
-                let out = String::from_utf8_lossy(&o.stdout);
-                out.contains(&format!("\"{pid}\""))
-            })
-            .unwrap_or(false)
-    }
-}
+/// Native liveness check also recognizes exited Windows processes with retained handles.
+fn pid_alive(pid: u32) -> bool { core_manager::pid_is_alive(pid) }
 
 impl AppState {
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
@@ -1366,6 +1355,18 @@ fn set_logs_retention(state: State<AppState>, days: u32) -> Result<(), String> {
     let dir = log_files::logs_dir(&state.data_dir);
     log_files::sweep(&dir, days);
     Ok(())
+}
+
+// Network probes run off the GUI thread with bounded timeouts.
+#[tauri::command]
+async fn test_site(app: AppHandle, id: String) -> Result<site_tests::SiteResult, String> {
+    let (port, running) = {
+        let state = app.state::<AppState>();
+        let port = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().engine.mixed_port;
+        (port, state.core().status() == CoreStatus::Running)
+    };
+    tauri::async_runtime::spawn_blocking(move || site_tests::probe(&id, port, running))
+        .await.map_err(|e| e.to_string())?
 }
 
 // 必须异步 + spawn_blocking：detect 内部跑 ps/netstat 子进程（秒级），
@@ -2974,10 +2975,13 @@ pub fn run() {
             // 托盘
             let menu = build_tray_menu(app.handle())?;
             let tray = TrayIconBuilder::new()
-                // 菜单栏用单色 template 图（系统自适应深/浅色菜单栏）；
-                // 彩色圆角应用图标在菜单栏里太扎眼
-                .icon(tauri::include_image!("icons/tray-icon.png"))
-                .icon_as_template(true)
+                // macOS uses a template; Windows needs a visible colored tray icon.
+                .icon(if cfg!(target_os = "macos") {
+                    tauri::include_image!("icons/tray-icon.png")
+                } else {
+                    tauri::include_image!("icons/32x32.png")
+                })
+                .icon_as_template(cfg!(target_os = "macos"))
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("Crossbow")
@@ -3004,6 +3008,19 @@ pub fn run() {
                 notifications::window_destroyed(window.app_handle(), window.label());
             }
             if window.label() != "main" { return; }
+            #[cfg(windows)]
+            if let tauri::WindowEvent::ThemeChanged(theme) = event {
+                let follows_system = window.app_handle().try_state::<AppState>()
+                    .is_some_and(|state| state.store.lock().unwrap_or_else(|e| e.into_inner()).data().ui.theme == "system");
+                if follows_system {
+                    let dark = *theme == tauri::Theme::Dark;
+                    if let Some(main) = window.app_handle().get_webview_window("main") {
+                        windows_appearance::apply(&main, dark);
+                        let (r,g,b) = if dark { (10,12,16) } else { (246,247,249) };
+                        let _ = main.set_background_color(Some(tauri::utils::config::Color(r,g,b,255)));
+                    }
+                }
+            }
             // 关窗：默认驻留托盘；开启「轻量模式」时交接退出（留核）。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
@@ -3089,6 +3106,7 @@ pub fn run() {
             tun_status,
             diag_log,
             run_diagnosis,
+            test_site,
             current_outbound,
             close_connection,
             proxies_snapshot,

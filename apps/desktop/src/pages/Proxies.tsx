@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ipc, type GroupView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
+import SiteConnectivity from "../components/SiteConnectivity";
 import { Icon } from "../components/Icon";
 
 /** 代理组页（v2）：组卡片 + 节点网格，点状态灯分色。 */
@@ -119,6 +120,7 @@ export default function ProxiesPage() {
       </PageHead>
 
 
+      <SiteConnectivity contextKey={groups.map((group) => `${group.name}:${group.now ?? ""}`).join(";")} />
       {groups.length === 0 ? (
         <div
           className="cb-card flex h-64 flex-col items-center justify-center gap-2 text-sm"
