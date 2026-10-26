@@ -7,6 +7,7 @@
    ============================================================ */
 
 :root {
+  color-scheme: dark;
   /* 表面层次 */
   --cb-bg: #0a0c10;
   --cb-surface: #101319;
@@ -35,6 +36,7 @@
 
 /* 浅色：同一设计语言的白昼版（深色即 :root 默认值） */
 :root:not(.dark) {
+  color-scheme: light;
   --cb-bg: #f6f7f9;
   --cb-surface: #ffffff;
   --cb-surface-2: #f1f3f7;
@@ -65,6 +67,21 @@ body,
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
+
+/* Interactive affordances apply to bare buttons as well as styled controls. */
+button:not(:disabled):not([aria-disabled="true"]),
+a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled), label:has(input[type="checkbox"]:not(:disabled)) {
+  cursor: pointer;
+}
+button:disabled, select:disabled, input:disabled, [aria-disabled="true"] { cursor: not-allowed; }
+button:focus-visible, a[href]:focus-visible, select:focus-visible, input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--cb-accent);
+  outline-offset: 2px;
+}
+button:not(:disabled):hover { filter: brightness(1.1); }
+.cb-toggle:not(:disabled):hover { outline: 1px solid var(--cb-accent-line); outline-offset: 2px; }
+.cb-input:hover:not(:disabled) { border-color: var(--cb-line-strong); }
 
 /* 等宽区域（日志/连接/数据）恢复可选中 */
 .cb-selectable {

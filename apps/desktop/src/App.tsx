@@ -104,10 +104,12 @@ export default function App() {
 
   useEffect(() => {
     initLang();
-    ipc.getUiSettings().then((u) => applyTheme(u.theme)).catch((error) => notify.error(error, "app-settings-read"));
-    const un = ipc.onTheme(applyTheme);
+    let currentTheme: UiSettings["theme"] = "system";
+    const updateTheme = (theme: UiSettings["theme"]) => { currentTheme = theme; applyTheme(theme); };
+    ipc.getUiSettings().then((u) => updateTheme(u.theme)).catch((error) => notify.error(error, "app-settings-read"));
+    const un = ipc.onTheme(updateTheme);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onSystem = () => applyTheme("system");
+    const onSystem = () => { if (currentTheme === "system") applyTheme("system"); };
     mq.addEventListener("change", onSystem);
     return () => {
       void un.then((f) => f());
