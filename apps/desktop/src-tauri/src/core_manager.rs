@@ -1281,27 +1281,29 @@ impl ControllerProbe {
 
 /// GeoIP/GeoSite 数据源：镜像优先，直连 GitHub 兜底。
 /// 镜像失效时调整此列表即可（均为数据文件，不参与代码构建）。
-pub const GEO_FILES: &[(&str, bool, &[&str])] = &[
+pub const GEO_FILES: &[(&str, bool, u64, &[&str])] = &[
     (
         "geoip.metadb",
         true,
+        4_000_000, // 完整 metadb ~8-9MB；4MB 下限过滤弱网截断残片
         &[
-            // 2026-10 在 CN 网络实测可用
+            // 2026-10 在 CN 网络实测可用；jsDelivr 为 CDN 备源
             "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb",
+            "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geoip.metadb",
             "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb",
         ],
     ),
     (
         "geosite.dat",
         false, // 尽力而为：仅当规则用到 GEOSITE 时内核才需要
+        500_000,
         &[
             "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat",
+            "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geosite.dat",
             "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat",
         ],
     ),
 ];
-
-const GEO_MIN_BYTES: u64 = 1_000_000;
 
 /// 确保内核工作目录里有可用的 geo 数据文件；缺失/过小时逐镜像下载。
 fn ensure_geo_files(work_dir: &std::path::Path) -> Result<(), String> {
@@ -1310,12 +1312,14 @@ fn ensure_geo_files(work_dir: &std::path::Path) -> Result<(), String> {
 
 fn ensure_geo_files_with(
     work_dir: &std::path::Path,
-    files: &[(&str, bool, &[&str])],
+    files: &[(&str, bool, u64, &[&str])],
     download: impl Fn(&str, &std::path::Path) -> Result<(), String>,
 ) -> Result<(), String> {
-    for (name, required, _) in files {
+    for (name, required, min_bytes, _) in files {
         let dest = work_dir.join(name);
-        if dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) >= GEO_MIN_BYTES {
+        // 已存在的文件也要过健全性检查：弱网截断的残片（≥旧阈值但内容不完整）
+        // 会让内核报「MMDB invalid」并进入自身下载死循环——实测踩坑（新用户首启）。
+        if dest.exists() && geo_file_ok(name, &dest, *min_bytes) {
             continue;
         }
         match download(name, &dest) {
@@ -1329,20 +1333,54 @@ fn ensure_geo_files_with(
                     &format!("{name} download failed (non-fatal): {e}"),
                 );
             }
-            Err(e) => return Err(format!("{name}: {e}")),
+            Err(e) => {
+                return Err(format!(
+                    "{name}: {e}。若多次失败：可临时用手机热点完成首次下载，或从其他可用设备复制该文件到 runtime 目录"
+                ))
+            }
         }
     }
     Ok(())
 }
 
-/// 依次尝试 GeoFiles 里该文件的镜像源；下载后做最小健全性检查（大小 + metadb 头）。
+/// 下载/已存文件的健全性检查：大小下限；metadb 额外要求文件尾部存在
+/// MMDB metadata 标志串（\xab\xcd\xef"MaxMind.com"）——弱网中断的截断残片
+/// 会丢失尾部标志，这正是内核报「MMDB invalid」并进入自身下载死循环的
+/// 形态（新用户首启实测踩坑）。
+fn geo_file_ok(name: &str, path: &std::path::Path, min_bytes: u64) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if meta.len() < min_bytes {
+        return false;
+    }
+    if !name.ends_with("metadb") {
+        return true; // geosite.dat：protobuf 容器，无可靠尾部标志，靠大小下限
+    }
+    const MARKER: &[u8] = b"\xab\xcd\xefMaxMind.com";
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    use std::io::{Read, Seek, SeekFrom};
+    let start = meta.len().saturating_sub(64 * 1024);
+    if f.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let mut buf = Vec::with_capacity((meta.len() - start) as usize);
+    if f.read_to_end(&mut buf).is_err() {
+        return false;
+    }
+    buf.windows(MARKER.len()).any(|w| w == MARKER)
+}
+
+/// 依次尝试 GeoFiles 里该文件的镜像源；下载后做健全性检查（大小 + metadb 尾部标志）。
 fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
-    let urls = GEO_FILES
+    let (urls, min_bytes) = GEO_FILES
         .iter()
-        .find(|(n, _, _)| *n == name)
-        .map(|(_, _, urls)| *urls)
+        .find(|(n, _, _, _)| *n == name)
+        .map(|(_, _, min, urls)| (*urls, *min))
         .ok_or_else(|| format!("unknown geo file {name}"))?;
-    fetch_first_ok(name, urls, dest, GEO_MIN_BYTES)
+    fetch_first_ok(name, urls, dest, min_bytes)
 }
 
 /// 依次尝试镜像源下载；下载后做最小健全性检查（大小下限；metadb 另查文件头）。
@@ -1377,15 +1415,7 @@ fn fetch_first_ok(
                     let _ = std::fs::remove_file(&tmp);
                     continue;
                 }
-                // 健全性检查：足够大，且 metadb 头为 00 00 01 xx
-                let ok_size = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= min_bytes;
-                let head_ok = name.ends_with("metadb") && {
-                    let mut head = [0u8; 2];
-                    std::fs::File::open(&tmp)
-                        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head))
-                        .is_ok_and(|_| head[0] == 0 && head[1] == 0)
-                } || !name.ends_with("metadb");
-                if !ok_size || !head_ok {
+                if !geo_file_ok(name, &tmp, min_bytes) {
                     last_err = format!("{url}: downloaded file failed sanity check");
                     let _ = std::fs::remove_file(&tmp);
                     continue;
@@ -1462,6 +1492,33 @@ pub fn free_port() -> Option<u16> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::*;
+
+    #[test]
+    fn geo_file_ok_rejects_truncated_metadb() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("geoip.metadb");
+        // ≥4MB 但无尾部标志：模拟弱网截断残片（旧校验会放行，内核必拒）
+        std::fs::write(&p, vec![0u8; 5_000_000]).unwrap();
+        assert!(!geo_file_ok("geoip.metadb", &p, 4_000_000));
+        // 带尾部标志的真文件形态
+        let mut good = vec![0u8; 5_000_000];
+        good.extend_from_slice(b"\xab\xcd\xefMaxMind.com");
+        std::fs::write(&p, good).unwrap();
+        assert!(geo_file_ok("geoip.metadb", &p, 4_000_000));
+        // 过小直接拒
+        std::fs::write(&p, vec![0u8; 1000]).unwrap();
+        assert!(!geo_file_ok("geoip.metadb", &p, 4_000_000));
+    }
+
+    #[test]
+    fn geo_file_ok_non_metadb_size_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("geosite.dat");
+        std::fs::write(&p, vec![7u8; 600_000]).unwrap();
+        assert!(geo_file_ok("geosite.dat", &p, 500_000));
+    }
+
     /// 供其他模块的真内核测试取空闲混合端口（默认 7897 真机上常被占）。
     pub(crate) fn tests_free_port() -> u16 {
         free_port().unwrap()
