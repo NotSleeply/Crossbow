@@ -183,6 +183,7 @@ export const ipc = {
   updateStartDownload: () => invoke<void>("update_start_download"),
   updateInstall: () => invoke<void>("update_install"),
   coexistDetect: () => invoke<CoexistFinding[]>("coexist_detect"),
+  dismissNotification: (id: string) => invoke<void>("notification_dismiss", { id }),
   onGoto: (cb: (page: string) => void) =>
     listen<string>("ui://goto", (e) => cb(parsePayload<string>(e.payload))),
 

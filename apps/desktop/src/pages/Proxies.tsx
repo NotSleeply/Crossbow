@@ -73,7 +73,7 @@ export default function ProxiesPage() {
           ));
         } finally {
           finished++;
-          notify.publish({ kind: "progress", source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
+          notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
           setTestingNodes((current) => {
             const next = new Set(current);
             next.delete(nodeTestKey(name, node.name));
@@ -88,9 +88,42 @@ export default function ProxiesPage() {
         { length: Math.min(10, group.nodes.length) },
         () => worker(),
       ));
-      notify.publish({ kind: failed ? "warning" : "success", source: operationId, operationId, title: t("proxies.testAll"), description: `${name} · ${group.nodes.length - failed}/${group.nodes.length} OK` });
     } finally {
+      // 完成不发结果卡：原位更新即反馈，进度卡一并关闭
+      void ipc.dismissNotification(operationId).catch(() => {});
       setTesting(null);
+    }
+  };
+
+  const testNode = async (group: string, node: string) => {
+    const key = nodeTestKey(group, node);
+    if (testingNodes.has(key) || testing) return;
+    setTestingNodes((current) => new Set([...current, key]));
+    try {
+      const delay = await ipc.testNodeDelay(node);
+      setGroups((current) => current.map((g) =>
+        g.name !== group ? g : {
+          ...g,
+          nodes: g.nodes.map((n) => n.name === node
+            ? { ...n, delay_ms: delay, alive: delay > 0 }
+            : n),
+        },
+      ));
+    } catch {
+      setGroups((current) => current.map((g) =>
+        g.name !== group ? g : {
+          ...g,
+          nodes: g.nodes.map((n) => n.name === node
+            ? { ...n, delay_ms: 0, alive: false }
+            : n),
+        },
+      ));
+    } finally {
+      setTestingNodes((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -139,6 +172,7 @@ export default function ProxiesPage() {
             testingNodes={testingNodes}
             selecting={selecting}
             onTest={() => testGroup(g.name)}
+            onTestNode={(n) => testNode(g.name, n)}
             onSelect={(n) => select(g.name, n)}
           />
         ))
@@ -154,6 +188,7 @@ function GroupCard({
   testingNodes,
   selecting,
   onTest,
+  onTestNode,
   onSelect,
 }: {
   group: GroupView;
@@ -162,6 +197,7 @@ function GroupCard({
   testingNodes: Set<string>;
   selecting: string | null;
   onTest: () => void;
+  onTestNode: (node: string) => void;
   onSelect: (node: string) => void;
 }) {
   const t = useT();
@@ -193,11 +229,18 @@ function GroupCard({
           const cls = delayClass(n.delay_ms);
           const nodeTesting = testingNodes.has(nodeTestKey(group.name, n.name));
           return (
-            <button
+            <div
               key={n.name}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(n.name)}
-              disabled={selecting === `${group.name}:${n.name}`}
-              className="rounded-[10px] px-3 py-2.5 text-left disabled:opacity-60"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onSelect(n.name);
+              }}
+              aria-disabled={selecting === `${group.name}:${n.name}`}
+              className={`rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
+                selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
+              } hover:border-[var(--cb-accent-line)]`}
               style={{
                 border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
                 background: sel
@@ -210,35 +253,45 @@ function GroupCard({
                 {n.name}
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
-                {nodeTesting ? (
-                  <svg
-                    className="h-3 w-3 flex-none animate-spin"
-                    viewBox="0 0 24 24" fill="none" stroke="var(--cb-accent)" strokeWidth="2"
-                    aria-label={t("proxies.testing")}
-                  >
-                    <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
-                  </svg>
-                ) : <i
-                  className="h-[5px] w-[5px] flex-none rounded-full"
-                  style={{
-                    background:
-                      n.delay_ms == null
-                        ? "var(--cb-faint)"
-                        : cls === "g"
-                          ? "var(--cb-ok)"
-                          : cls === "y"
-                            ? "var(--cb-warn)"
-                            : "var(--cb-bad)",
+                <button
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  title={t("proxies.testNode")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTestNode(n.name);
                   }}
-                />}
-                <span
-                  className="cb-mono text-[10.5px]"
-                  style={{ color: nodeTesting ? "var(--cb-accent)" : "var(--cb-text-dim)" }}
+                  disabled={nodeTesting}
                 >
-                  {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
-                </span>
+                  {nodeTesting ? (
+                    <svg
+                      className="h-3 w-3 flex-none animate-spin"
+                      viewBox="0 0 24 24" fill="none" stroke="var(--cb-accent)" strokeWidth="2"
+                      aria-label={t("proxies.testing")}
+                    >
+                      <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+                    </svg>
+                  ) : <i
+                    className="h-[5px] w-[5px] flex-none rounded-full"
+                    style={{
+                      background:
+                        n.delay_ms == null
+                          ? "var(--cb-faint)"
+                          : cls === "g"
+                            ? "var(--cb-ok)"
+                            : cls === "y"
+                              ? "var(--cb-warn)"
+                              : "var(--cb-bad)",
+                    }}
+                  />}
+                  <span
+                    className="cb-mono text-[10.5px] hover:text-[var(--cb-accent)]"
+                    style={{ color: nodeTesting ? "var(--cb-accent)" : "var(--cb-text-dim)" }}
+                  >
+                    {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
+                  </span>
+                </button>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
