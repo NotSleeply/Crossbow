@@ -37,7 +37,7 @@ function Hero() {
         </span>
       </h1>
       <p style={{ color: "var(--dim)", fontSize: 17, maxWidth: 560, margin: "0 auto 34px" }}>
-        Crossbow 为 macOS 和 Windows 提供 mihomo / sing-box 双内核、系统代理与 TUN 模式。
+        Crossbow 为 macOS 和 Windows 提供 mihomo / sing-box 双内核与系统代理；macOS 还支持 TUN 模式。
         订阅管理、节点测速和网络诊断集中在一个界面，菜单栏随时查看实时速率。
       </p>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
@@ -201,7 +201,7 @@ function Steps() {
           <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>03</div>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>一键开启</h3>
           <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            选择节点，在首页开启系统代理；需要接管不读取系统代理的应用时，可到设置中开启 TUN。
+            选择节点，在首页开启系统代理；macOS 需要接管不读取系统代理的应用时，可到设置中开启 TUN。
           </p>
         </div>
       </div>
@@ -268,7 +268,7 @@ const FAQS = [
   },
   {
     q: "有 Windows / iOS 版本吗？",
-    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收。iOS 目前为工程骨架。</>,
+    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收，Windows TUN 目前尚未开放。iOS 目前为工程骨架。</>,
   },
   {
     q: "升级会丢配置吗？",
