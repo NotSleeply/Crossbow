@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { currentLang, initLang, useT } from "../i18n";
+import { ProgressRing } from "../components/ProgressRing";
 import { ipc } from "../ipc";
 import { notificationText as text, type Notification, type NotificationSnapshot } from "./service";
 import "./notifications.css";
@@ -69,12 +70,10 @@ function NotificationViewport() {
 }
 
 function StatusIcon({ kind }: { kind: Notification["kind"] }) {
-  return <svg viewBox="0 0 24 24" className={`cb-notification-icon ${kind === "progress" ? "spinning" : ""}`}
+  return <svg viewBox="0 0 24 24" className="cb-notification-icon"
     fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {kind === "progress" ? <path d="M21 12a9 9 0 1 1-9-9" /> : <>
-      <circle cx="12" cy="12" r="9" />
-      {kind === "success" ? <path d="m8 12 3 3 5-6" /> : kind === "error" ? <path d="m9 9 6 6m0-6-6 6" /> : <path d="M12 8v5m0 3h.01" />}
-    </>}
+    <circle cx="12" cy="12" r="9" />
+    {kind === "success" ? <path d="m8 12 3 3 5-6" /> : kind === "error" ? <path d="m9 9 6 6m0-6-6 6" /> : <path d="M12 8v5m0 3h.01" />}
   </svg>;
 }
 function NotificationCard({ notice, history = false, inert = false, leaving = false }: { notice: Notification; history?: boolean; inert?: boolean; leaving?: boolean }) {
@@ -92,17 +91,25 @@ function NotificationCard({ notice, history = false, inert = false, leaving = fa
   const title = notice.title || text(notice.code || notice.kind);
   const description = notice.description ? (notice.code === "core.install" ? text(`stage.${notice.description}`) : notice.description) : (notice.kind === "error" ? text("failedHint") : notice.code === "core.safeMode" ? text("safeMode.hint") : notice.code === "tun.disabled" ? text("tun.disabled.hint") : "");
   const detailsId = `notice-details-${notice.id}`;
+  const progressing = notice.kind === "progress";
+  const percent = notice.progress !== null && Number.isFinite(notice.progress)
+    ? Math.round(Math.min(100, Math.max(0, notice.progress))) : null;
+  const progressDescription = description || (notice.code === "update.download" ? text("update.connecting")
+    : notice.code === "update.verifying" ? text("update.verifying.hint") : "");
   return <article className={`cb-notification ${notice.kind} ${history ? "history" : ""} ${leaving ? "cb-notification-leaving" : ""}`} aria-hidden={inert || undefined}
     onMouseEnter={() => { hover.current = true; pause(); }} onMouseLeave={() => { hover.current = false; pause(); }}
     onFocus={() => { focused.current = true; pause(); }}
     onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { focused.current = false; pause(); } }}>
-    <StatusIcon kind={notice.kind} />
+    {progressing ? <ProgressRing value={notice.progress} label={title} /> : <StatusIcon kind={notice.kind} />}
     <div className="cb-notification-body">
       <div role={history || inert ? undefined : notice.kind === "error" ? "alert" : "status"} aria-atomic="true">
-        <div className="cb-notification-title">{title}{notice.count > 1 && <span className="cb-notification-count">×{notice.count}</span>}</div>
-        {description && <p className="cb-selectable">{description}</p>}
+        <div className="cb-notification-heading">
+          <div className="cb-notification-title">{title}{notice.count > 1 && <span className="cb-notification-count">×{notice.count}</span>}</div>
+          {progressing && percent !== null && <span className="cb-notification-percent" aria-hidden="true">{percent}<span>%</span></span>}
+        </div>
+        {!progressing && description && <p className="cb-selectable">{description}</p>}
       </div>
-      {notice.kind === "progress" && notice.progress !== null && <progress max="100" value={notice.progress} aria-label={title} />}
+      {progressing && progressDescription && <p className="cb-selectable cb-notification-transfer">{progressDescription}</p>}
       <div className="cb-notification-actions">
         {notice.details && <button aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)} tabIndex={inert ? -1 : undefined}>{text("details")}</button>}
         {notice.actions.map((action) => <button key={action} tabIndex={inert ? -1 : undefined} onClick={() => void invoke("notification_action", { action }).catch(console.error)}>{text(action)}</button>)}

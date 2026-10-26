@@ -152,6 +152,7 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "没有待下载的更新".to_string())?;
 
     let h = app.clone();
+    let finished = app.clone();
     let mut downloaded: u64 = 0;
     let mut last_notice = std::time::Instant::now() - Duration::from_secs(1);
     let bytes = tauri::async_runtime::block_on(update.download(
@@ -170,6 +171,19 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
                     last_notice = std::time::Instant::now();
                     let mut notice =
                         Notice::new(Kind::Progress, "update.download", "update-download");
+                    let format_size = |bytes: u64| {
+                        if bytes >= 1_000_000 {
+                            format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+                        } else {
+                            format!("{:.0} KB", bytes as f64 / 1_000.0)
+                        }
+                    };
+                    notice.description = match total.filter(|size| *size > 0) {
+                        Some(size) => {
+                            format!("{} / {}", format_size(downloaded), format_size(size))
+                        }
+                        None => format_size(downloaded),
+                    };
                     notice.progress = total
                         .filter(|size| *size > 0)
                         .map(|size| downloaded as f64 / size as f64 * 100.0);
@@ -177,7 +191,12 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
                 }
             }
         },
-        || {},
+        move || {
+            notifications::publish(
+                &finished,
+                Notice::new(Kind::Progress, "update.verifying", "update-download"),
+            );
+        },
     ))
     .map_err(|e| e.to_string())?;
     if let Ok(mut b) = DOWNLOADED.lock() {

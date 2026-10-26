@@ -1,3 +1,4 @@
+import { ProgressRing } from "./ProgressRing";
 import { Icon } from "./Icon";
 import { useT } from "../i18n";
 import type { UpdateState } from "../ipc";
@@ -19,7 +20,7 @@ export function UpdateBanner({ update, onOpen }: { update: UpdateState; onOpen: 
   return (
     <button className="cb-update-banner" type="button" onClick={onOpen}>
       <span className="cb-update-icon" aria-hidden="true">
-        <Icon name={update.downloaded ? "check" : "download"} size={16} />
+        {downloading ? <ProgressRing value={percent} label={title} size={22} /> : <Icon name={update.downloaded ? "check" : "download"} size={16} />}
       </span>
       <span className="cb-update-content">
         <span className="cb-update-title">{title}</span>
@@ -29,9 +30,6 @@ export function UpdateBanner({ update, onOpen }: { update: UpdateState; onOpen: 
       <span className="cb-update-action">
         {action}<span aria-hidden="true"><Icon name="arrow-right" size={14} /></span>
       </span>
-      {downloading && (
-        <progress className="cb-update-progress" max={100} value={percent ?? undefined} aria-label={title} />
-      )}
     </button>
   );
 }

@@ -12,13 +12,15 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, DeclaredClass, MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::NSAppearanceCustomization as _;
 use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
 use objc2_app_kit::{
-    NSApplication, NSBaselineOffsetAttributeName, NSColor, NSEvent, NSFont, NSFontAttributeName,
-    NSFontWeightMedium, NSFontWeightRegular, NSForegroundColorAttributeName, NSImageView,
-    NSLineBreakMode, NSMenu, NSMenuDelegate, NSMenuDidBeginTrackingNotification, NSMenuItem,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem,
-    NSTextAlignment, NSTextField, NSView,
+    NSAppearance, NSAppearanceNameDarkAqua, NSApplication, NSBaselineOffsetAttributeName, NSColor,
+    NSControlSize, NSEvent, NSFont, NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
+    NSForegroundColorAttributeName, NSImageView, NSLineBreakMode, NSMenu, NSMenuDelegate,
+    NSMenuDidBeginTrackingNotification, NSMenuItem, NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName, NSProgressIndicator, NSProgressIndicatorStyle,
+    NSStatusBarButton, NSStatusItem, NSTextAlignment, NSTextField, NSView,
 };
 use objc2_foundation::{
     NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotification, NSNotificationCenter,
@@ -282,6 +284,7 @@ const ROW_VIEW_NAME_TAG: isize = 101;
 const ROW_VIEW_CHECK_TAG: isize = 102;
 const ROW_VIEW_BADGE_TAG: isize = 103;
 const ROW_VIEW_CURRENT_TAG: isize = 107;
+const LATENCY_COLUMN_WIDTH: f64 = 50.0;
 const CHECK_ROW_VIEW_CHECK_TAG: isize = 108;
 const CHECK_ROW_VIEW_LABEL_TAG: isize = 109;
 const ACTION_ROW_VIEW_LABEL_TAG: isize = 104;
@@ -305,6 +308,14 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayNodeRowView {}
 
     impl TrayNodeRowView {
+        #[unsafe(method(viewDidMoveToWindow))]
+        fn view_did_move_to_window(&self) {
+            unsafe { let _: () = msg_send![super(self), viewDidMoveToWindow]; }
+            let pending = self.window().is_some() && self.viewWithTag(ROW_VIEW_BADGE_TAG)
+                .is_some_and(|badge| badge.isHidden());
+            set_node_spinner_running(self, pending);
+        }
+
         #[unsafe(method(mouseDown:))]
         fn on_mouse_down(&self, _event: &NSEvent) {
             let Some(item) = self.enclosingMenuItem() else { return };
@@ -534,10 +545,23 @@ fn make_node_row_view(mtm: MainThreadMarker) -> Retained<TrayNodeRowView> {
         }
     }
 
+    let spinner: Retained<NSProgressIndicator> =
+        unsafe { msg_send![NSProgressIndicator::alloc(mtm), initWithFrame: frame] };
+    spinner.setStyle(NSProgressIndicatorStyle::Spinning);
+    spinner.setControlSize(NSControlSize::Small);
+    spinner.setIndeterminate(true);
+    spinner.setDisplayedWhenStopped(false);
+    // Menu tracking uses a separate run-loop mode; let AppKit animate independently.
+    unsafe {
+        spinner.setUsesThreadedAnimation(true);
+    }
+    spinner.setHidden(true);
+
     view.addSubview(&check);
     view.addSubview(&name);
     view.addSubview(&current);
     view.addSubview(&badge);
+    view.addSubview(&spinner);
     view
 }
 
@@ -573,9 +597,14 @@ fn update_node_row_view(
         return;
     };
 
+    let Some(spinner) = node_spinner(view) else {
+        return;
+    };
     let badge_text_width = set_badge_text(&badge, &row.badge);
-    let badge_width = (badge_text_width + 9.0).max(26.0);
-    let badge_x = menu_width - badge_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
+    let badge_width = (badge_text_width + 9.0).clamp(26.0, LATENCY_COLUMN_WIDTH);
+    let column_right = menu_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
+    let column_left = column_right - LATENCY_COLUMN_WIDTH;
+    let badge_x = column_right - badge_width;
     let current_text = row
         .current_node
         .as_ref()
@@ -583,7 +612,7 @@ fn update_node_row_view(
     let name_width = if current_text.is_some() {
         (display_width(&row.label) as f64 * 5.8 + 4.0).clamp(66.0, 88.0)
     } else {
-        (badge_x - 38.0).max(50.0)
+        (column_left - 38.0).max(50.0)
     };
     let spaced_name = format_flag_spacing(&row.label);
     let display_name = truncate_display_name(&spaced_name, name_width);
@@ -596,7 +625,7 @@ fn update_node_row_view(
     ));
     if let Some(current_text) = current_text {
         let current_x = 26.0 + name_width + 4.0;
-        let current_width = (badge_x - current_x - 5.0).max(0.0);
+        let current_width = (column_left - current_x - 5.0).max(0.0);
         set_menu_label_text_with_offset(
             &current,
             &truncate_display_name_with_unit(&current_text, current_width, 5.2),
@@ -618,6 +647,22 @@ fn update_node_row_view(
         objc2_foundation::NSPoint::new(badge_x, 3.5),
         objc2_foundation::NSSize::new(badge_width, 16.0),
     ));
+    badge.setHidden(row.pending);
+    // Keep a fixed latency column so switching from spinner to badge never shifts labels.
+    spinner.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(column_right - 14.0, (NODE_ROW_HEIGHT - 14.0) / 2.0),
+        objc2_foundation::NSSize::new(14.0, 14.0),
+    ));
+    let testing_label = NSString::from_str(if row.current_label == "当前" {
+        "测速中…"
+    } else {
+        "Testing…"
+    });
+    spinner.setToolTip(Some(&testing_label));
+    unsafe {
+        let _: () = msg_send![&*spinner, setAccessibilityLabel: &*testing_label];
+    }
+    set_node_spinner_running(view, row.pending && view.window().is_some());
     let color = delay_color(ms, &row.badge);
     if let Some(layer) = layer_for(&badge) {
         let cg_color = color.CGColor();
@@ -628,6 +673,30 @@ fn update_node_row_view(
         }
     }
     let _ = mtm;
+}
+
+// The spinner is the last child created by make_node_row_view (like the first
+// child reserved for the hover background); NSProgressIndicator has no setTag.
+fn node_spinner(view: &NSView) -> Option<Retained<NSProgressIndicator>> {
+    view.subviews()
+        .lastObject()?
+        .downcast::<NSProgressIndicator>()
+        .ok()
+}
+
+fn set_node_spinner_running(view: &NSView, running: bool) {
+    let Some(spinner) = node_spinner(view) else {
+        return;
+    };
+    unsafe {
+        if running {
+            spinner.setHidden(false);
+            spinner.startAnimation(None);
+        } else {
+            spinner.stopAnimation(None);
+            spinner.setHidden(true);
+        }
+    }
 }
 
 fn add_hover_background(view: &NSView, width: f64, height: f64, mtm: MainThreadMarker) {
@@ -685,6 +754,16 @@ fn set_row_hovered(view: &NSView, hovered: bool, label_tags: &[isize]) {
     } else {
         NSColor::labelColor()
     };
+    if let Some(spinner) = node_spinner(view) {
+        // Custom menu highlights do not automatically switch a child's appearance.
+        // Dark Aqua gives the native spinner a light glyph on the blue hover row.
+        let appearance = if hovered {
+            unsafe { NSAppearance::appearanceNamed(NSAppearanceNameDarkAqua) }
+        } else {
+            None
+        };
+        spinner.setAppearance(appearance.as_deref());
+    }
     for tag in label_tags {
         if let Some(label) = view.viewWithTag(*tag) {
             if let Ok(label) = label.clone().downcast::<NSTextField>() {
@@ -753,6 +832,25 @@ define_class!(
     unsafe impl NSObjectProtocol for TrayMenuObserver {}
 
     unsafe impl NSMenuDelegate for TrayMenuObserver {
+        #[unsafe(method(menuWillOpen:))]
+        fn menu_will_open(&self, menu: &NSMenu) {
+            for index in 0..menu.numberOfItems() {
+                if let Some(view) = menu.itemAtIndex(index).and_then(|item| item.view()) {
+                    let pending = view.viewWithTag(ROW_VIEW_BADGE_TAG).is_some_and(|badge| badge.isHidden());
+                    set_node_spinner_running(&view, pending);
+                }
+            }
+        }
+
+        #[unsafe(method(menuDidClose:))]
+        fn menu_did_close(&self, menu: &NSMenu) {
+            for index in 0..menu.numberOfItems() {
+                if let Some(view) = menu.itemAtIndex(index).and_then(|item| item.view()) {
+                    set_node_spinner_running(&view, false);
+                }
+            }
+        }
+
         #[unsafe(method(menu:willHighlightItem:))]
         #[allow(non_snake_case)]
         fn menu_willHighlightItem(&self, menu: &NSMenu, highlighted: Option<&NSMenuItem>) {
