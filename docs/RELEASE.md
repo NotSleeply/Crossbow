@@ -4,7 +4,7 @@
 
 正式产物统一由 `.github/workflows/release.yml` 生成，继续使用 Tauri 的 Developer ID 签名、公证与更新器。`scripts/release-macos.sh` 仅校验或调用此流程，不再本地重新签名后上传旧的更新归档。
 
-1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 的两个 Crossbow package、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
+1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 中所有 Crossbow workspace package（包括服务包）、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
 2. 离线校验（Python 3.11+）：
    ```bash
    VERSION=vX.Y.Z bash scripts/release-macos.sh --check
