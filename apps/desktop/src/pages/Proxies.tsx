@@ -1,5 +1,5 @@
 import { notify } from "../notifications/service";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type GroupView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
@@ -12,6 +12,8 @@ export default function ProxiesPage() {
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
+  const batchInFlight = useRef(false);
+  const singleInFlight = useRef(new Set<string>());
   const [selecting, setSelecting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -32,15 +34,15 @@ export default function ProxiesPage() {
   }, [load]);
 
   const testGroup = async (name: string) => {
-    if (testing) return;
+    if (batchInFlight.current || singleInFlight.current.size > 0) return;
     const group = groups.find((g) => g.name === name);
     if (!group) return;
 
+    batchInFlight.current = true;
     setTesting(name);
-    const operationId = `latency-${name}`;
-    notify.start(operationId, t("proxies.testing"), name);
+    const operationId = `latency-${crypto.randomUUID()}`;
+    notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: name });
     let finished = 0;
-    let failed = 0;
     setTestingNodes((current) => new Set([
       ...current,
       ...group.nodes.map((node) => nodeTestKey(name, node.name)),
@@ -52,7 +54,6 @@ export default function ProxiesPage() {
         const node = group.nodes[nextIndex++];
         try {
           const delay = await ipc.testNodeDelay(node.name);
-          if (delay === 0) failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
@@ -62,7 +63,6 @@ export default function ProxiesPage() {
             },
           ));
         } catch {
-          failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
@@ -90,14 +90,16 @@ export default function ProxiesPage() {
       ));
     } finally {
       // 完成不发结果卡：原位更新即反馈，进度卡一并关闭
-      void ipc.dismissNotification(operationId).catch(() => {});
+      await notify.dismiss(operationId);
+      batchInFlight.current = false;
       setTesting(null);
     }
   };
 
   const testNode = async (group: string, node: string) => {
     const key = nodeTestKey(group, node);
-    if (testingNodes.has(key) || testing) return;
+    if (singleInFlight.current.has(key) || batchInFlight.current) return;
+    singleInFlight.current.add(key);
     setTestingNodes((current) => new Set([...current, key]));
     try {
       const delay = await ipc.testNodeDelay(node);
@@ -119,6 +121,7 @@ export default function ProxiesPage() {
         },
       ));
     } finally {
+      singleInFlight.current.delete(key);
       setTestingNodes((current) => {
         const next = new Set(current);
         next.delete(key);
@@ -168,7 +171,7 @@ export default function ProxiesPage() {
             key={g.name}
             group={g}
             testing={testing === g.name}
-            busy={testing !== null}
+            busy={testing !== null || testingNodes.size > 0}
             testingNodes={testingNodes}
             selecting={selecting}
             onTest={() => testGroup(g.name)}
@@ -231,16 +234,9 @@ function GroupCard({
           return (
             <div
               key={n.name}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(n.name)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") onSelect(n.name);
-              }}
-              aria-disabled={selecting === `${group.name}:${n.name}`}
-              className={`rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
+              className={`relative rounded-[10px] px-3 py-2.5 text-left transition-colors ${
                 selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
-              } hover:border-[var(--cb-accent-line)]`}
+              }`}
               style={{
                 border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
                 background: sel
@@ -249,18 +245,27 @@ function GroupCard({
               }}
               title={n.kind}
             >
-              <div className="truncate text-[12px] font-medium" title={n.name}>
+              <button
+                type="button"
+                className="absolute inset-0 rounded-[10px] border-0 bg-transparent"
+                aria-label={n.name}
+                aria-pressed={sel}
+                disabled={selecting === `${group.name}:${n.name}`}
+                onClick={() => onSelect(n.name)}
+              />
+              <div className="pointer-events-none truncate text-[12px] font-medium" title={n.name}>
                 {n.name}
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <button
-                  className="flex items-center gap-1.5 cursor-pointer"
+                  className="relative z-10 flex items-center gap-1.5 cursor-pointer"
                   title={t("proxies.testNode")}
+                  aria-label={`${t("proxies.testNode")} ${n.name}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onTestNode(n.name);
                   }}
-                  disabled={nodeTesting}
+                  disabled={nodeTesting || busy}
                 >
                   {nodeTesting ? (
                     <svg
