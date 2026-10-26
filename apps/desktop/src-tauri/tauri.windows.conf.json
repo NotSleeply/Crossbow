@@ -5,6 +5,18 @@
     "windows": {
       "nsis": {
         "installerHooks": "./windows/installer-hooks.nsh"
+      },
+      "digestAlgorithm": "sha256",
+      "signCommand": {
+        "cmd": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "windows\\sign_windows.ps1",
+          "%1"
+        ]
       }
     }
   }
