@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/crossbow-core",
     "apps/desktop/src-tauri",
+    "apps/service",
 ]
 
 [workspace.package]

@@ -105,6 +105,12 @@ jobs:
         shell: pwsh
         run: python scripts/ci/download_sidecar.py x86_64-pc-windows-msvc
 
+      - name: Build crossbow-service sidecar
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
+          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
+
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 

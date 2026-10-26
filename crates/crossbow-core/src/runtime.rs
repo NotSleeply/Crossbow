@@ -70,6 +70,9 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         let mut tun = Mapping::new();
         tun.insert(Value::from("enable"), Value::from(true));
         tun.insert(Value::from("stack"), Value::from("gvisor"));
+        // Windows：固定 wintun 设备名，共存检测以 Crossbow 排除自家适配器（#81/#82）
+        #[cfg(target_os = "windows")]
+        tun.insert(Value::from("device"), Value::from("Crossbow"));
         tun.insert(Value::from("auto-route"), Value::from(true));
         tun.insert(Value::from("auto-redirect"), Value::from(true));
         tun.insert(Value::from("auto-detect-interface"), Value::from(true));

@@ -96,6 +96,13 @@ jobs:
       - name: Download and verify mihomo sidecar
         run: python scripts/ci/download_sidecar.py ${{ matrix.target }}
 
+      - name: Build crossbow-service sidecar
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
+          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
+
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 

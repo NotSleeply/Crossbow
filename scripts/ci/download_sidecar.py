@@ -16,6 +16,9 @@ ASSETS = {
     'x86_64-pc-windows-msvc': ('mihomo-windows-amd64-v1.19.32.zip',
         '1ac84e795b5b915446e20139677fb6cc013a0778e876e8d4c96f994750b4c4a3'),
 }
+# wintun 0.14.1（wintun.net 官方构建，#81）：本机下载实测 SHA-256；
+# Windows TUN 依赖 wintun.dll 与内核同目录（tauri.windows.conf.json 随包分发）。
+WINTUN_ZIP_SHA256 = '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -56,6 +59,21 @@ def main():
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(binary)
     destination.chmod(0o755)
+    print(f'Verified sidecar: {destination.name}')
+    if target == 'x86_64-pc-windows-msvc':
+        fetch_wintun(destination.parent)
+
+
+def fetch_wintun(binaries: Path) -> None:
+    """wintun.dll（#81）：随包分发，安装后与 mihomo 内核同目录。"""
+    url = 'https://www.wintun.net/builds/wintun-0.14.1.zip'
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read()
+    verify(data, WINTUN_ZIP_SHA256)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        dll = archive.read('wintun/bin/amd64/wintun.dll')
+    destination = binaries / 'wintun.dll'
+    destination.write_bytes(dll)
     print(f'Verified sidecar: {destination.name}')
 
 
