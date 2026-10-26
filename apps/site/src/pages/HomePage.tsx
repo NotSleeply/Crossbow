@@ -247,7 +247,7 @@ function Download() {
       </div>
       <p style={{ maxWidth: 780, margin: "24px auto 0", color: "var(--dim)", fontSize: 13, textAlign: "center" }}>
         v0.10.1 聚焦 Windows 标题栏主题、后台闪窗、系统代理与日志刷新，并补齐交互反馈。
-        修复的实机效果请按 <a href={`${REPO}/blob/main/docs/WINDOWS-TESTING.md`} target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>Windows 验收步骤</a>检查。
+        同时包含升级重启的内核交接与首页状态同步修复。Windows 的实机效果请按 <a href={`${REPO}/blob/main/docs/WINDOWS-TESTING.md`} target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>Windows 验收步骤</a>检查。
       </p>
     </section>
   );
