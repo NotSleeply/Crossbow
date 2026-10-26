@@ -77,6 +77,21 @@ impl WsHub {
             .is_empty()
     }
 
+    /// 页面 1Hz 通道（traffic/connections）是否有「订阅在但消息停更」的
+    /// 冻结——内核重启换 port/secret 后，旧读线程会在死端口上无限重连，
+    /// 心跳停更即暴露。以 wanted 意图集为准（退订后 active 表项仍在，
+    /// 不看意图会给没人要的通道反复重订）；logs 事件驱动、静默属正常，
+    /// 不参与判定；心跳缺位（None）不判冻结：兼容 Starting 窗口的未订上状态。
+    pub fn any_page_channel_stale(&self, threshold: Duration) -> bool {
+        let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        ["traffic", "connections"].into_iter().any(|name| {
+            wanted.contains(name)
+                && self
+                    .last_message_ago(name)
+                    .is_some_and(|ago| ago >= threshold)
+        })
+    }
+
     /// 指定 channel 距最近一条消息的时长；从未订阅返回 None。
     pub fn last_message_ago(&self, name: &str) -> Option<Duration> {
         self.active
@@ -153,13 +168,13 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
-        self.subscribe("traffic", move |flag, _last_seen| {
+        self.subscribe("traffic", move |flag, last_seen| {
             std::thread::spawn(move || {
                 read_loop(
                     &url,
                     flag,
                     Some(Duration::from_secs(5)),
-                    None,
+                    Some(last_seen),
                     |msg| {
                     if let Message::Text(txt) = msg {
                         // mihomo 原始 {"up":..,"down":..} → 结构化转发
@@ -179,14 +194,14 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
-        self.subscribe("connections", move |flag, _last_seen| {
+        self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
                 read_loop(
                     &url,
                     flag,
                     Some(Duration::from_secs(5)),
-                    None,
+                    Some(last_seen),
                     |msg| {
                     if let Message::Text(txt) = msg {
                         if last_emit.elapsed() < CONN_MIN_INTERVAL {
@@ -530,6 +545,29 @@ pub(crate) mod tests {
             compact_connections(r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#)
                 .unwrap();
         assert_eq!(v["rows"].as_array().unwrap().len(), 0);
+    }
+
+    /// 页面通道心跳与冻结判定：订阅即有心跳；阈值内不算冻结、归零即冻结；
+    /// logs 不参与判定（事件驱动，静默属正常）；退订（wanted 移除）后
+    /// 不再参与判定。#111
+    #[test]
+    fn page_channel_heartbeat_and_staleness() {
+        let hub = WsHub::default();
+        // 心跳缺位（未订阅）不判冻结
+        assert!(!hub.any_page_channel_stale(Duration::from_secs(15)));
+        // 生产入口（lib.rs 订阅命令）先登记意图，再走桥订阅；连不上的
+        // 死端口也要注册心跳（active 表项同步插入）
+        hub.want_channel("traffic");
+        hub.subscribe_traffic(1, "s", |_, _| {}).unwrap();
+        assert!(hub.last_message_ago("traffic").is_some());
+        assert!(!hub.any_page_channel_stale(Duration::from_secs(15)));
+        assert!(hub.any_page_channel_stale(Duration::from_secs(0)));
+        // logs 不参与 1Hz 冻结判定：仅 traffic 冻结仍判冻结
+        hub.subscribe_logs(1, "s", |_, _| {}).unwrap();
+        assert!(hub.any_page_channel_stale(Duration::from_secs(0)));
+        // traffic 退订（wanted 移除）后只剩不参与判定的 logs：不判冻结
+        hub.unsubscribe("traffic");
+        assert!(!hub.any_page_channel_stale(Duration::from_secs(0)));
     }
 
     /// 已知锚点：2024-01-01T00:00:00Z = 1704067200。
