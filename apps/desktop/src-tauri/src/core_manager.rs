@@ -102,18 +102,42 @@ impl Shared {
     }
 
     /// 写轻量交接描述符（port/secret/pid），下次 GUI 启动据此收养。
-    /// 调用方必须已释放 inner 锁（本函数不再加锁）。
-    fn write_descriptor(&self, pid: u32, port: u16, secret: &str) {
-        let j = serde_json::json!({
-            "port": port,
-            "secret": secret,
-            "pid": pid,
-            "binary_path": self.binary_path.display().to_string(),
+    /// 不获取 inner 锁，允许调用方在状态锁内完成原子交接。
+    fn write_descriptor(
+        &self,
+        pid: u32,
+        port: u16,
+        secret: &str,
+        binary: &Path,
+    ) -> Result<(), String> {
+        let record = serde_json::json!({
+            "port": port, "secret": secret, "pid": pid,
+            "binary_path": binary.display().to_string(),
         });
-        let _ = std::fs::write(
-            Self::descriptor_path(&self.work_dir),
-            serde_json::to_vec(&j).unwrap_or_default(),
-        );
+        // A restart must not see a truncated descriptor. Keep credentials private.
+        let temporary = self
+            .work_dir
+            .join(format!(".core-descriptor-{}.tmp", Uuid::new_v4()));
+        let result = (|| {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
+            file.write_all(&serde_json::to_vec(&record).map_err(|e| e.to_string())?)
+                .and_then(|()| file.sync_all())
+                .map_err(|e| e.to_string())?;
+            drop(file);
+            std::fs::rename(&temporary, Self::descriptor_path(&self.work_dir))
+                .map_err(|e| e.to_string())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(temporary);
+        }
+        result
     }
 
     fn notify(&self, status: CoreStatus) {
@@ -177,7 +201,9 @@ impl Shared {
             inner.child = Some(child);
         }
         if let Some((port, secret)) = self.inner.lock().unwrap().controller.clone() {
-            self.write_descriptor(pid, port, &secret);
+            if let Err(error) = self.write_descriptor(pid, port, &secret, &self.binary_path) {
+                eprintln!("could not persist core descriptor: {error}");
+            }
         }
         append_decision(
             &self.work_dir,
@@ -323,7 +349,13 @@ impl CoreManager {
 
     /// 内核二进制路径（诊断与版本查询用）。
     pub fn binary_path(&self) -> PathBuf {
-        self.shared.binary_path.clone()
+        self.shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .external_binary
+            .clone()
+            .unwrap_or_else(|| self.shared.binary_path.clone())
     }
 
     /// 本次启动链的最终配置内容（当前出口解析等用途）；未启动过返回 None。
@@ -543,24 +575,40 @@ impl CoreManager {
         true
     }
 
-    /// 轻量交接：标记 detached 并写描述符（内核继续由系统收养）。
-    pub fn detach(&self) -> Option<u32> {
-        let (pid, port, secret) = {
-            let mut inner = self.shared.inner.lock().unwrap();
-            if inner.status != CoreStatus::Running {
-                return None;
+    /// Persist a complete handoff before detaching. Failure leaves ownership
+    /// intact so an unsuccessful update cannot orphan a live core.
+    pub fn prepare_handoff(&self) -> Result<Option<u32>, String> {
+        let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.status != CoreStatus::Running {
+            if inner.child.is_some() || inner.external_pid.is_some() {
+                return Err("内核尚未就绪，无法安全交接；请稍后重试更新".into());
             }
-            inner.detached = true;
-            let pid = inner
-                .child
-                .as_ref()
-                .map(|c| c.id())
-                .or(inner.external_pid)?;
-            let (port, secret) = inner.controller.clone()?;
-            (pid, port, secret)
-        }; // 锁在此释放
-        self.shared.write_descriptor(pid, port, &secret);
-        Some(pid)
+            return Ok(None);
+        }
+        let pid = inner
+            .child
+            .as_ref()
+            .map(|child| child.id())
+            .or(inner.external_pid)
+            .ok_or("运行中的内核缺少进程信息，无法安全交接")?;
+        let (port, secret) = inner
+            .controller
+            .as_ref()
+            .ok_or("内核缺少控制器信息，无法安全交接")?;
+        let binary = inner
+            .external_binary
+            .as_deref()
+            .unwrap_or(&self.shared.binary_path);
+        self.shared
+            .write_descriptor(pid, *port, secret, binary)
+            .map_err(|error| format!("保存内核交接信息失败：{error}"))?;
+        inner.detached = true;
+        Ok(Some(pid))
+    }
+
+    /// 轻量关窗与自动更新共用同一交接协议。
+    pub fn detach(&self) -> Option<u32> {
+        self.prepare_handoff().ok().flatten()
     }
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
@@ -681,16 +729,22 @@ fn pid_is_alive(_pid: u32) -> bool {
     true // 无身份信息时宁可保留描述，也不把 PID 当作安全目标
 }
 
+/// AppleScript strings use double quotes; shell quotes do not delimit them.
+#[cfg(target_os = "macos")]
+fn privileged_shell_script(command: &str) -> String {
+    format!(
+        "do shell script \"{}\" with administrator privileges",
+        command.replace('\\', "\\\\").replace('"', "\\\"")
+    )
+}
+
 /// root 内核对普通用户 SIGKILL 免疫（EPERM）：SIGKILL 后仍存活时，
 /// 请管理员授权补杀。仅在确有 root 内核残留时才会弹授权框。
 #[cfg(target_os = "macos")]
 fn escalate_admin_kill(pid: u32) {
     let script = format!("kill -9 {pid}");
     let out = std::process::Command::new("osascript")
-        .args([
-            "-e",
-            &format!("do shell script '{script}' with administrator privileges"),
-        ])
+        .args(["-e", &privileged_shell_script(&script)])
         .output();
     if let Err(e) = out {
         eprintln!("admin kill {pid}: osascript failed: {e}");
@@ -714,13 +768,18 @@ fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
         eprintln!("core kill: refusing to signal unverified external pid {pid}");
         return false;
     };
-    let matches = || process_matches_binary(pid, expected);
-    if !matches() {
-        return true; // 已不在
+    // A permissions error is not proof that a privileged process has exited.
+    let gone = || process_matches_binary(pid, expected) == Some(false) || !pid_is_alive(pid);
+    if gone() {
+        return true;
+    }
+    if process_matches_binary(pid, expected) != Some(true) {
+        eprintln!("core kill: cannot verify external process identity; retaining descriptor");
+        return false;
     }
     kill_pid(pid);
     for _ in 0..40 {
-        if !matches() {
+        if gone() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -730,7 +789,7 @@ fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
         escalate_admin_kill(pid);
     }
     for _ in 0..40 {
-        if !matches() {
+        if gone() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -862,7 +921,7 @@ fn escalate_clear_port(port: u16) -> bool {
     let shell = format!(
         "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); killed=0; for p in $pids; do c=$(ps -p $p -o command=); case $c in *com.crossbow.app/tun-binaries/*|*com.richard.crossbow/tun-binaries/*|*/Crossbow.app/Contents/MacOS/mihomo*|*/Crossbow.app/Contents/MacOS/sing-box*) kill -9 $p && killed=1;; esac; done; test $killed -eq 1"
     );
-    let apple = format!("do shell script '{shell}' with administrator privileges");
+    let apple = privileged_shell_script(&shell);
     let out = std::process::Command::new("osascript").arg("-e").arg(apple).output();
     match out {
         Ok(o) if o.status.success() => true,
@@ -919,7 +978,7 @@ fn port_listeners_via_lsof(_port: u16) -> Vec<(u32, String)> {
 }
 
 #[cfg(target_os = "macos")]
-fn process_matches_binary(pid: u32, expected: &Path) -> bool {
+fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
     use std::ffi::CStr;
     use std::os::raw::{c_int, c_void};
 
@@ -937,34 +996,34 @@ fn process_matches_binary(pid: u32, expected: &Path) -> bool {
         )
     };
     if len <= 0 {
-        return false;
+        return None;
     }
     let Ok(actual) = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str() else {
-        return false;
+        return None;
     };
     match (
         std::fs::canonicalize(actual),
         std::fs::canonicalize(expected),
     ) {
-        (Ok(actual), Ok(expected)) => actual == expected,
-        _ => false,
+        (Ok(actual), Ok(expected)) => Some(actual == expected),
+        _ => None,
     }
 }
 
 #[cfg(target_os = "linux")]
-fn process_matches_binary(pid: u32, expected: &Path) -> bool {
+fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
     match (
         std::fs::canonicalize(format!("/proc/{pid}/exe")),
         std::fs::canonicalize(expected),
     ) {
-        (Ok(actual), Ok(expected)) => actual == expected,
-        _ => false,
+        (Ok(actual), Ok(expected)) => Some(actual == expected),
+        _ => None,
     }
 }
 
 #[cfg(target_os = "windows")]
-fn process_matches_binary(pid: u32, expected: &Path) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
+fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION,
@@ -973,14 +1032,18 @@ fn process_matches_binary(pid: u32, expected: &Path) -> bool {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {
-            return false;
+            return if GetLastError() == ERROR_INVALID_PARAMETER {
+                Some(false)
+            } else {
+                None
+            };
         }
         let mut buf = [0_u16; 1024];
         let mut len = buf.len() as u32;
         let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
         CloseHandle(handle);
         if ok == 0 {
-            return false;
+            return None;
         }
         let actual = String::from_utf16_lossy(&buf[..len as usize]);
         // Windows 路径大小写不敏感；canonicalize 失败时退化为不区分大小写的直比
@@ -988,17 +1051,19 @@ fn process_matches_binary(pid: u32, expected: &Path) -> bool {
             std::fs::canonicalize(&actual),
             std::fs::canonicalize(expected),
         ) {
-            (Ok(actual), Ok(expected)) => {
-                actual.as_os_str().eq_ignore_ascii_case(expected.as_os_str())
-            }
-            _ => actual.eq_ignore_ascii_case(&expected.to_string_lossy()),
+            (Ok(actual), Ok(expected)) => Some(
+                actual
+                    .as_os_str()
+                    .eq_ignore_ascii_case(expected.as_os_str()),
+            ),
+            _ => Some(actual.eq_ignore_ascii_case(&expected.to_string_lossy())),
         }
     }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn process_matches_binary(_pid: u32, _expected: &Path) -> bool {
-    false
+fn process_matches_binary(_pid: u32, _expected: &Path) -> Option<bool> {
+    None
 }
 
 impl Shared {
@@ -1011,14 +1076,14 @@ impl Shared {
 /// 收养内核的 pid 监视：每 3 秒做一次二进制路径身份比对，进程消失且
 /// 收养角色未变时上报 Crashed（联动系统代理还原、托盘退订等守护）。
 /// stop()/重新 start() 会先解除收养角色（external_pid 置空/换新），
-/// 监视线程据此静默退场，不会误报。仅 unix——Windows 的身份比对是恒
-/// false 占位，启用会立即误判。
+/// 监视线程据此静默退场，不会误报。身份查询失败时保留存活状态，
+/// 不把权限不足当作退出；独立进程监视目前仅 Unix 启用。
 #[cfg(unix)]
 fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(3));
-        if process_matches_binary(pid, &binary) {
-            continue;
+        if process_matches_binary(pid, &binary) != Some(false) && pid_is_alive(pid) {
+            continue; // Permissions may temporarily prevent inspecting a root core.
         }
         let mut inner = shared.inner.lock().unwrap();
         if inner.stopping || inner.external_pid != Some(pid) {
@@ -1568,10 +1633,11 @@ pub(crate) mod tests {
             inner.external_binary = Some(PathBuf::from("/bin/sleep"));
         }
         let pid = sleeper.id();
-        mgr.stop();
-        std::thread::sleep(Duration::from_millis(400));
-        // SIGKILL 已发出；僵尸态由 Child::wait 回收，回收后 kill -0 必失败
-        let _ = sleeper.wait();
+        // A real adopted core is reaped by its original parent/launchd. Reap
+        // concurrently so an exited zombie is not mistaken for a live core.
+        let reaper = std::thread::spawn(move || sleeper.wait());
+        assert!(mgr.stop());
+        let _ = reaper.join().unwrap();
         assert!(!kill_pid_probe(pid), "external core should be dead");
         assert!(!Shared::descriptor_path(dir.path()).exists());
     }
@@ -1613,6 +1679,145 @@ pub(crate) mod tests {
             .arg("-9")
             .arg(child_pid.to_string())
             .output();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn privileged_scripts_compile_without_executing_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        for (index, command) in ["kill -9 123", "printf '\"quoted\" \\ path'"]
+            .iter()
+            .enumerate()
+        {
+            let script = privileged_shell_script(command);
+            let output = Command::new("/usr/bin/osacompile")
+                .arg("-e")
+                .arg(&script)
+                .arg("-o")
+                .arg(dir.path().join(format!("{index}.scpt")))
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn update_handoff_adopts_and_preserves_actual_binary_across_generations() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut buffer = [0; 2048];
+            let _ = stream.read(&mut buffer).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .unwrap();
+        });
+        let previous = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let pid = sleeper.id();
+        {
+            let mut inner = previous.shared.inner.lock().unwrap();
+            inner.child = Some(sleeper);
+            inner.status = CoreStatus::Running;
+            inner.controller = Some((port, "test-secret".into()));
+        }
+        assert_eq!(previous.prepare_handoff().unwrap(), Some(pid));
+        let replacement = CoreManager::new(PathBuf::from("/bin/false"), dir.path().to_path_buf());
+        assert!(replacement.adopt_external());
+        server.join().unwrap();
+        assert_eq!(replacement.binary_path(), PathBuf::from("/bin/sleep"));
+        assert_eq!(replacement.prepare_handoff().unwrap(), Some(pid));
+        let record = Shared::read_descriptor(dir.path()).unwrap();
+        assert_eq!(record.binary_path, Some(PathBuf::from("/bin/sleep")));
+        assert_eq!(record.pid, pid);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(Shared::descriptor_path(dir.path()))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        let mut child = previous.shared.inner.lock().unwrap().child.take().unwrap();
+        drop(previous);
+        let reaper = std::thread::spawn(move || child.wait());
+        assert!(replacement.stop());
+        let _ = reaper.join().unwrap();
+        assert!(!Shared::descriptor_path(dir.path()).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_handoff_keeps_core_owned() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.child = Some(sleeper);
+            inner.status = CoreStatus::Running;
+            inner.controller = Some((19099, "test-secret".into()));
+        }
+        std::fs::create_dir(Shared::descriptor_path(dir.path())).unwrap();
+        assert!(manager.prepare_handoff().is_err());
+        assert!(!manager.shared.inner.lock().unwrap().detached);
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "failed write must remove temporary files"
+        );
+        assert!(manager.stop());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unknown_live_identity_is_not_reported_as_cleaned() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let missing = dir.path().join("unavailable-identity");
+        manager
+            .shared
+            .write_descriptor(sleeper.id(), 19099, "test-secret", &missing)
+            .unwrap();
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.external_pid = Some(sleeper.id());
+            inner.external_binary = Some(missing);
+            inner.status = CoreStatus::Running;
+        }
+        assert!(!manager.stop());
+        assert!(Shared::descriptor_path(dir.path()).exists());
+        assert!(
+            kill_pid_probe(sleeper.id()),
+            "identity uncertainty must not send a signal"
+        );
+        sleeper.kill().unwrap();
+        sleeper.wait().unwrap();
+        drop(manager);
+    }
+
+    #[test]
+    fn cold_restart_does_not_invent_a_running_core() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(dir.path().join("missing"), dir.path().to_path_buf());
+        assert_eq!(manager.prepare_handoff().unwrap(), None);
+        assert!(!Shared::descriptor_path(dir.path()).exists());
     }
 
     /// 真实内核崩溃自动恢复：Running 中强杀子进程 → 应自动回到 Running。

@@ -210,8 +210,11 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
     update.install(bytes).map_err(|e| e.to_string())?;
-    // 替换成功：以新包重启（内部完成清理后退出并拉起新实例）
-    app.restart()
+    // Explicitly persist handoff first. restart() on the main thread can skip
+    // Exit events; request_restart() allows our pidfile/stream cleanup to run.
+    crate::prepare_update_restart(app)?;
+    app.request_restart();
+    Ok(())
 }
 
 pub fn update_settings(app: &AppHandle) -> (bool, bool) {

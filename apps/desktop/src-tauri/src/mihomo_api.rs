@@ -90,6 +90,11 @@ impl Controller {
         serde_json::from_str(&text).map_err(|e| format!("decode {path}: {e}"))
     }
 
+    #[cfg(any(target_os = "macos", test))]
+    pub fn tun_enabled(&self) -> Result<Option<bool>, String> {
+        Ok(self.get_json("/configs")?["tun"]["enable"].as_bool())
+    }
+
     /// The live device may differ from the configured auto-assigned name.
     /// Never infer ownership from the saved TUN switch or a shared IP range.
     #[cfg(any(target_os = "macos", test))]
@@ -404,17 +409,34 @@ pub(crate) mod tests {
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
-        for (body, expected) in [
-            (r#"{"tun":{"enable":true,"device":"utun4"}}"#, Some("utun4")),
-            (r#"{"tun":{"enable":false,"device":"utun4"}}"#, None),
-            (r#"{"tun":{"enable":true,"device":"utun"}}"#, None),
-            (r#"{"tun":{"enable":true,"device":"en0"}}"#, None),
-            (r#"{"tun":{"enable":true}}"#, None),
-            (r#"{}"#, None),
+        for (body, expected, enabled) in [
+            (
+                r#"{"tun":{"enable":true,"device":"utun4"}}"#,
+                Some("utun4"),
+                Some(true),
+            ),
+            (
+                r#"{"tun":{"enable":false,"device":"utun4"}}"#,
+                None,
+                Some(false),
+            ),
+            (
+                r#"{"tun":{"enable":true,"device":"utun"}}"#,
+                None,
+                Some(true),
+            ),
+            (
+                r#"{"tun":{"enable":true,"device":"en0"}}"#,
+                None,
+                Some(true),
+            ),
+            (r#"{"tun":{"enable":true}}"#, None, Some(true)),
+            (r#"{}"#, None, None),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
             let server = std::thread::spawn(move || {
+                for _ in 0..2 {
                 let (mut stream, _) = listener.accept().unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
@@ -432,12 +454,14 @@ pub(crate) mod tests {
                     .to_ascii_lowercase()
                     .contains("authorization: bearer test-secret"));
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                }
             });
             let client = Controller {
                 port,
                 secret: "test-secret".into(),
             };
             assert_eq!(client.active_tun_device().unwrap().as_deref(), expected);
+            assert_eq!(client.tun_enabled().unwrap(), enabled);
             server.join().unwrap();
         }
     }
