@@ -4,6 +4,8 @@
 
 首版方案和实现顺序见 [iOS MVP 设计](../../docs/IOS-MVP.md)，[可点击界面草图](../../docs/ios-preview.html) 使用模拟数据。用户路线已确定为：已有付费个人 Apple Developer 账号，先自用真机，再评估 TestFlight。
 
+开发里程碑、PR 拆分与每阶段验收见 [iOS 开发路线](../../docs/IOS-ROADMAP.md)。
+
 ## 计划架构
 
 - 主 App：SwiftUI 四 Tab（首页 / 代理 / 配置 / 设置），通过独立 UniFFI 包装复用 Rust 的配置业务逻辑。
