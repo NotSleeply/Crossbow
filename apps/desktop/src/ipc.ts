@@ -292,6 +292,8 @@ export const ipc = {
     ),
   onConnections: (cb: (s: ConnSnapshot) => void) =>
     listen("connections://data", (e) => cb(parsePayload<ConnSnapshot>(e.payload))),
+  onLogsStatus: (cb: (status: { connected: boolean }) => void) =>
+    listen<{ connected: boolean }>("logs://status", (e) => cb(parsePayload<{ connected: boolean }>(e.payload))),
   onLogs: (cb: (entries: LogEntry[]) => void) =>
     listen("logs://data", (e) => cb(parsePayload<LogEntry[]>(e.payload))),
   onTheme: (cb: (t: UiSettings["theme"]) => void) =>

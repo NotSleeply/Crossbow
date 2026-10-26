@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 /// 默认绕过列表（本机/局域网直连）。
+#[cfg(target_os = "macos")]
 const BYPASS_DOMAINS: &[&str] = &[
     "127.0.0.1",
     "localhost",
@@ -91,6 +92,7 @@ impl SysProxyBackend for NetworkSetup {
 
     fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
         Ok(ServiceSnapshot {
+            windows: None,
             web: parse_endpoint(&Self::run(&["-getwebproxy", service])?),
             secure: parse_endpoint(&Self::run(&["-getsecurewebproxy", service])?),
             socks: parse_endpoint(&Self::run(&["-getsocksfirewallproxy", service])?),
@@ -136,141 +138,11 @@ impl SysProxyBackend for NetworkSetup {
     }
 }
 
-/// Windows WinINET 实现：注册表 HKCU Internet Settings + InternetSetOption 广播。
-/// 注册表读写走 reg.exe（零额外依赖）；刷新广播用 windows-sys FFI。
 #[cfg(windows)]
-pub struct WinInet;
-
+#[path = "sysproxy_windows.rs"]
+mod windows;
 #[cfg(windows)]
-const INET_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-
-#[cfg(windows)]
-impl WinInet {
-    fn run(args: &[&str]) -> Result<String, String> {
-        let out = std::process::Command::new("reg")
-            .args(args)
-            .output()
-            .map_err(|e| format!("run reg: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "reg {}: {}",
-                args.join(" "),
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
-    }
-
-    /// 读单个注册表值（取行尾 token；缺失/不存在返回 None）。
-    fn reg_query(name: &str) -> Option<String> {
-        let out = std::process::Command::new("reg")
-            .args(["query", INET_KEY, "/v", name])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .find(|l| l.contains(name))
-            .and_then(|l| l.trim().split_whitespace().next_back().map(String::from))
-    }
-
-    fn reg_set(name: &str, kind: &str, value: &str) -> Result<(), String> {
-        Self::run(&["add", INET_KEY, "/v", name, "/t", kind, "/d", value, "/f"]).map(|_| ())
-    }
-
-    /// 通知系统代理设置已变更并刷新（正在运行的应用立即感知）。
-    fn refresh() {
-        use windows_sys::Win32::Networking::WinInet::{
-            InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
-        };
-        unsafe {
-            InternetSetOptionW(
-                std::ptr::null(),
-                INTERNET_OPTION_SETTINGS_CHANGED,
-                std::ptr::null(),
-                0,
-            );
-            InternetSetOptionW(
-                std::ptr::null(),
-                INTERNET_OPTION_REFRESH,
-                std::ptr::null(),
-                0,
-            );
-        }
-    }
-
-    fn parse_server(raw: &str) -> Option<ProxyEndpoint> {
-        let (host, port) = raw.rsplit_once(':')?;
-        let port = port.trim().parse().ok()?;
-        Some(ProxyEndpoint {
-            host: host.trim().to_string(),
-            port,
-        })
-    }
-}
-
-#[cfg(windows)]
-impl SysProxyBackend for WinInet {
-    /// Windows 是用户级全局设置，无网络服务概念，返回单一伪服务。
-    fn list_services(&self) -> Result<Vec<String>, String> {
-        Ok(vec!["Windows".to_string()])
-    }
-
-    fn enable_service(&self, _service: &str, port: u16) -> Result<(), String> {
-        Self::reg_set("ProxyEnable", "REG_DWORD", "1")?;
-        Self::reg_set("ProxyServer", "REG_SZ", &format!("127.0.0.1:{port}"))?;
-        let bypass = BYPASS_DOMAINS.join(";");
-        Self::reg_set("ProxyOverride", "REG_SZ", &bypass)?;
-        Self::refresh();
-        Ok(())
-    }
-
-    fn disable_service(&self, _service: &str) -> Result<(), String> {
-        Self::reg_set("ProxyEnable", "REG_DWORD", "0")?;
-        Self::refresh();
-        Ok(())
-    }
-
-    fn service_snapshot(&self, _service: &str) -> Result<ServiceSnapshot, String> {
-        let server = Self::reg_query("ProxyServer").unwrap_or_default();
-        let ep = WinInet::parse_server(&server);
-        let enabled = Self::reg_query("ProxyEnable")
-            .map(|v| v == "0x1")
-            .unwrap_or(false);
-        Ok(if enabled {
-            ServiceSnapshot {
-                web: ep.clone(),
-                secure: ep.clone(),
-                socks: ep,
-                bypass: Self::reg_query("ProxyOverride"),
-            }
-        } else {
-            ServiceSnapshot {
-                bypass: Self::reg_query("ProxyOverride"),
-                ..ServiceSnapshot::default()
-            }
-        })
-    }
-
-    fn restore_service(&self, _service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
-        match &snap.web {
-            Some(ep) => {
-                Self::reg_set("ProxyEnable", "REG_DWORD", "1")?;
-                Self::reg_set("ProxyServer", "REG_SZ", &format!("{}:{}", ep.host, ep.port))?;
-            }
-            None => {
-                Self::reg_set("ProxyEnable", "REG_DWORD", "0")?;
-            }
-        }
-        if let Some(bypass) = &snap.bypass {
-            Self::reg_set("ProxyOverride", "REG_SZ", bypass)?;
-        }
-        Self::refresh();
-        Ok(())
-    }
-}
+pub use windows::WinInet;
 
 /// 非 macOS 且非 Windows 平台桩：保持编译通过。
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -315,9 +187,43 @@ pub struct ProxyEndpoint {
     pub port: u16,
 }
 
+/// Preserve Windows per-connection settings verbatim, including PAC/WPAD.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowsProxyConfig {
+    pub flags: u32,
+    pub server: String,
+    pub bypass: String,
+    pub pac_url: String,
+}
+
+#[cfg(any(windows, test))]
+impl WindowsProxyConfig {
+    pub fn endpoint(&self, protocol: &str) -> Option<ProxyEndpoint> {
+        if self.flags & 2 == 0 {
+            return None;
+        } // PROXY_TYPE_PROXY
+        let raw = if self.server.contains('=') {
+            self.server
+                .split(';')
+                .filter_map(|entry| entry.trim().split_once('='))
+                .find(|(name, _)| name.trim().eq_ignore_ascii_case(protocol))?
+                .1
+        } else {
+            &self.server
+        };
+        let (host, port) = raw.trim().rsplit_once(':')?;
+        Some(ProxyEndpoint {
+            host: host.trim().trim_matches(['[', ']']).to_string(),
+            port: port.parse().ok()?,
+        })
+    }
+}
+
 /// 一个网络服务的代理设置快照；None = 该槽位原本关闭。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<WindowsProxyConfig>,
     pub web: Option<ProxyEndpoint>,
     pub secure: Option<ProxyEndpoint>,
     pub socks: Option<ProxyEndpoint>,
@@ -836,6 +742,65 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    fn windows_protocol_map_and_single_server_are_parsed_exactly() {
+        let settings = WindowsProxyConfig {
+            flags: 3,
+            server: "http=127.0.0.1:7897;https=127.0.0.1:7898;socks=[::1]:7899".into(),
+            ..WindowsProxyConfig::default()
+        };
+        assert_eq!(
+            settings.endpoint("https"),
+            Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port: 7898
+            })
+        );
+        assert_eq!(
+            settings.endpoint("socks"),
+            Some(ProxyEndpoint {
+                host: "::1".into(),
+                port: 7899
+            })
+        );
+        let single = WindowsProxyConfig {
+            server: "localhost:7897".into(),
+            ..settings.clone()
+        };
+        assert_eq!(single.endpoint("https").unwrap().port, 7897);
+        let off = WindowsProxyConfig {
+            flags: 1,
+            ..settings
+        };
+        assert_eq!(off.endpoint("https"), None);
+    }
+
+    #[test]
+    fn windows_pac_and_bypass_survive_proxy_journal_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = ServiceSnapshot {
+            windows: Some(WindowsProxyConfig {
+                flags: 13,
+                server: "http=proxy.example:8080;https=secure.example:8443".into(),
+                bypass: "<local>;*.example;host with spaces".into(),
+                pac_url: "https://config.example/proxy.pac".into(),
+            }),
+            ..ServiceSnapshot::default()
+        };
+        let backend = FakeBackend::new(&["Windows"]).with_preset("Windows", original.clone());
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7897).unwrap();
+        manager.disable().unwrap();
+        assert_eq!(
+            backend.inner.restored.lock().unwrap().get("Windows"),
+            Some(&original)
+        );
+        let legacy: ServiceSnapshot =
+            serde_json::from_str(r#"{"web":null,"secure":null,"socks":null,"bypass":"<local>"}"#)
+                .unwrap();
+        assert!(legacy.windows.is_none());
+    }
+
+    #[test]
     fn parses_service_list_skipping_disabled() {
         let out = "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n*Disabled LAN\nThunderbolt Bridge\n\n";
         assert_eq!(
@@ -998,6 +963,7 @@ mod tests {
     fn disable_restores_original_settings() {
         let dir = tempfile::tempdir().unwrap();
         let preset = ServiceSnapshot {
+            windows: None,
             bypass: None,
             web: Some(ProxyEndpoint {
                 host: "127.0.0.1".into(),

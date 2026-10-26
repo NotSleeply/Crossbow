@@ -125,7 +125,7 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
 
     // Read ownership before the route table, without holding an AppState lock
     // across controller I/O. A failed query never exempts all utun interfaces.
-    let tunnel = std::process::Command::new("netstat")
+    let tunnel = crate::process::command("netstat")
         .args(["-rn", "-f", "inet"])
         .output()
         .ok()
@@ -138,7 +138,7 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
         });
 
     // 2) 常驻服务与其他内核进程
-    let (service, cores) = std::process::Command::new("ps")
+    let (service, cores) = crate::process::command("ps")
         .args(["-axo", "command="])
         .output()
         .map(|output| {
@@ -155,7 +155,7 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
 /// verge-mihomo.exe 不冲突，可按名直分。
 #[cfg(target_os = "windows")]
 pub fn detect(_state: &crate::AppState) -> Vec<CoexistFinding> {
-    let Ok(output) = std::process::Command::new("tasklist")
+    let Ok(output) = crate::process::command("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()
     else {

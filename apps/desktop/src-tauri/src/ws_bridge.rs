@@ -16,6 +16,7 @@ use tungstenite::Message;
 pub const EV_TRAFFIC: &str = "traffic://data";
 pub const EV_CONNECTIONS: &str = "connections://data";
 pub const EV_LOGS: &str = "logs://data";
+pub const EV_LOG_STATUS: &str = "logs://status";
 
 /// connections 快照推送间隔下限（mihomo 原生 1Hz）。
 const CONN_MIN_INTERVAL: Duration = Duration::from_millis(1000);
@@ -98,11 +99,7 @@ impl WsHub {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(name)
-            .map(|(_, t)| {
-                t.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .elapsed()
-            })
+            .map(|(_, t)| t.lock().unwrap_or_else(|e| e.into_inner()).elapsed())
     }
 
     pub fn unsubscribe(&self, name: &str) {
@@ -121,7 +118,12 @@ impl WsHub {
     }
 
     pub fn unsubscribe_all(&self) {
-        for (flag, _) in self.active.lock().unwrap_or_else(|e| e.into_inner()).values() {
+        for (flag, _) in self
+            .active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+        {
             flag.store(false, Ordering::SeqCst);
         }
     }
@@ -143,8 +145,9 @@ impl WsHub {
                     flag,
                     Some(Duration::from_secs(5)),
                     Some(last_seen),
+                    None,
                     |msg| {
-                        if let Message::Text(txt) = msg {
+                        if let Some(Message::Text(txt)) = msg {
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                                 let up = v.get("up").and_then(|x| x.as_u64()).unwrap_or(0);
                                 let down = v.get("down").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -175,14 +178,15 @@ impl WsHub {
                     flag,
                     Some(Duration::from_secs(5)),
                     Some(last_seen),
+                    None,
                     |msg| {
-                    if let Message::Text(txt) = msg {
-                        // mihomo 原始 {"up":..,"down":..} → 结构化转发
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
-                            emit(EV_TRAFFIC, v);
+                        if let Some(Message::Text(txt)) = msg {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                                emit(EV_TRAFFIC, v);
+                            }
                         }
-                    }
-                });
+                    },
+                );
             });
         })
     }
@@ -202,17 +206,19 @@ impl WsHub {
                     flag,
                     Some(Duration::from_secs(5)),
                     Some(last_seen),
+                    None,
                     |msg| {
-                    if let Message::Text(txt) = msg {
-                        if last_emit.elapsed() < CONN_MIN_INTERVAL {
-                            return; // 节流
+                        if let Some(Message::Text(txt)) = msg {
+                            if last_emit.elapsed() < CONN_MIN_INTERVAL {
+                                return;
+                            }
+                            if let Some(payload) = compact_connections(&txt) {
+                                last_emit = Instant::now();
+                                emit(EV_CONNECTIONS, payload);
+                            }
                         }
-                        if let Some(payload) = compact_connections(&txt) {
-                            last_emit = Instant::now();
-                            emit(EV_CONNECTIONS, payload);
-                        }
-                    }
-                });
+                    },
+                );
             });
         })
     }
@@ -228,18 +234,26 @@ impl WsHub {
             std::thread::spawn(move || {
                 let mut batch: Vec<serde_json::Value> = Vec::new();
                 let mut last_flush = Instant::now();
-                read_loop(&url, flag, None, None, |msg| {
-                    if let Message::Text(txt) = msg {
+                let mut on_status = |connected| {
+                    emit(EV_LOG_STATUS, serde_json::json!({ "connected": connected }));
+                };
+                read_loop(&url, flag, None, None, Some(&mut on_status), |msg| {
+                    if let Some(Message::Text(txt)) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             batch.push(v);
                         }
-                        if last_flush.elapsed() >= LOG_FLUSH_INTERVAL
-                            || batch.len() >= LOG_FLUSH_COUNT
-                        {
-                            emit(EV_LOGS, serde_json::Value::Array(batch.clone()));
-                            batch.clear();
-                            last_flush = Instant::now();
-                        }
+                    }
+                    // Flush even when the core sends just one line, then goes
+                    // quiet. Previously the next message was required to flush.
+                    if !batch.is_empty()
+                        && (last_flush.elapsed() >= LOG_FLUSH_INTERVAL
+                            || batch.len() >= LOG_FLUSH_COUNT)
+                    {
+                        emit(
+                            EV_LOGS,
+                            serde_json::Value::Array(std::mem::take(&mut batch)),
+                        );
+                        last_flush = Instant::now();
                     }
                 });
                 if !batch.is_empty() {
@@ -261,12 +275,11 @@ impl WsHub {
         let url = ws_url(port, secret, "/logs?level=info");
         self.subscribe("logs-file", move |flag, _last_seen| {
             std::thread::spawn(move || {
-                read_loop(&url, flag, None, None, |msg| {
-                    if let Message::Text(txt) = msg {
+                read_loop(&url, flag, None, None, None, |msg| {
+                    if let Some(Message::Text(txt)) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             let level = v.get("type").and_then(|x| x.as_str()).unwrap_or("info");
-                            let payload =
-                                v.get("payload").and_then(|x| x.as_str()).unwrap_or("");
+                            let payload = v.get("payload").and_then(|x| x.as_str()).unwrap_or("");
                             if !payload.is_empty() {
                                 sink(level, payload);
                             }
@@ -300,21 +313,36 @@ fn read_loop(
     flag: Arc<AtomicBool>,
     stale: Option<Duration>,
     last_seen: Option<Arc<Mutex<Instant>>>,
-    mut on_text: impl FnMut(Message),
+    mut on_status: Option<&mut dyn FnMut(bool)>,
+    mut on_text: impl FnMut(Option<Message>),
 ) {
     const READ_TIMEOUT: Duration = Duration::from_secs(2);
     'outer: while flag.load(Ordering::SeqCst) {
         let mut ws = match tungstenite::connect(url) {
             Ok((ws, _)) => ws,
             Err(_) => {
+                if flag.load(Ordering::SeqCst) {
+                    if let Some(status) = on_status.as_mut() {
+                        status(false);
+                    }
+                }
                 std::thread::sleep(Duration::from_secs(1));
                 continue;
             }
         };
-        if stale.is_some() {
-            if let tungstenite::stream::MaybeTlsStream::Plain(tcp) = ws.get_ref() {
-                let _ = tcp.set_read_timeout(Some(READ_TIMEOUT));
-            }
+        if !flag.load(Ordering::SeqCst) {
+            break;
+        }
+        if let Some(status) = on_status.as_mut() {
+            status(true);
+        }
+        if let tungstenite::stream::MaybeTlsStream::Plain(tcp) = ws.get_ref() {
+            let timeout = if stale.is_some() {
+                READ_TIMEOUT
+            } else {
+                LOG_FLUSH_INTERVAL
+            };
+            let _ = tcp.set_read_timeout(Some(timeout));
         }
         let mut last_msg = Instant::now();
         loop {
@@ -328,23 +356,28 @@ fn read_loop(
                     if let Some(t) = &last_seen {
                         *t.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
                     }
-                    on_text(msg);
+                    on_text(Some(msg));
                 }
                 Ok(Message::Close(_)) => break, // 内核重启中，走重连
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(e))
-                    if stale.is_some()
-                        && matches!(
-                            e.kind(),
-                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                        ) =>
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
                 {
                     // 读超时≠断线：仅在静默超过 stale 窗口时才判定半开重连
-                    if last_msg.elapsed() > stale.unwrap() {
+                    on_text(None);
+                    if stale.is_some_and(|limit| last_msg.elapsed() > limit) {
                         break;
                     }
                 }
                 Err(_) => break,
+            }
+        }
+        if flag.load(Ordering::SeqCst) {
+            if let Some(status) = on_status.as_mut() {
+                status(false);
             }
         }
         drop(ws);
@@ -502,6 +535,43 @@ fn parse_rfc3339_ms(s: &str) -> Option<u64> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn single_log_is_flushed_while_stream_is_quiet_and_unsubscribes() {
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(4)))
+                .unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            socket
+                .send(Message::Text(
+                    r#"{"type":"info","payload":"single log"}"#.into(),
+                ))
+                .unwrap();
+            // No second frame: delivery must be driven by the idle timeout.
+            let _ = socket.read();
+        });
+        let hub = WsHub::default();
+        let (send, receive) = mpsc::channel();
+        hub.subscribe_logs(port, "test-secret", move |event, payload| {
+            let _ = send.send((event, payload));
+        })
+        .unwrap();
+        let connected = receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(connected.0, EV_LOG_STATUS);
+        assert_eq!(connected.1["connected"], true);
+        let log = receive.recv_timeout(Duration::from_secs(2));
+        hub.unsubscribe("logs");
+        server.join().unwrap();
+        let (event, payload) = log.expect("a single log must not wait for the next message");
+        assert_eq!(event, EV_LOGS);
+        assert_eq!(payload[0]["payload"], "single log");
+    }
 
     #[test]
     fn ws_url_includes_token() {

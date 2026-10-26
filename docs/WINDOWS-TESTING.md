@@ -1,0 +1,38 @@
+# Windows 桌面修复验收
+
+适用于 Windows 11。测试包请从修复 PR 的 Actions `build` 工作流下载 Windows artifact；已有 Release 安装包不包含尚未发版的修复。
+
+## 外观与窗口
+
+1. 设置 → 主题，依次选择深色、浅色、跟随系统。确认原生标题栏、窗口背景和页面同步切换。
+2. 手动选择深色后改变 Windows 系统主题，应用仍应保持深色；选择跟随系统时才随系统切换。
+3. 检查侧栏、节点卡片、设置开关、下拉框、日志过滤复选框、通知操作。可操作项应有手型光标和 hover 反馈；禁用项不应表现为可点击。
+4. 使用 Tab 导航，应看见明确焦点边框。
+5. 启动、切页、打开设置、测速，并停留一分钟以上，确认没有终端黑窗闪现。打开日志文件夹时仍应正常显示资源管理器。
+
+## 系统代理与内核
+
+1. 使用已知可用的订阅和节点。开启系统代理，确认首页内核显示运行中；若失败，先查看通知详情和诊断页，不能仅凭开关判断成功。
+2. 在 Windows 设置 → 网络和 Internet → 代理，核对手动代理指向本机及 Crossbow 设置页的混合端口。Crossbow 运行时不应继续使用旧 PAC/自动检测设置。
+3. 使用 Edge 或 Chrome 访问 GitHub、X。若浏览器有独立代理配置，先切换为使用系统代理。
+4. 若仍无法访问，在 PowerShell 测试混合端口（端口改为设置页实际值）：
+   ```powershell
+   $crossbowPort = 7897
+   Test-NetConnection 127.0.0.1 -Port $crossbowPort
+   curl.exe --proxy "http://127.0.0.1:$crossbowPort" --max-time 15 -I https://github.com
+   ```
+   端口不通：检查内核启动错误；显式代理失败：检查节点测速和内核日志；显式代理成功但浏览器失败：检查浏览器是否使用系统代理。
+5. 关闭系统代理，确认开启前的手动代理、绕过列表、PAC 地址和自动检测状态得到恢复。应用退出、重新打开后也应正确恢复，不应残留指向已停止内核的设置。
+
+## 日志
+
+1. 内核停止时，日志页应明确提示先启动内核；内核运行时应显示连接中或等待日志，不能把订阅请求已发送误当成连接成功。
+2. 保持日志页打开，在浏览器访问网页。应显示连接日志；即使只有一条日志，静默后也应刷新出来。
+3. 切换日志页、清空、按级别/关键字过滤，再切换回来，确认日志可继续接收。
+4. 在日志页重启内核/切换引擎，确认连接状态随之变化并恢复。
+
+## 实现依据与验证边界
+
+Windows 代理使用 [WinINET per-connection API](https://learn.microsoft.com/en-us/windows/win32/wininet/setting-and-retrieving-internet-options)，保存/恢复完整配置，并在开启后读回校验。详见 [选项与标志](https://learn.microsoft.com/en-us/windows/win32/api/wininet/ns-wininet-internet_per_conn_optionw)。
+
+本地 macOS 测试覆盖代理配置解析/恢复、低频日志刷新和通用回归；Windows 编译和后端测试由 GitHub Actions 执行。原生标题栏、后台窗口是否闪现、Windows 策略和真实节点流量必须由上述 Windows 实机流程验收。
