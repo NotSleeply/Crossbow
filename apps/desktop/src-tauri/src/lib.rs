@@ -22,6 +22,7 @@ mod diagnose;
 mod log_files;
 mod mihomo_api;
 mod notifications;
+mod process;
 mod update_check;
 mod scheduler;
 mod sysproxy;

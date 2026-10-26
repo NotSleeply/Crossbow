@@ -99,11 +99,7 @@ impl WsHub {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(name)
-            .map(|(_, t)| {
-                t.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .elapsed()
-            })
+            .map(|(_, t)| t.lock().unwrap_or_else(|e| e.into_inner()).elapsed())
     }
 
     pub fn unsubscribe(&self, name: &str) {
@@ -122,7 +118,12 @@ impl WsHub {
     }
 
     pub fn unsubscribe_all(&self) {
-        for (flag, _) in self.active.lock().unwrap_or_else(|e| e.into_inner()).values() {
+        for (flag, _) in self
+            .active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+        {
             flag.store(false, Ordering::SeqCst);
         }
     }
@@ -180,13 +181,12 @@ impl WsHub {
                     None,
                     |msg| {
                         if let Some(Message::Text(txt)) = msg {
-                            // mihomo 原始 {"up":..,"down":..} → 结构化转发
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                                 emit(EV_TRAFFIC, v);
                             }
                         }
-                    }
-                });
+                    },
+                );
             });
         })
     }
@@ -210,19 +210,15 @@ impl WsHub {
                     |msg| {
                         if let Some(Message::Text(txt)) = msg {
                             if last_emit.elapsed() < CONN_MIN_INTERVAL {
-                                return; // 节流
+                                return;
                             }
                             if let Some(payload) = compact_connections(&txt) {
                                 last_emit = Instant::now();
                                 emit(EV_CONNECTIONS, payload);
                             }
                         }
-                        if let Some(payload) = compact_connections(&txt) {
-                            last_emit = Instant::now();
-                            emit(EV_CONNECTIONS, payload);
-                        }
-                    }
-                });
+                    },
+                );
             });
         })
     }
@@ -283,8 +279,7 @@ impl WsHub {
                     if let Some(Message::Text(txt)) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             let level = v.get("type").and_then(|x| x.as_str()).unwrap_or("info");
-                            let payload =
-                                v.get("payload").and_then(|x| x.as_str()).unwrap_or("");
+                            let payload = v.get("payload").and_then(|x| x.as_str()).unwrap_or("");
                             if !payload.is_empty() {
                                 sink(level, payload);
                             }
@@ -367,9 +362,9 @@ fn read_loop(
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(e))
                     if matches!(
-                            e.kind(),
-                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                        ) =>
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
                 {
                     // 读超时≠断线：仅在静默超过 stale 窗口时才判定半开重连
                     on_text(None);
