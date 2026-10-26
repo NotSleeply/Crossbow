@@ -127,6 +127,7 @@ export default function LogsPage() {
   });
   const [keyword, setKeyword] = useState("");
   const [connected, setConnected] = useState(false);
+  const [coreRunning, setCoreRunning] = useState(false);
   const pinned = useRef(true);
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
@@ -136,6 +137,17 @@ export default function LogsPage() {
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
     let active = true;
+    const unstatus = ipc.onLogsStatus((status) => { if (active) setConnected(status.connected); });
+    let receivedCoreEvent = false;
+    const uncore = ipc.onCoreStatus((status) => {
+      if (!active) return;
+      receivedCoreEvent = true;
+      setCoreRunning(status.state === "Running");
+      if (status.state !== "Running") setConnected(false);
+    });
+    void uncore.then(() => ipc.coreStatus()).then((status) => {
+      if (active && !receivedCoreEvent) setCoreRunning(status.state === "Running");
+    }).catch(() => {});
     // Register the Tauri event handler before the backend can emit its first batch.
     const unlisten = ipc.onLogs((entries) => {
       const out: LogEntry[] = [];
@@ -175,20 +187,17 @@ export default function LogsPage() {
     // StrictMode runs setup → cleanup → setup in development. Waiting for the
     // listener avoids losing the first batch; the generation guard prevents a
     // stale setup from subscribing after the page has already been replaced.
-    const subscribe = unlisten.then(() => {
+    const subscribe = Promise.all([unlisten, unstatus, uncore]).then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
       return ipc
         .subscribeLogs()
-        .then(() => {
-          if (active && subscriptionGeneration.current === generation) setConnected(true);
-        })
         .catch((error) => notify.error(error, "logs-stream"));
     });
 
     return () => {
       active = false;
       setConnected(false);
-      void unlisten.then((unlistenEvent) => unlistenEvent());
+      for (const pending of [unlisten, unstatus, uncore]) void pending.then((remove) => remove());
       // Delay unsubscription until any in-flight subscribe has settled. A
       // StrictMode remount advances the generation synchronously and keeps the
       // replacement subscription alive.
@@ -254,9 +263,14 @@ export default function LogsPage() {
         style={{ height: 520, overflowY: "auto" }}
       >
         {shown.length === 0 ? (
-          <div className="flex h-full items-center justify-center"
+          <div className="flex h-full flex-col items-center justify-center gap-3"
             style={{ color: "var(--cb-text-dim)" }}>
-            {connected ? t("logs.empty") : t("logs.connecting")}
+            <span>{!coreRunning ? t("logs.stopped") : connected ? t("logs.empty") : t("logs.connecting")}</span>
+            {(!coreRunning || !connected) && (
+              <button className="cb-btn" onClick={() => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "diagnostics" }))}>
+                {t("nav.diagnostics")}
+              </button>
+            )}
           </div>
         ) : (
           <>
