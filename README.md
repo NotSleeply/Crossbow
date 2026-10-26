@@ -6,7 +6,7 @@ mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN
 
 **当前版本：** [v0.10.1](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.10.1)。
 提供 macOS Apple Silicon DMG 和 Windows x64 安装包；iOS 目前为工程骨架。
-Windows 版持续完善中，实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
+Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
 
 ## 安装与使用
 
