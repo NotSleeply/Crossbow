@@ -923,6 +923,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbow-service"
+version = "0.10.1"
+dependencies = [
+ "serde_json",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

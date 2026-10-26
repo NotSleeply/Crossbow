@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/mihomo", "binaries/crossbow-service"],
+    "resources": { "binaries/wintun.dll": "wintun.dll" },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/installer-hooks.nsh"
+      }
+    }
+  }
+}
