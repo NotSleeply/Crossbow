@@ -1775,6 +1775,7 @@ fn resubscribe_page_channels(app: &AppHandle) {
     let Some((port, secret)) = state.core().controller() else {
         return;
     };
+    ensure_page_channel_watchdog(app);
     let h = app.clone();
     let emit = move |ev: &'static str, payload: serde_json::Value| {
         let _ = h.emit(ev, payload);
@@ -1784,6 +1785,41 @@ fn resubscribe_page_channels(app: &AppHandle) {
         .subscribe_traffic(port, &secret, emit.clone());
     let _ = state.ws.subscribe_connections(port, &secret, emit.clone());
     let _ = state.ws.subscribe_logs(port, &secret, emit);
+}
+
+/// 页面通道冻结看门狗：内核 Running 但页面 traffic/connections 通道静默
+/// 超阈值——典型成因是重启竞态绕过了 Running 补订，旧读线程在换掉的
+/// port/secret（死端口）上无限重连——此时用当前控制器地址强制重订。
+/// 与托盘通道看门狗同构（ensure_tray_speed_watchdog）；判定逻辑见
+/// WsHub::any_page_channel_stale（logs 事件驱动不参与）。#111
+fn ensure_page_channel_watchdog(handle: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SPAWNED: AtomicBool = AtomicBool::new(false);
+    if SPAWNED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    const STALE_SECS: u64 = 15;
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            let Some(state) = h.try_state::<AppState>() else {
+                continue;
+            };
+            if state.core().status() != CoreStatus::Running {
+                continue;
+            }
+            if state
+                .ws
+                .any_page_channel_stale(std::time::Duration::from_secs(STALE_SECS))
+            {
+                eprintln!(
+                    "page watchdog: traffic/connections silent >={STALE_SECS}s, resubscribing"
+                );
+                resubscribe_page_channels(&h);
+            }
+        }
+    });
 }
 
 /// 日志落盘联动（#29）：内核 Running 且开关开启时订阅落盘通道，

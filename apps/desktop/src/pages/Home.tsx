@@ -143,6 +143,19 @@ export default function HomePage() {
     };
   }, [refresh]);
 
+  // 状态自愈：事件丢失或 WS 通道冻结（内核重启竞态，#111）最迟 30s 对齐
+  // 一次。重订借后端替换语义——新读线程以当前 port/secret 顶替旧通道，
+  // 冻结在死端口上的旧读线程随之退场。
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!mounted.current) return;
+      void refresh();
+      ipc.subscribeTraffic().catch(() => {});
+      ipc.subscribeConnections().catch(() => {});
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
   const toggleProxy = async () => {
     setBusy(true);
     try {
@@ -159,8 +172,10 @@ export default function HomePage() {
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
+  // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
+  // 竞态下与副标题各说各话（#111）
   const statusTitle = tun.enabled
-    ? (tun.coreRunning
+    ? (running
       ? (proxy.enabled ? t("home.tunAndSysproxyOn") : t("home.tunOn"))
       : t("home.tunCoreStopped"))
     : (proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff"));
