@@ -19,6 +19,29 @@ final class ConfigurationTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: corrupt).write(to: root.appendingPathComponent("active.json"))
         XCTAssertThrowsError(try files.load())
     }
+    func testLegacySnapshotMigratesWithoutReplacingCurrentConfiguration() throws {
+        let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: container) }
+        let legacy = try SharedFiles(root: container.appendingPathComponent("Tunnel"))
+        let direct = try ConfigurationSnapshot(name: "old", data: ConfigurationSnapshot.directExample)
+        try legacy.save(direct)
+        let files = try SharedFiles.inAppGroupContainer(container)
+        XCTAssertTrue(files.root.path.hasSuffix("Library/Application Support/Crossbow/Tunnel"))
+        XCTAssertEqual(try files.load().revision, direct.revision)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.root.appendingPathComponent("active.json").path))
+        let current = try ConfigurationSnapshot(name: "current", data: ConfigurationSnapshot.directExample)
+        try files.save(current)
+        try legacy.save(direct)
+        XCTAssertEqual(try SharedFiles.inAppGroupContainer(container).load().revision, current.revision)
+    }
+    func testInvalidLegacySnapshotDoesNotCreateAnActiveConfiguration() throws {
+        let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: container) }
+        let legacy = try SharedFiles(root: container.appendingPathComponent("Tunnel"))
+        try Data("{}".utf8).write(to: legacy.root.appendingPathComponent("active.json"))
+        XCTAssertThrowsError(try SharedFiles.inAppGroupContainer(container))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.root.appendingPathComponent("active.json").path))
+    }
     func testUnsupportedProcessRulesAndInboundAreNotSilentlyDropped() throws {
         var value = try JSONSerialization.jsonObject(with: ConfigurationSnapshot.directExample) as! [String: Any]
         value["route"] = ["rules": [["process_name": ["browser"], "outbound": "direct"]]]

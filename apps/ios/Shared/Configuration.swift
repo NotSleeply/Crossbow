@@ -73,7 +73,26 @@ struct SharedFiles {
               let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
             throw ConfigurationError(message: "App Group 不可用，请检查签名权限。")
         }
-        return try SharedFiles(root: url.appendingPathComponent("Tunnel", isDirectory: true))
+        return try inAppGroupContainer(url)
+    }
+    static func inAppGroupContainer(_ container: URL) throws -> SharedFiles {
+        // Keep persistent data in the standard shared Library directory. Device
+        // development tools only expose Library/Documents/tmp, never the root.
+        let files = try SharedFiles(root: container.appendingPathComponent("Library/Application Support/Crossbow/Tunnel", isDirectory: true))
+        let legacyRoot = container.appendingPathComponent("Tunnel", isDirectory: true)
+        let legacySnapshot = legacyRoot.appendingPathComponent("active.json")
+        if !FileManager.default.fileExists(atPath: files.root.appendingPathComponent("active.json").path),
+           FileManager.default.fileExists(atPath: legacySnapshot.path) {
+            let legacy = try SharedFiles(root: legacyRoot)
+            // Validate before migrating; a failed write leaves the old copy intact.
+            try files.save(legacy.load())
+        }
+        if FileManager.default.fileExists(atPath: legacySnapshot.path) {
+            _ = try files.load()
+            do { try FileManager.default.removeItem(at: legacySnapshot) }
+            catch CocoaError.fileNoSuchFile { /* Another process completed the same migration. */ }
+        }
+        return files
     }
     func save(_ snapshot: ConfigurationSnapshot) throws {
         try snapshot.validate()
@@ -81,6 +100,9 @@ struct SharedFiles {
     }
     func load() throws -> ConfigurationSnapshot {
         let url = root.appendingPathComponent("active.json")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ConfigurationError(message: "请先在配置页导入 sing-box JSON，或使用直连验证配置。")
+        }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 2_097_152 else { throw ConfigurationError(message: "配置文件过大。") }
         let value = try JSONDecoder().decode(ConfigurationSnapshot.self, from: Data(contentsOf: url))
