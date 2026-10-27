@@ -301,9 +301,16 @@ export default function HomePage() {
               {t("studio.viewConnections")}
             </button>
           </div>
+          <div className="cb-chart-only">
+            <Sparkline rates={rates} />
+            <div className="cb-chart-foot">
+              <span>{t("studio.lastMinute")}</span>
+              <span>{t("studio.now")}</span>
+            </div>
+          </div>
         </section>
         <aside className="cb-home-side">
-          <div className="cb-traffic-panel">
+          <section className="cb-rate-card">
             <div className="cb-chart-head">
               <div>
                 <h3>{t("home.rate")}</h3>
@@ -318,23 +325,18 @@ export default function HomePage() {
                 </span>
               </div>
             </div>
-            <Sparkline rates={rates} />
-            <div className="cb-chart-foot">
-              <span>{t("studio.lastMinute")}</span>
-              <span>{t("studio.now")}</span>
+            <div className="cb-session-strip">
+              <span>
+                {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
+              </span>
+              <span>
+                {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
+              </span>
+              <span>
+                {t("home.connections")} <b>{connCount ?? "—"}</b>
+              </span>
             </div>
-          </div>
-          <div className="cb-session-strip">
-            <span>
-              {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
-            </span>
-            <span>
-              {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
-            </span>
-            <span>
-              {t("home.connections")} <b>{connCount ?? "—"}</b>
-            </span>
-          </div>
+          </section>
           <section className="cb-takeover-panel">
             <h3>{t("studio.takeover")}</h3>
             <div className="cb-takeover-row" title={t("studio.proxyHint")}>

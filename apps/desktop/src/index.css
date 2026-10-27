@@ -1474,6 +1474,15 @@ summary:focus-visible {
     gap: 20px;
     align-items: start;
   }
+  .cb-home-main {
+    grid-template-rows: auto auto auto auto;
+  }
+  .cb-chart-only {
+    min-height: 160px;
+  }
+  .cb-rate-card {
+    flex: none;
+  }
   .cb-source-strip {
     margin-top: 0;
   }
@@ -1866,8 +1875,7 @@ body,
 }
 .cb-home-main {
   display: grid;
-  grid-template-rows: auto auto auto;
-  align-content: start;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: clamp(6px, 1.2vh, 14px);
   min-height: 0;
 }
@@ -1902,13 +1910,12 @@ body,
 .cb-home-actions .cb-btn {
   min-height: 32px;
 }
-.cb-live-chart {
+.cb-chart-only {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin: 0;
-  padding-top: clamp(6px, 1.5vh, 16px);
-  overflow: hidden;
+  padding-top: clamp(8px, 1.5vh, 16px);
+  border-top: 1px solid var(--cb-line);
 }
 .cb-chart-head {
   flex: none;
@@ -1926,12 +1933,22 @@ body,
 .cb-rate-pair b {
   font-size: 18px;
 }
+.cb-rate-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding: 14px 18px;
+  background: var(--cb-surface);
+  border: 1px solid var(--cb-line);
+  border-radius: 12px;
+}
 .cb-traffic-plot {
   display: block;
   width: 100%;
   flex: 1;
   min-height: 20px;
-  max-height: 300px;
 }
 .cb-chart-foot {
   flex: none;
@@ -1949,35 +1966,22 @@ body,
 .cb-home-side {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: clamp(12px, 1.6vh, 18px);
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding-right: 4px;
 }
-.cb-traffic-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 120px;
-  flex: 1 1 auto;
-  padding: 14px 18px;
-  background: var(--cb-surface);
-  border: 1px solid var(--cb-line);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.cb-traffic-panel .cb-chart-head {
-  margin-bottom: 8px;
-}
-.cb-traffic-panel .cb-chart-foot {
-  margin-top: 4px;
-}
 .cb-home-side .cb-session-strip {
   flex: none;
   margin: 0;
-  padding-top: 0;
-  border-top: 0;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--cb-line);
+  gap: 10px 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 .cb-takeover-panel {
   padding: 16px 20px;
