@@ -24,7 +24,7 @@ const dict: Record<Lang, Record<string, string>> = {
 
     "studio.proxy": "系统代理",
     "studio.navigation": "主导航",
-    "studio.connect": "连接",
+    "studio.connect": "概览",
     "studio.nodes": "节点",
     "studio.monitor": "监测",
     "studio.config": "配置",
@@ -311,7 +311,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "studio.next": "Next page",
     "studio.proxy": "System proxy",
     "studio.navigation": "Main navigation",
-    "studio.connect": "Connect",
+    "studio.connect": "Overview",
     "studio.nodes": "Nodes",
     "studio.monitor": "Monitor",
     "studio.config": "Configuration",

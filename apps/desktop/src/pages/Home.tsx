@@ -243,63 +243,60 @@ export default function HomePage() {
     window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
   return (
     <div className="cb-home-page">
-      <PageHead title={t("studio.workbench")} meta={t("studio.overviewHint")}>
-        <button className="cb-btn" onClick={() => go("diagnostics")}>
-          <Icon name="pulse" />
-          {t("diag.run")}
-        </button>
-      </PageHead>
+      <PageHead title={t("studio.workbench")} meta={t("studio.overviewHint")} />
       {update && <UpdateBanner update={update} onOpen={() => go("settings")} />}
       <div className="cb-home-layout">
         <section className="cb-home-main">
-          <div className="cb-home-lead">
-            <div className="cb-status-line">
-              <i
-                className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
-              />
-              {coreText(t, core)}
+          <div className="cb-home-overview">
+            <div className="cb-home-lead">
+              <div className="cb-status-line">
+                <i
+                  className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
+                />
+                {coreText(t, core)}
+              </div>
+              <h2>{statusTitle}</h2>
+              <p>
+                {t("home.activeProfile")} {active?.name ?? t("home.none")}
+              </p>
             </div>
-            <h2>{statusTitle}</h2>
-            <p>
-              {t("home.activeProfile")} {active?.name ?? t("home.none")}
-            </p>
-          </div>
-          <div className="cb-route-flow">
-            <div>
-              <Icon name="device" size={23} />
-              <b>{t("studio.thisDevice")}</b>
-              <small>
-                {navigator.userAgent.includes("Windows") ? "Windows" : "macOS"}
-              </small>
+            <div className="cb-route-flow">
+              <div>
+                <Icon name="device" size={26} />
+                <b>{t("studio.thisDevice")}</b>
+                <small>
+                  {navigator.userAgent.includes("Windows") ? "Windows" : "macOS"}
+                </small>
+              </div>
+              <span className="cb-route-line" />
+              <div>
+                <Icon name="sliders" size={26} />
+                <b>{t("studio.routing")}</b>
+                <small>{t(`mode.${mode}`)}</small>
+              </div>
+              <span className="cb-route-line" />
+              <div>
+                <Icon name="globe" size={26} />
+                <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
+                <small>
+                  {outbound?.delay_ms != null
+                    ? outbound.delay_ms > 0
+                      ? `${outbound.delay_ms} ms`
+                      : t("sites.error.timeout")
+                    : coreText(t, core)}
+                </small>
+              </div>
             </div>
-            <span className="cb-route-line" />
-            <div>
-              <Icon name="sliders" size={23} />
-              <b>{t("studio.routing")}</b>
-              <small>{t(`mode.${mode}`)}</small>
+            <div className="cb-home-actions">
+              <button className="cb-btn primary" onClick={() => go("proxies")}>
+                <Icon name="bolt" />
+                {t("studio.chooseNode")}
+              </button>
+              <button className="cb-btn" onClick={() => go("connections")}>
+                <Icon name="cube" />
+                {t("studio.viewConnections")}
+              </button>
             </div>
-            <span className="cb-route-line" />
-            <div>
-              <Icon name="globe" size={23} />
-              <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
-              <small>
-                {outbound?.delay_ms != null
-                  ? outbound.delay_ms > 0
-                    ? `${outbound.delay_ms} ms`
-                    : t("sites.error.timeout")
-                  : coreText(t, core)}
-              </small>
-            </div>
-          </div>
-          <div className="cb-home-actions">
-            <button className="cb-btn primary" onClick={() => go("proxies")}>
-              <Icon name="bolt" />
-              {t("studio.chooseNode")}
-            </button>
-            <button className="cb-btn" onClick={() => go("connections")}>
-              <Icon name="cube" />
-              {t("studio.viewConnections")}
-            </button>
           </div>
           <div className="cb-chart-only">
             <Sparkline rates={rates} />
@@ -310,33 +307,6 @@ export default function HomePage() {
           </div>
         </section>
         <aside className="cb-home-side">
-          <section className="cb-rate-card">
-            <div className="cb-chart-head">
-              <div>
-                <h3>{t("home.rate")}</h3>
-                <p>{t("studio.lastMinute")} · KB/s</p>
-              </div>
-              <div className="cb-rate-pair">
-                <span>
-                  ↓ <b>{fmtBytes(latest?.down ?? 0)}</b>/s
-                </span>
-                <span>
-                  ↑ <b>{fmtBytes(latest?.up ?? 0)}</b>/s
-                </span>
-              </div>
-            </div>
-            <div className="cb-session-strip">
-              <span>
-                {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
-              </span>
-              <span>
-                {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
-              </span>
-              <span>
-                {t("home.connections")} <b>{connCount ?? "—"}</b>
-              </span>
-            </div>
-          </section>
           <section className="cb-takeover-panel">
             <h3>{t("studio.takeover")}</h3>
             <div className="cb-takeover-row" title={t("studio.proxyHint")}>
@@ -403,6 +373,33 @@ export default function HomePage() {
             </div>
             <Icon name="chevron" size={17} />
           </button>
+          <section className="cb-rate-card">
+            <div className="cb-chart-head">
+              <div>
+                <h3>{t("home.rate")}</h3>
+                <p>{t("studio.lastMinute")} · KB/s</p>
+              </div>
+              <div className="cb-rate-pair">
+                <span>
+                  ↓ <b>{fmtBytes(latest?.down ?? 0)}</b>/s
+                </span>
+                <span>
+                  ↑ <b>{fmtBytes(latest?.up ?? 0)}</b>/s
+                </span>
+              </div>
+            </div>
+            <div className="cb-session-strip">
+              <span>
+                {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
+              </span>
+              <span>
+                {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
+              </span>
+              <span>
+                {t("home.connections")} <b>{connCount ?? "—"}</b>
+              </span>
+            </div>
+          </section>
           {!activeId && (
             <p className="cb-control-note">{t("studio.noSource")}</p>
           )}

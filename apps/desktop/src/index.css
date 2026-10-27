@@ -989,7 +989,8 @@ summary:focus-visible {
 }
 .cb-rate-pair {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 8px 18px;
   font-size: 12px;
   color: var(--cb-text-dim);
   font-variant-numeric: tabular-nums;
@@ -1873,11 +1874,21 @@ body,
   grid-template-columns: minmax(0, 1.7fr) minmax(270px, 1fr);
   gap: clamp(16px, 2vw, 24px);
 }
+/* The overview owns the space above a bounded chart, rather than competing
+   with an SVG whose intrinsic height can consume the entire left column. */
 .cb-home-main {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: clamp(6px, 1.2vh, 14px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   min-height: 0;
+}
+.cb-home-overview {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1 0 auto;
+  gap: 24px;
+  padding-block: 8px;
 }
 .cb-home-lead {
   padding: 0;
@@ -1885,7 +1896,7 @@ body,
 .cb-home-lead h2 {
   font-size: clamp(22px, 2.6vh, 28px);
   line-height: 1.25;
-  margin: 10px 0 6px;
+  margin: 16px 0 8px;
 }
 .cb-home-lead p {
   font-size: 13px;
@@ -1896,12 +1907,12 @@ body,
   gap: 10px;
 }
 .cb-route-flow > div {
-  gap: 4px;
+  gap: 8px;
   font-size: 12px;
 }
 .cb-route-flow > div > svg {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
 }
 .cb-route-flow small {
   font-size: 11px;
@@ -1913,8 +1924,10 @@ body,
 .cb-chart-only {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  padding-top: clamp(8px, 1.5vh, 16px);
+  flex: 0 1 clamp(128px, 24vh, 224px);
+  height: clamp(128px, 24vh, 224px);
+  min-height: 112px;
+  padding-top: 16px;
   border-top: 1px solid var(--cb-line);
 }
 .cb-chart-head {
@@ -1935,10 +1948,10 @@ body,
 }
 .cb-rate-card {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   flex-direction: column;
   justify-content: center;
-  min-height: 0;
+  min-height: min-content;
   padding: 14px 18px;
   background: var(--cb-surface);
   border: 1px solid var(--cb-line);
@@ -1947,8 +1960,13 @@ body,
 .cb-traffic-plot {
   display: block;
   width: 100%;
-  flex: 1;
-  min-height: 20px;
+  height: 0;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.cb-traffic-plot path,
+.cb-traffic-plot line {
+  vector-effect: non-scaling-stroke;
 }
 .cb-chart-foot {
   flex: none;
@@ -1966,12 +1984,18 @@ body,
 .cb-home-side {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: clamp(12px, 1.6vh, 18px);
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding-right: 4px;
+  container: home-controls / size;
+  overflow: visible;
+}
+.cb-home-side > .cb-takeover-panel,
+.cb-home-side > .cb-source-strip,
+.cb-home-side > .cb-rate-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .cb-home-side .cb-session-strip {
   flex: none;
@@ -2009,6 +2033,64 @@ body,
 }
 .cb-source-strip p {
   font-size: 12px;
+}
+/* Compact the contents using the rail's actual available height, including
+   space consumed by update banners, instead of hiding a scrollbar over them. */
+@container home-controls (max-height: 540px) {
+  .cb-takeover-panel {
+    padding: 12px 16px;
+  }
+  .cb-takeover-panel h3 {
+    margin-bottom: 4px;
+  }
+  .cb-takeover-row {
+    min-height: 40px;
+    padding: 8px 0;
+  }
+  .cb-takeover-row p,
+  .cb-takeover-panel .cb-control-note,
+  .cb-mode-control > p,
+  .cb-chart-head p {
+    display: none;
+  }
+  .cb-mode-control {
+    padding-top: 8px;
+  }
+  .cb-rate-card {
+    padding: 12px 16px;
+  }
+  .cb-rate-card .cb-chart-head {
+    display: block;
+  }
+  .cb-rate-card .cb-rate-pair {
+    margin-top: 8px;
+    gap: 8px 12px;
+  }
+  .cb-home-side .cb-session-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding-top: 8px;
+    margin-top: 8px;
+  }
+  .cb-session-strip > span {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+}
+@container home-controls (max-height: 420px) {
+  .cb-source-strip {
+    min-height: 48px;
+    padding: 8px 16px;
+  }
+  .cb-source-strip p {
+    display: none;
+  }
+  .cb-rate-pair b {
+    font-size: 16px;
+  }
 }
 .cb-connection-table {
   display: flex;
@@ -2322,6 +2404,7 @@ textarea:focus-visible,
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--cb-accent) 12%, transparent);
 }
 .cb-global-tools .cb-source-pick,
+.cb-global-tools .cb-diagnostics-button,
 .cb-global-tools .cb-notification-history > button {
   height: 34px;
   min-height: 34px;
@@ -2335,9 +2418,17 @@ textarea:focus-visible,
   color: var(--cb-text-dim);
 }
 .cb-global-tools .cb-source-pick:hover,
+.cb-global-tools .cb-diagnostics-button:hover,
 .cb-global-tools .cb-notification-history > button:hover {
   background: var(--cb-surface-2);
   color: var(--cb-text);
+}
+.cb-global-tools .cb-notification-history > button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+  flex: none;
 }
 .cb-source-pick > span:last-child {
   font-size: 16px;
@@ -2358,7 +2449,10 @@ textarea:focus-visible,
     line-height: 26px;
   }
   .cb-home-main {
-    gap: 8px;
+    gap: 16px;
+  }
+  .cb-home-overview {
+    gap: 16px;
   }
   .cb-home-lead h2 {
     font-size: 24px;
