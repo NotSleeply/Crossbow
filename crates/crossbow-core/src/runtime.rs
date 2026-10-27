@@ -30,6 +30,11 @@ pub struct RuntimeConfig {
     pub log_level: String,
     /// TUN 模式（内核创建 utun 接管全局流量）。
     pub tun_enable: bool,
+    /// 物理网络存在原生 IPv6 默认路由。false 时 TUN 不注入 inet6 地址/
+    /// 分流路由，dns.ipv6 同步关闭（AAAA 过滤）——DIRECT 的 v6 目的地在
+    /// v4-only 网络上必然 no route to host（#136 实测）。未探测的平台
+    /// 保持 true（现双栈行为）。
+    pub native_ipv6: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -42,6 +47,7 @@ impl Default for RuntimeConfig {
             controller_secret: String::new(),
             log_level: "info".into(),
             tun_enable: false,
+            native_ipv6: true,
         }
     }
 }
@@ -79,25 +85,30 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         // 显式双栈：mihomo 默认的 inet6 地址存在但 macOS 上 auto-route 不会
         // 自动装 v6 路由（实测 IPv6 被阻断）——补 inet6 地址 + 分流路由，
         // 对齐 sing-box inbound 的双栈行为（#21 实测 / #59）。
-        tun.insert(
-            Value::from("inet6-address"),
-            Value::Sequence(vec![Value::from("fdfe:dcba:9876::1/126")]),
-        );
-        tun.insert(
-            Value::from("inet6-route-address"),
-            Value::Sequence(vec![Value::from("::/1"), Value::from("8000::/1")]),
-        );
-        // v6 侧排除本地段（对齐 v4 的 route-exclude-address）：::/1+8000::/1
-        // 覆盖全部 v6 空间，不排除会把链路本地/ULA/组播吸进隧道，
-        // 路由器管理页、NAS 等 v6 本地访问会断。
-        tun.insert(
-            Value::from("inet6-route-exclude-address"),
-            Value::Sequence(vec![
-                Value::from("fe80::/10"),
-                Value::from("fc00::/7"),
-                Value::from("ff00::/8"),
-            ]),
-        );
+        // 仅在物理网络有原生 v6 时注入（#136）：v4-only 网络上 DIRECT 的
+        // v6 目的地从物理网卡发不出去（no route to host），吸进隧道只会
+        // 白等一轮 + warning 刷屏；走代理的 v6 由远端节点出口，不受影响。
+        if rt.native_ipv6 {
+            tun.insert(
+                Value::from("inet6-address"),
+                Value::Sequence(vec![Value::from("fdfe:dcba:9876::1/126")]),
+            );
+            tun.insert(
+                Value::from("inet6-route-address"),
+                Value::Sequence(vec![Value::from("::/1"), Value::from("8000::/1")]),
+            );
+            // v6 侧排除本地段（对齐 v4 的 route-exclude-address）：::/1+8000::/1
+            // 覆盖全部 v6 空间，不排除会把链路本地/ULA/组播吸进隧道，
+            // 路由器管理页、NAS 等 v6 本地访问会断。
+            tun.insert(
+                Value::from("inet6-route-exclude-address"),
+                Value::Sequence(vec![
+                    Value::from("fe80::/10"),
+                    Value::from("fc00::/7"),
+                    Value::from("ff00::/8"),
+                ]),
+            );
+        }
         tun.insert(
             Value::from("route-exclude-address"),
             Value::Sequence(vec![Value::from("192.168.0.0/16")]),
@@ -119,7 +130,9 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         dns.insert(Value::from("enhanced-mode"), Value::from("fake-ip"));
         // AAAA 记录默认被过滤（ipv6: false）——浏览器拿不到 v6 地址，
         // 双栈隧道形同虚设；打开后 AAAA 经 fake-ip/tun 走节点。
-        dns.insert(Value::from("ipv6"), Value::from(true));
+        // 与 inet6 路由同门控：无原生 v6 时过滤 AAAA，应用拿不到 v6 地址
+        // 连试都不会试（#136）。
+        dns.insert(Value::from("ipv6"), Value::from(rt.native_ipv6));
         patch.insert(Value::from("tun"), Value::Mapping(tun));
         patch.insert(Value::from("dns"), Value::Mapping(dns));
     }
@@ -198,6 +211,30 @@ fn sb_log_level(level: &str) -> &str {
 mod tests {
     use super::*;
 
+    /// #136：无原生 v6 时 TUN 不注入 inet6 地址/分流路由，dns.ipv6 关闭；
+    /// 有原生 v6（默认）时维持 #59 双栈注入。
+    #[test]
+    fn tun_inet6_injection_gates_on_native_ipv6() {
+        let base = "mixed-port: 7897\nproxies: []\n";
+        let rt = |native_ipv6| RuntimeConfig {
+            tun_enable: true,
+            native_ipv6,
+            controller_port: 19090,
+            controller_secret: "s3cret".into(),
+            ..RuntimeConfig::default()
+        };
+        let with_v6 = apply_runtime(base, &rt(true)).unwrap();
+        assert!(with_v6.contains("inet6-address"));
+        assert!(with_v6.contains("inet6-route-address"));
+        assert!(with_v6.contains("inet6-route-exclude-address"));
+        assert!(with_v6.contains("ipv6: true"));
+        let without_v6 = apply_runtime(base, &rt(false)).unwrap();
+        assert!(!without_v6.contains("inet6-address"));
+        assert!(!without_v6.contains("inet6-route-address"));
+        assert!(!without_v6.contains("inet6-route-exclude-address"));
+        assert!(without_v6.contains("ipv6: false"));
+    }
+
     #[test]
     fn runtime_overrides_subscription_ports() {
         let base = "mixed-port: 12345\nproxies: []\n";
@@ -270,6 +307,7 @@ mod tests {
                 controller_secret: "sb-secret".into(),
                 log_level: "warning".into(),
                 tun_enable: false,
+                native_ipv6: true,
             },
         )
         .unwrap();

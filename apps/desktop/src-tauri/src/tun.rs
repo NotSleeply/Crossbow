@@ -22,6 +22,33 @@ pub fn is_setuid(bin: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// 物理网络是否有原生（非隧道）IPv6 默认路由。TUN 的 inet6 地址/分流
+/// 路由注入与 dns.ipv6 仅在原生 v6 可达时才有意义：v4-only 网络上
+/// DIRECT 的 v6 目的地从物理网卡发不出去（#136 实测 no route to host）。
+/// netstat 失败按「有 v6」处理（fail-open 保持现行为）。
+pub fn has_native_ipv6() -> bool {
+    let Ok(output) = std::process::Command::new("netstat")
+        .args(["-rn", "-f", "inet6"])
+        .output()
+    else {
+        return true;
+    };
+    native_v6_default(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// netstat -rn -f inet6 行解析：存在 default 路由且出口接口不是 utun
+/// 即为原生 v6（fe80 网关经物理口也算——路由器通告的原生 v6 常见形态）。
+/// 列结构复用 coexist 的按空白切列模式：Dest Gateway Flags Netif [Expire]。
+fn native_v6_default(text: &str) -> bool {
+    text.lines().any(|line| {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        match cols.as_slice() {
+            [dest, _gateway, _flags, netif, ..] => *dest == "default" && !netif.starts_with("utun"),
+            _ => false,
+        }
+    })
+}
+
 /// 把 TUN 内核放到版本化的用户数据目录，避免更新 `.app` 时覆盖掉
 /// 已授权的 setuid 文件。只有核心版本变化时才需要重新授权。
 fn persistent_core_bin(state: &AppState, source: &Path) -> Result<PathBuf, String> {
@@ -208,6 +235,29 @@ fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
 
 #[cfg(test)]
 mod route_tests {
+    /// #136：netstat -f inet6 解析——fe80/utun 噪音不算原生 v6；
+    /// 经物理口的 default（fe80 网关或全局网关）算；空表不算；
+    /// 残行（列数不足）不 panic 也不误判。
+    #[test]
+    fn native_v6_default_needs_physical_default_route() {
+        let noise = concat!(
+            "Internet6 Destination Gateway Flags Netif Expire\n",
+            "default fe80::%utun0 UGcIg utun0\n",
+            "default fe80::%utun1 UGcIg utun1\n",
+            "::/1 fdfe:dcba:9876::1 UGScg utun4\n",
+            "8000::/1 fdfe:dcba:9876::1 UGScg utun4\n",
+        );
+        assert!(!native_v6_default(noise));
+        assert!(native_v6_default(&format!(
+            "{noise}default fe80::1@en0 UGcI en0\n"
+        )));
+        assert!(native_v6_default(&format!(
+            "{noise}default 2408:80f1:21:c07f::1 UGSc en0\n"
+        )));
+        assert!(!native_v6_default(""));
+        assert!(!native_v6_default("default fe80::1@en0\n"));
+    }
+
     use super::*;
 
     #[test]

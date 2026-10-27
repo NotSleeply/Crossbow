@@ -31,9 +31,10 @@
 .cb-notification-heading { display: flex; align-items: center; gap: 12px; }
 .cb-notification-title { flex: 1; min-width: 0; }
 .cb-notification-percent {
-  flex: none; padding: 2px 7px; border-radius: 6px;
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  padding: 3px 7px; border-radius: 6px;
   background: var(--cb-accent-soft); color: var(--cb-accent);
-  font: 600 12px/18px var(--cb-mono); font-variant-numeric: tabular-nums;
+  font: 600 12px/1 var(--cb-mono); font-variant-numeric: tabular-nums;
 }
 .cb-notification-percent > span { font-size: 10px; margin-left: 1px; }
 .cb-notification .cb-notification-transfer { font-variant-numeric: tabular-nums; }
