@@ -187,7 +187,7 @@ export default function ProfilesPage({
               render={(profile) => (
                 <button
                   key={profile.id}
-                  className={profile.id === selected?.id ? "active" : ""}
+                  className={`cb-profile-list-item ${profile.id === selected?.id ? "active" : ""}`}
                   aria-current={
                     profile.id === selected?.id ? "page" : undefined
                   }
