@@ -241,11 +241,19 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     // reads the store. Release this guard before either TUN or regular startup.
     let rt = {
         let store = state.store.lock().unwrap();
+        let tun_enable = store.data().engine.tun_enable;
+        // v6 双栈注入与原生 v6 可达性联动（#136）：v4-only 网络上 DIRECT
+        // 的 v6 目的地发不出去，只会在日志里刷 no route to host。
+        #[cfg(target_os = "macos")]
+        let native_ipv6 = !tun_enable || crate::tun::has_native_ipv6();
+        #[cfg(not(target_os = "macos"))]
+        let native_ipv6 = true;
         RuntimeConfig {
             engine: store.data().engine.engine,
             mixed_port: store.data().engine.mixed_port,
             allow_lan: store.data().engine.allow_lan,
-            tun_enable: store.data().engine.tun_enable,
+            tun_enable,
+            native_ipv6,
             ..RuntimeConfig::default()
         }
     };
