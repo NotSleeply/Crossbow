@@ -115,6 +115,11 @@ jobs:
         working-directory: apps/desktop
         run: pnpm tauri build --config tauri.ci.conf.json
 
+      - name: Smoke-test Windows service installation and upgrade
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: ./scripts/ci/smoke_windows_service.ps1
+
       - name: Package and smoke-test macOS app
         if: matrix.os == 'macos-15'
         run: |

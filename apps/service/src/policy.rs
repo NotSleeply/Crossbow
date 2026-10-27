@@ -9,9 +9,16 @@ pub fn relative_path(path: &str) -> Result<String, String> {
     if path.is_empty()
         || path.contains(':')
         || path.starts_with('/')
-        || path
-            .split('/')
-            .any(|p| p.is_empty() || p == "." || p == "..")
+        || path.split('/').any(|p| {
+            let stem = p.split('.').next().unwrap_or("").to_ascii_uppercase();
+            p.is_empty()
+                || p.ends_with(['.', ' '])
+                || p.chars().any(|c| c.is_control() || "<>|?*".contains(c))
+                || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                || (stem.len() == 4
+                    && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                    && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+        })
     {
         return Err("provider paths must stay inside the service runtime".into());
     }
@@ -45,6 +52,7 @@ pub fn config(bytes: &[u8]) -> Result<(String, Vec<String>), String> {
     for key in [
         "external-controller-unix",
         "external-controller-pipe",
+        "external-controller-tls",
         "external-ui",
         "external-ui-url",
         "external-ui-name",
@@ -87,6 +95,10 @@ mod tests {
             "C:\\Windows\\x",
             "\\\\host\\share",
             "/etc/x",
+            "a/.. /escape",
+            "a/NUL.txt",
+            "a/COM1",
+            "a/file. ",
             "a\\..\\x",
             "a:x",
             "a//x",
