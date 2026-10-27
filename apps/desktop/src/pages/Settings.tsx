@@ -209,7 +209,7 @@ export default function SettingsPage({
   };
 
   return (
-    <div className="cb-settings-page min-w-0 space-y-5">
+    <div className={`cb-settings-page cb-settings-${section}`}>
       <PageHead title={t("settings.title")} />
 
       {section === "network" && (
@@ -702,13 +702,15 @@ function Row({
     <div
       className="cb-setting-row flex items-center justify-between"
       role="group"
+      title={hint}
       aria-label={label}
     >
       <div>
         <div className="text-sm">{label}</div>
         {hint && (
           <div
-            className="mt-0.5 text-xs"
+            className="cb-setting-hint mt-0.5 text-xs"
+            title={hint}
             style={{ color: "var(--cb-text-dim)" }}
           >
             {hint}

@@ -5,6 +5,7 @@ import { ipc, type Profile } from "../ipc";
 import Select from "../components/Select";
 import OverridePanel from "./OverridePanel";
 import { useT } from "../i18n";
+import FitItems from "../components/FitItems";
 import Dialog from "../components/Dialog";
 import { Icon } from "../components/Icon";
 import { ProgressRing } from "../components/ProgressRing";
@@ -179,22 +180,31 @@ export default function ProfilesPage({
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.sources")}>
             <h2>{t("studio.sources")}</h2>
-            {profiles.map((profile) => (
-              <button
-                key={profile.id}
-                className={profile.id === selected?.id ? "active" : ""}
-                aria-current={profile.id === selected?.id ? "page" : undefined}
-                onClick={() => setSelectedId(profile.id)}
-              >
-                <span>{profile.name}</span>
-                <small>
-                  {profile.kind === "remote"
-                    ? t("profiles.remote")
-                    : t("profiles.local")}
-                  {profile.id === activeId ? ` · ${t("profiles.current")}` : ""}
-                </small>
-              </button>
-            ))}
+            <FitItems
+              items={profiles}
+              rowHeight={58}
+              label={t("studio.sources")}
+              render={(profile) => (
+                <button
+                  key={profile.id}
+                  className={`cb-profile-list-item ${profile.id === selected?.id ? "active" : ""}`}
+                  aria-current={
+                    profile.id === selected?.id ? "page" : undefined
+                  }
+                  onClick={() => setSelectedId(profile.id)}
+                >
+                  <span>{profile.name}</span>
+                  <small>
+                    {profile.kind === "remote"
+                      ? t("profiles.remote")
+                      : t("profiles.local")}
+                    {profile.id === activeId
+                      ? ` · ${t("profiles.current")}`
+                      : ""}
+                  </small>
+                </button>
+              )}
+            />
           </nav>
           <div className="cb-profile-detail">
             {selected && (

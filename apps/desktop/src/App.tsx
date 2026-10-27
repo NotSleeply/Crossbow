@@ -10,6 +10,7 @@ import SettingsPage from "./pages/Settings";
 import { initLang, useT } from "./i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import logoGlyph from "./assets/logo-glyph.png";
+import { Icon } from "./components/Icon";
 
 /** Overlay 标题栏拖拽：显式 startDragging（data-tauri-drag-region 在
  *  Overlay 样式下不可靠），主键按下才触发，不影响子元素交互。 */
@@ -251,6 +252,7 @@ export default function App() {
         <div className="cb-global-tools">
           <button
             className="cb-source-pick"
+            title={profileName || t("studio.sources")}
             onClick={() => {
               setConfigTab("sources");
               go("profiles");
@@ -258,6 +260,10 @@ export default function App() {
           >
             <span>{profileName || t("studio.sources")}</span>
             <span aria-hidden="true">›</span>
+          </button>
+          <button className="cb-btn cb-diagnostics-button" onClick={() => go("diagnostics")}>
+            <Icon name="pulse" />
+            {t("nav.diagnostics")}
           </button>
           <NotificationHistory />
         </div>
@@ -299,7 +305,7 @@ export default function App() {
             </button>
           </nav>
         )}
-        <div className="cb-page-content">
+        <div className={`cb-page-content cb-view-${page}`}>
           {page === "home" && <HomePage />}
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} />}

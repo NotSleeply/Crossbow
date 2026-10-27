@@ -5,6 +5,8 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "studio.previous": "上一页",
+    "studio.next": "下一页",
     "proxies.search": "搜索节点或协议",
     "proxies.all": "全部",
     "proxies.onlyAlive": "仅看可用",
@@ -22,7 +24,7 @@ const dict: Record<Lang, Record<string, string>> = {
 
     "studio.proxy": "系统代理",
     "studio.navigation": "主导航",
-    "studio.connect": "连接",
+    "studio.connect": "概览",
     "studio.nodes": "节点",
     "studio.monitor": "监测",
     "studio.config": "配置",
@@ -305,9 +307,11 @@ const dict: Record<Lang, Record<string, string>> = {
       "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
+    "studio.previous": "Previous page",
+    "studio.next": "Next page",
     "studio.proxy": "System proxy",
     "studio.navigation": "Main navigation",
-    "studio.connect": "Connect",
+    "studio.connect": "Overview",
     "studio.nodes": "Nodes",
     "studio.monitor": "Monitor",
     "studio.config": "Configuration",

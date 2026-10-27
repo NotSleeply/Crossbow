@@ -260,10 +260,7 @@ export default function LogsPage() {
   }, [lines, enabled, keyword]);
 
   return (
-    <div
-      className="mx-auto flex max-w-6xl flex-col gap-3"
-      style={{ height: "100%" }}
-    >
+    <div className="cb-logs-page">
       <div className="cb-log-toolbar flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
           {t("logs.title")}
@@ -304,7 +301,6 @@ export default function LogsPage() {
             el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
         className="cb-card cb-log-scroll cb-selectable cb-mono text-[13px] leading-5"
-        style={{ height: 520, overflowY: "auto" }}
       >
         {shown.length === 0 ? (
           <div

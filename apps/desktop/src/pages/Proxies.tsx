@@ -4,6 +4,7 @@ import { ipc, type GroupView, type NodeView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
 import SiteConnectivity from "../components/SiteConnectivity";
+import FitItems from "../components/FitItems";
 import { Icon } from "../components/Icon";
 
 /** 地区聚类（#141）：旗标优先，名称关键词兜底；顺序即 chips 顺序。 */
@@ -258,21 +259,23 @@ export default function ProxiesPage() {
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2>{t("studio.groups")}</h2>
-            {groups.map((group) => (
-              <button
-                key={group.name}
-                className={selectedGroup?.name === group.name ? "active" : ""}
-                aria-current={
-                  selectedGroup?.name === group.name ? "page" : undefined
-                }
-                onClick={() => setGroupName(group.name)}
-              >
-                <span>{group.name}</span>
-                <small>{group.kind}</small>
-              </button>
-            ))}
+            <div className="cb-context-scroll">
+              {groups.map((group) => (
+                <button
+                  key={group.name}
+                  className={selectedGroup?.name === group.name ? "active" : ""}
+                  aria-current={
+                    selectedGroup?.name === group.name ? "page" : undefined
+                  }
+                  onClick={() => setGroupName(group.name)}
+                >
+                  <span>{group.name}</span>
+                  <small>{group.kind}</small>
+                </button>
+              ))}
+            </div>
           </nav>
-          <div className="min-w-0">
+          <div className="cb-nodes-workspace">
             {selectedGroup && (
               <GroupCard
                 key={selectedGroup.name}
@@ -382,6 +385,7 @@ function GroupCard({
         <span className="cb-micro">{group.kind}</span>
         <span
           className="cb-group-current cb-mono ml-auto text-[11px]"
+          title={group.now ?? undefined}
           style={{ color: "var(--cb-accent)" }}
         >
           {t("proxies.now")} → {group.now ?? "—"}
@@ -481,8 +485,13 @@ function GroupCard({
         </div>
       )}
 
-      <div className="cb-node-grid">
-        {visible.map((n) => {
+      <FitItems
+        items={visible}
+        minWidth={185}
+        maxColumns={3}
+        rowHeight={60}
+        label={group.name}
+        render={(n) => {
           const sel = group.now === n.name;
           const cls = delayClass(n.delay_ms);
           const nodeTesting = testingNodes.has(nodeTestKey(group.name, n.name));
@@ -504,7 +513,7 @@ function GroupCard({
               aria-disabled={selecting === `${group.name}:${n.name}`}
               className={`cb-node-card group relative rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
                 selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
-              } hover:border-[var(--cb-accent-line)]`}
+              }`}
               style={{
                 border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
                 background: sel
@@ -578,8 +587,9 @@ function GroupCard({
               </div>
             </div>
           );
-        })}
-      </div>
+        }}
+      />
+
       {visible.length === 0 && realNodes.length > 0 && (
         <div
           className="py-6 text-center text-xs"

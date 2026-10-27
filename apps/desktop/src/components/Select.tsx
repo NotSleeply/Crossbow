@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface SelectOption {
   value: string | number;
   label: string;
 }
 
-/** 设计系统风格的迷你下拉（替代原生 select，弹层用 cb tokens）。 */
+/** Portal keeps the option list visible outside the fixed-height content sheet. */
 export default function Select({
   value,
   options,
@@ -14,74 +15,165 @@ export default function Select({
 }: {
   value: string | number;
   options: SelectOption[];
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const current = options.find((o) => o.value === value);
-
+  const [position, setPosition] = useState({
+    left: 0,
+    top: 0,
+    width: 160,
+    height: 240,
+  });
+  const button = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const current = options.find(
+    (option) => String(option.value) === String(value),
+  );
+  useLayoutEffect(() => {
+    if (!open || !button.current) return;
+    const box = button.current.getBoundingClientRect();
+    const width = Math.min(
+      300,
+      Math.max(box.width, 160),
+      window.innerWidth - 24,
+    );
+    const below = window.innerHeight - box.bottom - 12,
+      above = box.top - 12;
+    const upwards =
+      below < Math.min(240, options.length * 34 + 8) && above > below;
+    const height = Math.max(
+      34,
+      Math.min(240, upwards ? above - 6 : below - 6, options.length * 34 + 8),
+    );
+    setPosition({
+      left: Math.max(12, Math.min(box.left, window.innerWidth - width - 12)),
+      top: upwards ? box.top - height - 6 : box.bottom + 6,
+      width,
+      height,
+    });
+  }, [open, options.length]);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    const outside = (event: MouseEvent) => {
+      if (
+        !button.current?.contains(event.target as Node) &&
+        !popup.current?.contains(event.target as Node)
+      )
+        setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    const resize = () => setOpen(false);
+    document.addEventListener("mousedown", outside);
+    window.addEventListener("resize", resize);
+    const selected =
+      popup.current?.querySelector<HTMLButtonElement>(
+        '[aria-selected="true"]',
+      ) ?? popup.current?.querySelector("button");
+    selected?.focus();
+    selected?.scrollIntoView({ block: "nearest" });
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      window.removeEventListener("resize", resize);
+    };
   }, [open]);
-
+  const close = () => {
+    setOpen(false);
+    button.current?.focus();
+  };
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div className={`relative ${className}`}>
       <button
+        ref={button}
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="cb-input inline-flex items-center gap-1.5"
-        style={{ width: "auto" }}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={id}
+        aria-haspopup="listbox"
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className="cb-input cb-select-trigger"
+        title={current?.label}
       >
-        {current?.label ?? "—"}
+        <span>{current?.label ?? "—"}</span>
         <svg
-          width="9"
-          height="9"
+          width="10"
+          height="10"
           viewBox="0 0 10 10"
-          style={{
-            transform: open ? "rotate(180deg)" : "none",
-            transition: "transform .12s",
-          }}
+          fill="none"
+          stroke="currentColor"
+          aria-hidden="true"
+          style={{ transform: open ? "rotate(180deg)" : undefined }}
         >
-          <path
-            d="M2 3.5 L5 6.5 L8 3.5"
-            fill="none"
-            stroke="var(--cb-text-dim)"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
+          <path d="m2 3.5 3 3 3-3" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       </button>
-      {open && (
-        <div
-          className="cb-card absolute right-0 z-20 mt-1 w-max max-w-[300px] min-w-[110px] overflow-hidden p-1"
-          style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
-        >
-          {options.map((o) => (
-            <button
-              key={o.value}
-              onClick={() => {
-                onChange(String(o.value));
+      {open &&
+        createPortal(
+          <div
+            ref={popup}
+            id={id}
+            role="listbox"
+            className="cb-select-options"
+            style={{
+              left: position.left,
+              top: position.top,
+              width: position.width,
+              maxHeight: position.height,
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }
+              if (event.key === "Tab") {
                 setOpen(false);
-              }}
-              className="block w-full rounded-md px-2.5 py-1.5 text-left text-xs"
-              style={{
-                color:
-                  o.value === value ? "var(--cb-accent)" : "var(--cb-text-dim)",
-                background:
-                  o.value === value ? "var(--cb-accent-soft)" : "transparent",
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
+                return;
+              }
+              const buttons = [
+                ...(popup.current?.querySelectorAll<HTMLButtonElement>(
+                  "button",
+                ) ?? []),
+              ];
+              const index = buttons.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                buttons[
+                  (index +
+                    (event.key === "ArrowDown" ? 1 : buttons.length - 1)) %
+                    buttons.length
+                ]?.focus();
+              }
+              if (event.key === "Home" || event.key === "End") {
+                event.preventDefault();
+                buttons[event.key === "Home" ? 0 : buttons.length - 1]?.focus();
+              }
+            }}
+          >
+            {options.map((option) => (
+              <button
+                key={option.value}
+                role="option"
+                aria-selected={String(option.value) === String(value)}
+                onClick={() => {
+                  onChange(String(option.value));
+                  close();
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
