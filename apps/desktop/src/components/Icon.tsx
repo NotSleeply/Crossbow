@@ -11,6 +11,30 @@ export function Icon({
   strokeWidth?: number;
 }) {
   const paths: Record<string, React.ReactNode> = {
+    device: (
+      <>
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M8 21h8m-4-4v4" />
+      </>
+    ),
+    globe: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18M12 3c5 5 5 13 0 18M12 3c-5 5-5 13 0 18M5 6.5c4 3 10 3 14 0M5 17.5c4-3 10-3 14 0" />
+      </>
+    ),
+    sliders: (
+      <>
+        <path d="M3 6h18M3 12h18M3 18h18" />
+        <path d="M7 3v6m10 0v6M9 15v6" />
+      </>
+    ),
+    document: (
+      <>
+        <path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6" />
+      </>
+    ),
+    chevron: <path d="m9 5 7 7-7 7" />,
     "arrow-right": <path d="M5 12 H19 M14 7 L19 12 L14 17" />,
     check: <path d="M5 12 L10 17 L19 7" />,
     download: <path d="M12 3 V15 M7 10 L12 15 L17 10 M4 17 V21 H20 V17" />,

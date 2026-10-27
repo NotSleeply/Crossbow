@@ -5,29 +5,48 @@ import { ipc, type Profile } from "../ipc";
 import Select from "../components/Select";
 import OverridePanel from "./OverridePanel";
 import { useT } from "../i18n";
+import Dialog from "../components/Dialog";
+import { Icon } from "../components/Icon";
+import { ProgressRing } from "../components/ProgressRing";
 import { PageHead } from "./Home";
 
 function fmtBytesLocal(n: number): string {
   if (n <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
+  const i = Math.min(
+    Math.floor(Math.log(n) / Math.log(1024)),
+    units.length - 1,
+  );
   return `${(n / 1024 ** i).toFixed(1)} ${units[i]}`;
 }
 
-function fmtTime(ts: number | null | undefined, t: (k: "profiles.justNow" | "profiles.minAgo" | "profiles.hourAgo", p?: Record<string, number>) => string): string {
+function fmtTime(
+  ts: number | null | undefined,
+  t: (
+    k: "profiles.justNow" | "profiles.minAgo" | "profiles.hourAgo",
+    p?: Record<string, number>,
+  ) => string,
+): string {
   if (!ts) return "—";
   const diff = Date.now() / 1000 - ts;
   if (diff < 60) return t("profiles.justNow");
   if (diff < 3600) return t("profiles.minAgo", { n: Math.floor(diff / 60) });
-  if (diff < 86400) return t("profiles.hourAgo", { n: Math.floor(diff / 3600) });
+  if (diff < 86400)
+    return t("profiles.hourAgo", { n: Math.floor(diff / 3600) });
   return new Date(ts * 1000).toLocaleDateString();
 }
 
 /** 配置页：订阅导入（URL）、更新、激活、删除；覆写链在 M0-S3 接入。 */
-export default function ProfilesPage() {
+export default function ProfilesPage({
+  tab = "sources",
+}: {
+  tab?: "sources" | "overrides";
+}) {
   const t = useT();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -72,9 +91,15 @@ export default function ProfilesPage() {
           void importPaths(event.payload.paths);
         }
       })
-      .then((u) => { if (disposed) u(); else un = u; })
+      .then((u) => {
+        if (disposed) u();
+        else un = u;
+      })
       .catch((error) => notify.error(error, "profile-file-import"));
-    return () => { disposed = true; un?.(); };
+    return () => {
+      disposed = true;
+      un?.();
+    };
   }, [importPaths]);
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
@@ -98,98 +123,153 @@ export default function ProfilesPage() {
     }
   };
 
+  const selected =
+    profiles.find((p) => p.id === selectedId) ??
+    profiles.find((p) => p.id === activeId) ??
+    profiles[0];
+  const importUrl = () =>
+    run("import", async () => {
+      await ipc.importProfileUrl(url.trim());
+      setUrl("");
+      setImporting(false);
+    });
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <PageHead title={t("profiles.title")} />
-
-      <div
-        className="cb-card flex gap-2 p-2 transition-colors"
-        style={{
-          borderStyle: dragOver ? "dashed" : undefined,
-          borderColor: dragOver ? "var(--cb-accent-line)" : undefined,
-          background: dragOver ? "var(--cb-accent-soft)" : undefined,
-        }}
+    <div className="cb-profiles-page">
+      <PageHead
+        title={t(tab === "overrides" ? "studio.overrides" : "studio.sources")}
+        meta={t("studio.configHint")}
       >
-        <input
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && url) {
-              run("import", async () => {
-                await ipc.importProfileUrl(url);
-                setUrl("");
-              });
-            }
-          }}
-          placeholder={t("profiles.urlPlaceholder")}
-          className="cb-input cb-selectable flex-1 px-3 py-2"
+        {tab === "sources" && (
+          <button className="cb-btn" onClick={() => setImporting(true)}>
+            <Icon name="download" />
+            {t("studio.importSource")}
+          </button>
+        )}
+      </PageHead>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".yaml,.yml,.txt,.conf"
+        multiple
+        hidden
+        onChange={(e) => {
+          void chosenFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {dragOver && (
+        <div className="cb-drop-indicator">{t("profiles.dropHint")}</div>
+      )}
+      {tab === "overrides" ? (
+        <OverridePanel
+          profiles={profiles}
+          activeId={activeId}
+          onChanged={refresh}
         />
-        <button
-          disabled={!url || busy === "import"}
-          onClick={() =>
-            run("import", async () => {
-              await ipc.importProfileUrl(url);
-              setUrl("");
-            })
-          }
-          className="cb-btn acc px-4 py-2"
-        >
-          {busy === "import" ? t("profiles.importing") : t("profiles.import")}
-        </button>
-        <button
-          disabled={busy !== null}
-          onClick={() => fileInputRef.current?.click()}
-          className="cb-btn px-3 py-2"
-        >
-          {busy?.endsWith(".yaml") || busy?.endsWith(".yml")
-            ? t("profiles.importing")
-            : t("profiles.importFile")}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".yaml,.yml,.txt,.conf"
-          multiple
-          hidden
-          onChange={(e) => {
-            void chosenFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </div>
-      <div className="text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-        {t("profiles.dropHint")}
-      </div>
-
-
-      {profiles.length === 0 ? (
-        <div className="cb-card flex h-48 items-center justify-center text-sm"
-          style={{ color: "var(--cb-text-dim)" }}>
-          {t("profiles.empty")}
+      ) : profiles.length === 0 ? (
+        <div className="cb-empty">
+          <Icon name="document" size={26} />
+          <h2>{t("profiles.empty")}</h2>
+          <p>{t("profiles.dropHint")}</p>
+          <button className="cb-btn mt-4" onClick={() => setImporting(true)}>
+            {t("studio.importSource")}
+          </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {profiles.map((p) => (
-            <ProfileCard
-              key={p.id}
-              profile={p}
-              active={p.id === activeId}
-              busy={busy !== null && busy.endsWith(`-${p.id}`)}
-              onUpdate={() => run(`update-${p.id}`, () => ipc.updateProfile(p.id))}
-              onActivate={() => run(`activate-${p.id}`, () => ipc.setActiveProfile(p.id))}
-              onRemove={() => run(`remove-${p.id}`, () => ipc.removeProfile(p.id))}
-              onSetInterval={(min) => run(`interval-${p.id}`, () => ipc.setProfileInterval(p.id, min))}
-              onRename={(name) => run(`rename-${p.id}`, () => ipc.renameProfile(p.id, name))}
-            />
-          ))}
+        <div className="cb-context-layout">
+          <nav className="cb-context-nav" aria-label={t("studio.sources")}>
+            <h2>{t("studio.sources")}</h2>
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                className={profile.id === selected?.id ? "active" : ""}
+                aria-current={profile.id === selected?.id ? "page" : undefined}
+                onClick={() => setSelectedId(profile.id)}
+              >
+                <span>{profile.name}</span>
+                <small>
+                  {profile.kind === "remote"
+                    ? t("profiles.remote")
+                    : t("profiles.local")}
+                  {profile.id === activeId ? ` · ${t("profiles.current")}` : ""}
+                </small>
+              </button>
+            ))}
+          </nav>
+          <div className="cb-profile-detail">
+            {selected && (
+              <ProfileCard
+                key={selected.id}
+                profile={selected}
+                active={selected.id === activeId}
+                busy={busy !== null}
+                onUpdate={() =>
+                  run(`update-${selected.id}`, () =>
+                    ipc.updateProfile(selected.id),
+                  )
+                }
+                onActivate={() =>
+                  run(`activate-${selected.id}`, () =>
+                    ipc.setActiveProfile(selected.id),
+                  )
+                }
+                onRemove={() =>
+                  run(`remove-${selected.id}`, () =>
+                    ipc.removeProfile(selected.id),
+                  )
+                }
+                onSetInterval={(min) =>
+                  run(`interval-${selected.id}`, () =>
+                    ipc.setProfileInterval(selected.id, min),
+                  )
+                }
+                onRename={(name) =>
+                  run(`rename-${selected.id}`, () =>
+                    ipc.renameProfile(selected.id, name),
+                  )
+                }
+              />
+            )}
+          </div>
         </div>
       )}
-
-      <OverridePanel
-        profiles={profiles}
-        activeId={activeId}
-        onChanged={refresh}
-      />
+      {importing && (
+        <Dialog
+          title={t("studio.importSource")}
+          onClose={() => setImporting(false)}
+        >
+          <p className="cb-control-note">{t("profiles.dropHint")}</p>
+          <label htmlFor="profile-url">{t("profiles.urlPlaceholder")}</label>
+          <input
+            id="profile-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && url.trim() && busy === null)
+                void importUrl();
+            }}
+            className="cb-input cb-selectable"
+          />
+          <div className="actions">
+            <button
+              className="cb-btn"
+              disabled={busy !== null}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("profiles.importFile")}
+            </button>
+            <button
+              className="cb-btn primary"
+              disabled={!url.trim() || busy !== null}
+              onClick={importUrl}
+            >
+              {busy === "import"
+                ? t("profiles.importing")
+                : t("profiles.import")}
+            </button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -197,7 +277,9 @@ export default function ProfilesPage() {
 function nextUpdateText(profile: Profile, t: ReturnType<typeof useT>): string {
   const lu = profile.last_update;
   if (lu && !lu.ok) {
-    return t("profiles.updateFailedAt", { detail: (lu.detail ?? "?").slice(0, 80) });
+    return t("profiles.updateFailedAt", {
+      detail: (lu.detail ?? "?").slice(0, 80),
+    });
   }
   const interval = profile.update_interval_min * 60;
   const last = profile.last_updated ?? 0;
@@ -230,113 +312,137 @@ function ProfileCard({
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
+  const cancelRename = useRef(false);
   const [nameDraft, setNameDraft] = useState(profile.name);
   const traffic = profile.traffic;
   const used = traffic ? traffic.upload + traffic.download : 0;
-  const pct = traffic && traffic.total > 0 ? Math.min(100, (used / traffic.total) * 100) : 0;
+  const pct =
+    traffic && traffic.total > 0
+      ? Math.min(100, (used / traffic.total) * 100)
+      : 0;
 
   return (
-    <section
-      className="cb-card p-4"
-      style={{
-        borderColor: active ? "var(--cb-accent-line)" : "var(--cb-line)",
-        background: active
-          ? "linear-gradient(180deg, var(--cb-accent-soft), transparent), var(--cb-surface)"
-          : undefined,
-      }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {editing ? (
-              <input
-                autoFocus
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={() => {
-                  setEditing(false);
-                  if (nameDraft.trim() && nameDraft !== profile.name) {
-                    onRename(nameDraft.trim());
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") {
-                    setNameDraft(profile.name);
-                    setEditing(false);
-                  }
-                }}
-                placeholder={t("profiles.namePlaceholder")}
-                className="cb-input cb-selectable py-0.5 text-sm"
-                style={{ width: 260 }}
-              />
-            ) : (
-              <span className="text-sm font-medium cb-selectable">{profile.name}</span>
-            )}
-            <button
-              onClick={() => {
+    <section>
+      <div className="flex flex-wrap items-center gap-3">
+        {editing ? (
+          <input
+            autoFocus
+            className="cb-input cb-selectable"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={() => {
+              setEditing(false);
+              if (cancelRename.current) {
+                cancelRename.current = false;
+                return;
+              }
+              if (nameDraft.trim() && nameDraft !== profile.name)
+                onRename(nameDraft.trim());
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                cancelRename.current = true;
                 setNameDraft(profile.name);
-                setEditing(true);
-              }}
-              title={t("profiles.rename")}
-              className="text-[11px]"
-              style={{ color: "var(--cb-faint)" }}
-            >
-              ✎
-            </button>
-            {active && (
-              <span className="cb-badge">{t("profiles.current")}</span>
+                setEditing(false);
+              }
+            }}
+          />
+        ) : (
+          <h2 className="text-xl font-medium cb-selectable">{profile.name}</h2>
+        )}
+        <button
+          className="cb-btn"
+          disabled={busy}
+          onClick={() => {
+            cancelRename.current = false;
+            setNameDraft(profile.name);
+            setEditing(true);
+          }}
+        >
+          {t("profiles.rename")}
+        </button>
+        {active && <span className="cb-badge">{t("profiles.current")}</span>}
+      </div>
+      <dl className="cb-profile-facts">
+        <div>
+          <dt>{t("studio.sources")}</dt>
+          <dd>
+            {profile.kind === "remote"
+              ? t("profiles.remote")
+              : t("profiles.local")}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("profiles.updatedAt", { time: "" })}</dt>
+          <dd>{fmtTime(profile.last_updated, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("studio.overrides")}</dt>
+          <dd>{profile.override_ids.length}</dd>
+        </div>
+        <div>
+          <dt>{t("profiles.current")}</dt>
+          <dd>{active ? t("profiles.current") : "—"}</dd>
+        </div>
+      </dl>
+      {profile.kind === "remote" && (
+        <div className="cb-setting-row flex items-center justify-between">
+          <div>
+            <div className="text-sm">{t("profiles.remote")}</div>
+            {profile.update_interval_min > 0 && (
+              <p className="cb-control-note">{nextUpdateText(profile, t)}</p>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-2 text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            {profile.kind === "remote" ? t("profiles.remote") : t("profiles.local")} ·{" "}
-            {t("profiles.updatedAt", { time: fmtTime(profile.last_updated, t) })}
-            {profile.kind === "remote" && (
-              <Select
-                value={profile.update_interval_min}
-                options={[
-                  { value: 0, label: t("profiles.autoOff") },
-                  { value: 360, label: t("profiles.autoH", { n: 6 }) },
-                  { value: 720, label: t("profiles.autoH", { n: 12 }) },
-                  { value: 1440, label: t("profiles.autoH", { n: 24 }) },
-                ]}
-                onChange={(v) => onSetInterval(Number(v))}
-              />
-            )}
-          </div>
-          {profile.kind === "remote" && profile.update_interval_min > 0 && (
-            <div className="mt-1 text-[11px]" style={{ color: "var(--cb-faint)" }}>
-              {nextUpdateText(profile, t)}
-            </div>
-          )}
-
+          <Select
+            value={profile.update_interval_min}
+            options={[
+              { value: 0, label: t("profiles.autoOff") },
+              ...[360, 720, 1440].map((min) => ({
+                value: min,
+                label: t("profiles.autoH", { n: min / 60 }),
+              })),
+            ]}
+            onChange={(value) => onSetInterval(Number(value))}
+          />
+        </div>
+      )}
+      <div className="cb-profile-actions">
+        <div>
           {traffic && traffic.total > 0 && (
-            <div className="mt-2">
-              <div className="h-[3px] w-full overflow-hidden rounded-full"
-                style={{ background: "color-mix(in srgb, var(--cb-text) 7%, transparent)" }}>
-                <div className="h-full rounded-full"
-                  style={{ width: `${pct}%`, background: pct > 90 ? "var(--cb-bad)" : "linear-gradient(90deg, var(--cb-accent), var(--cb-down))" }} />
-              </div>
-              <div className="mt-1 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-                ↑{fmtBytesLocal(traffic.upload)} ↓{fmtBytesLocal(traffic.download)} / {fmtBytesLocal(traffic.total)}
-              </div>
-            </div>
+            <>
+              <ProgressRing
+                size={44}
+                value={pct}
+                label={`${Math.round(pct)}%`}
+              />
+              <p className="text-[13px] tabular-nums">
+                {fmtBytesLocal(used)} / {fmtBytesLocal(traffic.total)}
+              </p>
+            </>
           )}
         </div>
-
-        <div className="flex shrink-0 gap-2 text-xs">
+        <div>
           {profile.kind === "remote" && (
-            <button disabled={busy} onClick={onUpdate} className="cb-btn py-1.5">
-              {busy ? "…" : t("profiles.update")}
+            <button className="cb-btn" disabled={busy} onClick={onUpdate}>
+              {t("profiles.update")}
             </button>
           )}
           {!active && (
-            <button disabled={busy} onClick={onActivate} className="cb-btn py-1.5">
+            <button
+              className="cb-btn primary"
+              disabled={busy}
+              onClick={onActivate}
+            >
               {t("profiles.setActive")}
             </button>
           )}
-          <button disabled={busy} onClick={onRemove} className="cb-btn py-1.5"
-            style={{ color: "var(--cb-bad)" }}>
+          <button
+            className="cb-btn"
+            style={{ color: "var(--cb-bad)" }}
+            disabled={busy}
+            onClick={onRemove}
+          >
             {t("profiles.remove")}
           </button>
         </div>

@@ -19,7 +19,13 @@ export default function DiagnosticsPage() {
     try {
       const checks = await ipc.runDiagnosis();
       setResults(checks);
-      notify.publish({ kind: checks.every((check) => check.ok) ? "success" : "warning", title: t("diag.title"), description: `${checks.filter((check) => check.ok).length}/${checks.length} OK`, source: "diagnostics-operation", operationId: "diagnostics-operation" });
+      notify.publish({
+        kind: checks.every((check) => check.ok) ? "success" : "warning",
+        title: t("diag.title"),
+        description: `${checks.filter((check) => check.ok).length}/${checks.length} OK`,
+        source: "diagnostics-operation",
+        operationId: "diagnostics-operation",
+      });
     } catch (e) {
       notify.error(e, "diagnostics-operation");
     } finally {
@@ -31,7 +37,8 @@ export default function DiagnosticsPage() {
     if (!check.fix) return;
     setFixing(check.id);
     const backendOwnsNotice = check.fix === "toggle_sysproxy";
-    if (!backendOwnsNotice) notify.start("diagnostics-fix", t(`diag.fix.${check.fix}` as const));
+    if (!backendOwnsNotice)
+      notify.start("diagnostics-fix", t(`diag.fix.${check.fix}` as const));
     try {
       if (check.fix === "start_core") await ipc.coreStart();
       if (check.fix === "restart_core") {
@@ -40,7 +47,8 @@ export default function DiagnosticsPage() {
         await ipc.coreStart();
       }
       if (check.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
-      if (!backendOwnsNotice) notify.success(t(`diag.fix.${check.fix}` as const), "diagnostics-fix");
+      if (!backendOwnsNotice)
+        notify.success(t(`diag.fix.${check.fix}` as const), "diagnostics-fix");
     } catch (e) {
       if (!backendOwnsNotice) notify.error(e, "diagnostics-fix");
     } finally {
@@ -68,9 +76,21 @@ export default function DiagnosticsPage() {
           <span>{t("diag.hint")}</span>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="cb-diag-results">
+          <div className="cb-diag-summary">
+            <span style={{ color: allOk ? "var(--cb-ok)" : "var(--cb-warn)" }}>
+              {results.filter((result) => result.ok).length}/{results.length}
+            </span>
+            <div>
+              <h2>{allOk ? t("diag.allOk") : t("diag.title")}</h2>
+              <p>{t("diag.hint")}</p>
+            </div>
+          </div>
           {results.map((r) => (
-            <section key={r.id} className="cb-card flex items-center gap-3 px-4 py-3">
+            <section
+              key={r.id}
+              className="cb-card flex items-center gap-3 px-4 py-3"
+            >
               <i className={`cb-dot flex-none ${r.ok ? "ok" : "bad"}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium">
@@ -86,7 +106,10 @@ export default function DiagnosticsPage() {
                 )}
               </div>
               {r.ok ? (
-                <span className="cb-mono text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
+                <span
+                  className="cb-mono text-[11px]"
+                  style={{ color: "var(--cb-text-dim)" }}
+                >
                   OK
                 </span>
               ) : r.fix ? (
