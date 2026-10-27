@@ -276,10 +276,10 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             // GUI 无从提权——把「拉起进程」外包给特权服务（crossbow-service，
             // NSIS 注册开机自启），端口/密钥/配置注入/就绪探测仍由
             // CoreManager::start_with_spawner 统一簿记。
+            let spawner = crate::service_client::make_core_spawner(&binary)?;
             if !state.sysproxy.status().enabled {
                 let _ = state.sysproxy.suspend_for_tun()?;
             }
-            let spawner = crate::service_client::make_core_spawner(&binary)?;
             return state.core().start_with_spawner(&rendered.config, &rt, Box::new(spawner));
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
