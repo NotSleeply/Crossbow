@@ -31,6 +31,7 @@ fn real_store_singbox_e2e() {
             controller_secret: secret.into(),
             log_level: "info".into(),
             tun_enable: false,
+            native_ipv6: true,
         },
     )
     .expect("apply_runtime");
