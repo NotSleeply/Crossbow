@@ -75,19 +75,25 @@ export function notificationText(code: string): string {
 // Serialize publication per operation, so a fast result cannot arrive before
 // its progress card and overwrite it. Failed IPC must not create an error loop.
 const pending = new Map<string, Promise<unknown>>();
-function publish(input: NotificationInput): Promise<unknown> {
-  const key = input.operationId || input.source || input.id || "notification";
+function enqueue(key: string, action: () => Promise<unknown>): Promise<unknown> {
   const previous = pending.get(key) ?? Promise.resolve();
-  const next = previous.catch(() => {}).then(() => invoke("notification_publish", { notice: {
-    id: "", code: "", title: "", description: "", details: "", source: "ui",
-    operationId: "", dedupeKey: "", duration: null, actions: [], progress: null, ...input,
-  } })).catch((error) => console.error("notification delivery failed", error));
+  const next = previous.catch(() => {}).then(action).catch((error) => console.error("notification delivery failed", error));
   pending.set(key, next);
   void next.finally(() => { if (pending.get(key) === next) pending.delete(key); });
   return next;
 }
+function publish(input: NotificationInput): Promise<unknown> {
+  const key = input.operationId || input.source || input.id || "notification";
+  return enqueue(key, () => invoke("notification_publish", { notice: {
+    id: "", code: "", title: "", description: "", details: "", source: "ui",
+    operationId: "", dedupeKey: "", duration: null, actions: [], progress: null, ...input,
+  } }));
+}
 export const notify = {
   publish,
+  dismiss(operationId: string) {
+    return enqueue(operationId, () => invoke("notification_dismiss", { id: operationId }));
+  },
   start(source: string, title: string, description = "") {
     return publish({ kind: "progress", title, description, source, operationId: source });
   },

@@ -60,6 +60,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo clippy --locked -p crossbow-core -- -D warnings
       - run: cargo test --locked -p crossbow-core
+      - run: cargo test --locked -p crossbow-service
 
   build:
     strategy:
@@ -96,6 +97,14 @@ jobs:
       - name: Download and verify mihomo sidecar
         run: python scripts/ci/download_sidecar.py ${{ matrix.target }}
 
+      - name: Build crossbow-service sidecar
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
+
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
@@ -105,6 +114,11 @@ jobs:
       - name: Build (unsigned)
         working-directory: apps/desktop
         run: pnpm tauri build --config tauri.ci.conf.json
+
+      - name: Smoke-test Windows service installation and upgrade
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: ./scripts/ci/smoke_windows_service.ps1
 
       - name: Package and smoke-test macOS app
         if: matrix.os == 'macos-15'
@@ -125,7 +139,7 @@ jobs:
             target/release/bundle/dmg/*.dmg
 
       - name: Upload artifacts (Windows)
-        if: matrix.os == 'windows-2022'
+        if: always() && matrix.os == 'windows-2022'
         uses: actions/upload-artifact@v7
         with:
           name: crossbow-windows-x64

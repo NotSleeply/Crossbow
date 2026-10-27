@@ -33,7 +33,7 @@ export default function SettingsPage() {
   const [tunBusy, setTunBusy] = useState(false);
   // Windows 的 TUN（wintun + 特权服务）未落地前隐藏开关（#25），
   // 避免「打开无效」的困惑；落地后移除此判定
-  const isWindows = navigator.userAgent.includes("Windows");
+  const isMacos = navigator.userAgent.includes("Macintosh");
   const [logsSave, setLogsSave] = useState(true);
   const [logsRetention, setLogsRetention] = useState(7);
   const [autoCheck, setAutoCheck] = useState(true);
@@ -243,7 +243,6 @@ export default function SettingsPage() {
             }}
           />
         </Row>
-        {!isWindows && (
         <Row
           label={t("settings.tun")}
           hint={tunBusy ? t("settings.tunSwitching") : t("settings.tunHint")}
@@ -281,8 +280,7 @@ export default function SettingsPage() {
             />
           </div>
         </Row>
-        )}
-        {!isWindows && tun?.enabled && (
+        {isMacos && tun?.enabled && (
           <Row label={t("settings.tunState")} hint={t("settings.tunStateHint")}>
             <span
               className="text-xs"

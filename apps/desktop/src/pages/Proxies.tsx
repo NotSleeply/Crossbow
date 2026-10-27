@@ -1,5 +1,5 @@
 import { notify } from "../notifications/service";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type GroupView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
@@ -12,6 +12,8 @@ export default function ProxiesPage() {
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
+  const batchInFlight = useRef(false);
+  const singleInFlight = useRef(new Set<string>());
   const [selecting, setSelecting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -32,15 +34,15 @@ export default function ProxiesPage() {
   }, [load]);
 
   const testGroup = async (name: string) => {
-    if (testing) return;
+    if (batchInFlight.current || singleInFlight.current.size > 0) return;
     const group = groups.find((g) => g.name === name);
     if (!group) return;
 
+    batchInFlight.current = true;
     setTesting(name);
-    const operationId = `latency-${name}`;
-    notify.start(operationId, t("proxies.testing"), name);
+    const operationId = `latency-${crypto.randomUUID()}`;
+    notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: name });
     let finished = 0;
-    let failed = 0;
     setTestingNodes((current) => new Set([
       ...current,
       ...group.nodes.map((node) => nodeTestKey(name, node.name)),
@@ -52,7 +54,6 @@ export default function ProxiesPage() {
         const node = group.nodes[nextIndex++];
         try {
           const delay = await ipc.testNodeDelay(node.name);
-          if (delay === 0) failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
@@ -62,7 +63,6 @@ export default function ProxiesPage() {
             },
           ));
         } catch {
-          failed++;
           setGroups((current) => current.map((g) =>
             g.name !== name ? g : {
               ...g,
@@ -73,7 +73,7 @@ export default function ProxiesPage() {
           ));
         } finally {
           finished++;
-          notify.publish({ kind: "progress", source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
+          notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
           setTestingNodes((current) => {
             const next = new Set(current);
             next.delete(nodeTestKey(name, node.name));
@@ -88,9 +88,45 @@ export default function ProxiesPage() {
         { length: Math.min(10, group.nodes.length) },
         () => worker(),
       ));
-      notify.publish({ kind: failed ? "warning" : "success", source: operationId, operationId, title: t("proxies.testAll"), description: `${name} · ${group.nodes.length - failed}/${group.nodes.length} OK` });
     } finally {
+      // 完成不发结果卡：原位更新即反馈，进度卡一并关闭
+      await notify.dismiss(operationId);
+      batchInFlight.current = false;
       setTesting(null);
+    }
+  };
+
+  const testNode = async (group: string, node: string) => {
+    const key = nodeTestKey(group, node);
+    if (singleInFlight.current.has(key) || batchInFlight.current) return;
+    singleInFlight.current.add(key);
+    setTestingNodes((current) => new Set([...current, key]));
+    try {
+      const delay = await ipc.testNodeDelay(node);
+      setGroups((current) => current.map((g) =>
+        g.name !== group ? g : {
+          ...g,
+          nodes: g.nodes.map((n) => n.name === node
+            ? { ...n, delay_ms: delay, alive: delay > 0 }
+            : n),
+        },
+      ));
+    } catch {
+      setGroups((current) => current.map((g) =>
+        g.name !== group ? g : {
+          ...g,
+          nodes: g.nodes.map((n) => n.name === node
+            ? { ...n, delay_ms: 0, alive: false }
+            : n),
+        },
+      ));
+    } finally {
+      singleInFlight.current.delete(key);
+      setTestingNodes((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -135,10 +171,11 @@ export default function ProxiesPage() {
             key={g.name}
             group={g}
             testing={testing === g.name}
-            busy={testing !== null}
+            busy={testing !== null || testingNodes.size > 0}
             testingNodes={testingNodes}
             selecting={selecting}
             onTest={() => testGroup(g.name)}
+            onTestNode={(n) => testNode(g.name, n)}
             onSelect={(n) => select(g.name, n)}
           />
         ))
@@ -154,6 +191,7 @@ function GroupCard({
   testingNodes,
   selecting,
   onTest,
+  onTestNode,
   onSelect,
 }: {
   group: GroupView;
@@ -162,6 +200,7 @@ function GroupCard({
   testingNodes: Set<string>;
   selecting: string | null;
   onTest: () => void;
+  onTestNode: (node: string) => void;
   onSelect: (node: string) => void;
 }) {
   const t = useT();
@@ -193,11 +232,11 @@ function GroupCard({
           const cls = delayClass(n.delay_ms);
           const nodeTesting = testingNodes.has(nodeTestKey(group.name, n.name));
           return (
-            <button
+            <div
               key={n.name}
-              onClick={() => onSelect(n.name)}
-              disabled={selecting === `${group.name}:${n.name}`}
-              className="rounded-[10px] px-3 py-2.5 text-left disabled:opacity-60"
+              className={`relative rounded-[10px] px-3 py-2.5 text-left transition-colors ${
+                selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
+              }`}
               style={{
                 border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
                 background: sel
@@ -206,39 +245,58 @@ function GroupCard({
               }}
               title={n.kind}
             >
-              <div className="truncate text-[12px] font-medium" title={n.name}>
+              <button
+                type="button"
+                className="absolute inset-0 rounded-[10px] border-0 bg-transparent"
+                aria-label={n.name}
+                aria-pressed={sel}
+                disabled={selecting === `${group.name}:${n.name}`}
+                onClick={() => onSelect(n.name)}
+              />
+              <div className="pointer-events-none truncate text-[12px] font-medium" title={n.name}>
                 {n.name}
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
-                {nodeTesting ? (
-                  <svg
-                    className="h-3 w-3 flex-none animate-spin"
-                    viewBox="0 0 24 24" fill="none" stroke="var(--cb-accent)" strokeWidth="2"
-                    aria-label={t("proxies.testing")}
-                  >
-                    <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
-                  </svg>
-                ) : <i
-                  className="h-[5px] w-[5px] flex-none rounded-full"
-                  style={{
-                    background:
-                      n.delay_ms == null
-                        ? "var(--cb-faint)"
-                        : cls === "g"
-                          ? "var(--cb-ok)"
-                          : cls === "y"
-                            ? "var(--cb-warn)"
-                            : "var(--cb-bad)",
+                <button
+                  className="relative z-10 flex items-center gap-1.5 cursor-pointer"
+                  title={t("proxies.testNode")}
+                  aria-label={`${t("proxies.testNode")} ${n.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTestNode(n.name);
                   }}
-                />}
-                <span
-                  className="cb-mono text-[10.5px]"
-                  style={{ color: nodeTesting ? "var(--cb-accent)" : "var(--cb-text-dim)" }}
+                  disabled={nodeTesting || busy}
                 >
-                  {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
-                </span>
+                  {nodeTesting ? (
+                    <svg
+                      className="h-3 w-3 flex-none animate-spin"
+                      viewBox="0 0 24 24" fill="none" stroke="var(--cb-accent)" strokeWidth="2"
+                      aria-label={t("proxies.testing")}
+                    >
+                      <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
+                    </svg>
+                  ) : <i
+                    className="h-[5px] w-[5px] flex-none rounded-full"
+                    style={{
+                      background:
+                        n.delay_ms == null
+                          ? "var(--cb-faint)"
+                          : cls === "g"
+                            ? "var(--cb-ok)"
+                            : cls === "y"
+                              ? "var(--cb-warn)"
+                              : "var(--cb-bad)",
+                    }}
+                  />}
+                  <span
+                    className="cb-mono text-[10.5px] hover:text-[var(--cb-accent)]"
+                    style={{ color: nodeTesting ? "var(--cb-accent)" : "var(--cb-text-dim)" }}
+                  >
+                    {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
+                  </span>
+                </button>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

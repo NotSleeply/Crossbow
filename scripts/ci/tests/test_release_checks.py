@@ -128,6 +128,22 @@ class ReleaseChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Cargo.lock'):
             checks.source_version(self.root)
 
+    def test_service_version_is_checked_when_in_workspace(self):
+        self.test_source_versions_and_tag()
+        cargo = self.root / 'Cargo.toml'
+        cargo.write_text('[workspace]\nmembers=["apps/service"]\n'
+                         '[workspace.package]\nversion="1.2.3"\n')
+        lock = self.root / 'Cargo.lock'
+        packages = ('[[package]]\nname="crossbow-core"\nversion="1.2.3"\n'
+                    '[[package]]\nname="crossbow-desktop"\nversion="1.2.3"\n')
+        for service in ['', '[[package]]\nname="crossbow-service"\nversion="1.2.2"\n']:
+            with self.subTest(service=service):
+                lock.write_text(packages + service)
+                with self.assertRaisesRegex(ValueError, 'Cargo.lock'):
+                    checks.source_version(self.root)
+        lock.write_text(packages + '[[package]]\nname="crossbow-service"\nversion="1.2.3"\n')
+        self.assertEqual(checks.source_version(self.root), '1.2.3')
+
     def test_windows_default_encoding_does_not_break_sidecar_download(self):
         source = self.root / 'apps/desktop/src-tauri/src/core_download.rs'
         source.parent.mkdir(parents=True)
@@ -151,6 +167,7 @@ class ReleaseChecks(unittest.TestCase):
              patch.object(download_sidecar, 'ASSETS', {target: ('fixture.zip', digest)}), \
              patch.object(sys, 'argv', ['download_sidecar.py', target]), \
              patch.object(download_sidecar.urllib.request, 'urlopen', return_value=io.BytesIO(data)), \
+             patch.object(download_sidecar, 'fetch_wintun', lambda *_: None), \
              patch.object(Path, 'read_text', windows_read):
             download_sidecar.main()
         output = self.root / 'apps/desktop/src-tauri/binaries/mihomo-x86_64-pc-windows-msvc.exe'

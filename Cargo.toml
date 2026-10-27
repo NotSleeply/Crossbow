@@ -3,10 +3,11 @@ resolver = "2"
 members = [
     "crates/crossbow-core",
     "apps/desktop/src-tauri",
+    "apps/service",
 ]
 
 [workspace.package]
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 license = "GPL-3.0"
 authors = ["Crossbow Contributors"]

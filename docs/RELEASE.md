@@ -4,7 +4,7 @@
 
 正式产物统一由 `.github/workflows/release.yml` 生成，继续使用 Tauri 的 Developer ID 签名、公证与更新器。`scripts/release-macos.sh` 仅校验或调用此流程，不再本地重新签名后上传旧的更新归档。
 
-1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 的两个 Crossbow package、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
+1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 中所有 Crossbow workspace package（包括服务包）、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
 2. 离线校验（Python 3.11+）：
    ```bash
    VERSION=vX.Y.Z bash scripts/release-macos.sh --check
@@ -56,9 +56,9 @@
 
 ## Windows
 
-正式 `release.yml` 在双平台检查通过后构建 Windows x64 NSIS 安装程序及更新器签名，由 macOS 发布任务统一附加到 Release，并写入 `latest.json` 与 `SHA256SUMS`。Windows 目前没有代码签名证书；更新器签名不等同于 Windows 代码签名。
+正式 `release.yml` 在双平台检查通过后构建 Windows x64 NSIS 安装程序及更新器签名，由 macOS 发布任务统一附加到 Release，并写入 `latest.json` 与 `SHA256SUMS`。可选 `WINDOWS_PFX_BASE64` / `WINDOWS_PFX_PASSWORD` 用于 Authenticode，未配置时发布未签名安装包；更新器签名不等同于 Windows 代码签名。Windows 发布使用系统级 NSIS 安装器，同时打包服务与 wintun。
 
-PR 的 build 工作流仍上传 NSIS/MSI 测试包。Windows 编译与后端测试通过 Actions 验证，GUI 和真实联网需按 [Windows 验收说明](WINDOWS-TESTING.md) 在实机测试。
+PR 的 build 工作流上传 NSIS 测试包，并在临时 Windows runner 上验证服务安装、升级、启停及拒绝非 GUI 调用。Windows 编译与后端测试通过 Actions 验证，GUI 和真实联网需按 [Windows 验收说明](WINDOWS-TESTING.md) 在实机测试。
 
 ## iOS
 

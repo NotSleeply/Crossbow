@@ -90,14 +90,14 @@ impl Controller {
         serde_json::from_str(&text).map_err(|e| format!("decode {path}: {e}"))
     }
 
-    #[cfg(any(target_os = "macos", test))]
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     pub fn tun_enabled(&self) -> Result<Option<bool>, String> {
         Ok(self.get_json("/configs")?["tun"]["enable"].as_bool())
     }
 
     /// The live device may differ from the configured auto-assigned name.
     /// Never infer ownership from the saved TUN switch or a shared IP range.
-    #[cfg(any(target_os = "macos", test))]
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     pub fn active_tun_device(&self) -> Result<Option<String>, String> {
         let config = self.get_json("/configs")?;
         let tun = &config["tun"];
@@ -107,9 +107,13 @@ impl Controller {
         Ok(tun["device"]
             .as_str()
             .filter(|name| {
-                name.strip_prefix("utun").is_some_and(|suffix| {
-                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
-                })
+                if cfg!(target_os = "windows") {
+                    *name == "Crossbow"
+                } else {
+                    name.strip_prefix("utun").is_some_and(|suffix| {
+                        !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                    })
+                }
             })
             .map(str::to_owned))
     }
@@ -412,7 +416,7 @@ pub(crate) mod tests {
         for (body, expected, enabled) in [
             (
                 r#"{"tun":{"enable":true,"device":"utun4"}}"#,
-                Some("utun4"),
+                (!cfg!(target_os = "windows")).then_some("utun4"),
                 Some(true),
             ),
             (
@@ -430,6 +434,8 @@ pub(crate) mod tests {
                 None,
                 Some(true),
             ),
+            (r#"{"tun":{"enable":true,"device":"Crossbow"}}"#,
+                cfg!(target_os = "windows").then_some("Crossbow"), Some(true)),
             (r#"{"tun":{"enable":true}}"#, None, Some(true)),
             (r#"{}"#, None, None),
         ] {
