@@ -1,6 +1,6 @@
 # Crossbow iOS 首版设计
 
-状态：设计提案，关联 #124；尚未实现真实隧道。核对日期：2026-10-26。
+状态：首版设计与实施边界，关联 #124、#132。核对日期：2026-10-27。M0 已完成真机签名与安装；M1 已通过直连和真实 Hy2 节点联网验证，真实代理锁屏与 Wi-Fi/蜂窝切换已通过，资源基线及异常恢复待验收。
 
 本阶段用户确认：已有付费个人 Apple Developer Program 账号；先在自己的 iPhone 上测试，再进入 TestFlight。测试设备为用户提供的 iPhone 17 标准版 / iOS 27.0.1，并要求为后续 iPhone duo 留出适配空间。本文不预设尚未确认的未来设备尺寸、折叠方式或 SDK 能力。
 
@@ -12,16 +12,16 @@
 
 | 项目 | 仓库现状 | 需要补齐 |
 |---|---|---|
-| `apps/ios` | 两个 Swift 占位文件、XcodeGen 描述 | 完整 App、扩展嵌入、Info/entitlements 与签名验证 |
-| PacketTunnel | `startTunnel` 固定返回「待实现」 | 网络设置、平台接口、libbox 生命周期和控制通道 |
+| `apps/ios` | SwiftUI 最小三 Tab 验证 App、工程生成/构建和签名检查脚本 | M3 完整四 Tab 与日用界面 |
+| PacketTunnel | 固定 libbox 1.14.4、网络/DNS/路由设置、真实系统状态；真机直连与 Hy2 访问通过 | 资源基线、异常恢复及后续节点控制通道 |
 | Rust 共享层 | 订阅、模型、存储、覆写、Clash→sing-box 转换 | UniFFI 包装、iOS 编译、移动运行时配置与兼容诊断 |
 | 配置转换 | 默认输出桌面 mixed inbound，包含桌面可用规则 | 独立的移动配置适配；不套用桌面自动路由参数 |
-| 工程权限 | 主 App 有 NE 声明，扩展描述不完整；未声明嵌入依赖和扩展入口类 | 两个 target 的权限、显式 Bundle ID、App Group、扩展依赖与入口 |
+| 工程权限 | 主 App 与扩展均有明确 ID、App Group、NE 权限和嵌入关系；开发签名与 profile 检查通过 | M5 归档与分发签名 |
 | 依赖 | 共享 crate 无 UniFFI；`boa_engine` 为必选依赖 | 移动特性拆分，首版关闭 JS 覆写，避免把重型依赖带进扩展 |
 
-本机已确认完整 Xcode 27.0（27A266a）、iOS 27.0 模拟器运行时；`xcodegen` 尚未发现。未检查或读取开发者私钥；设备签名和隧道还未验证。模拟器可检查布局，真实隧道、后台和网络切换必须用 iPhone。
+本机已确认 Xcode 27.0（27A266a）、iOS 27.0 模拟器、XcodeGen 与固定核心设备/模拟器切片。两个 target 的签名、描述文件与共享组均已校验；用户在 iPhone 17 / iOS 27.0.1 上确认首次授权、直连配置启停/锁屏，以及真实 Hy2 节点访问 GitHub、YouTube、X。仅使用本机签名工具，不导出开发者私钥。模拟器用于布局检查，联网验收以真机反馈为准。
 
-最低系统初步建议 iOS 17；现有骨架是 iOS 16，后续根据锁定的 libbox/Rust 依赖和设备范围作明确工程决策。本次不修改 deployment target。
+最低系统现已锁定 iOS 17；当前使用本地 sing-box JSON 做最小隧道验证，Clash 订阅与共享 Rust/UniFFI 仍按 M2 实施。Mac 的真实节点测试配置仅在 Mac 与用户 iPhone 间传输，凭据不进入仓库或评审材料。
 
 ## 2. 产品与视觉
 
@@ -100,7 +100,7 @@ flowchart TB
 
 选型为原生 SwiftUI + NetworkExtension + sing-box/libbox；复用共享业务逻辑，不复用桌面的 sidecar 进程。参照 SagerNet 官方 Apple 客户端的隧道与平台接口，但不能直接复制其名称、签名、配置 ID 或发行包。
 
-现有转换器锁定 `SINGBOX_VERSION = 1.14.2`，这不是已经构建出同版本 iOS libbox 的证据。实施前锁定上游 tag/commit、Go/gomobile 工具链、构建标志与 XCFramework 切片；转换器和 libbox 必须一起通过真实配置测试。不假设上游每个 release 都附带可直接嵌入的 Framework；必要时从固定源码可复现构建。
+桌面转换器仍为 `SINGBOX_VERSION = 1.14.2`；移动端当前锁定 libbox **1.14.4**、SagerNet gomobile/gobind **0.1.12**，通过 `scripts/ios/build-core.sh` 从源码生成设备/模拟器 XCFramework，具体依赖见 go.mod/go.sum。首轮 Hy2 测试仅复用了转换器的单节点字段，并由移动端实际版本校验快照后真机验收；不代表所有订阅兼容。M2 接入共享转换时仍须验证完整移动配置与参数组合。
 
 | 范围 | 首版策略 |
 |---|---|
