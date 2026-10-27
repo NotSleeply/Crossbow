@@ -27,13 +27,13 @@ struct NotificationOverlay: View {
             ForEach(notices.active) { notice in
                 HStack(alignment: .top, spacing: 10) {
                     if notice.kind == .progress { ProgressView().padding(.top, 3) }
-                    else { Image(systemName: notice.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill").foregroundStyle(notice.kind == .error ? Color.orange : Color.accentColor) }
+                    else { Image(systemName: notice.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill").foregroundStyle(notice.kind == .error ? Studio.error : Studio.accent) }
                     VStack(alignment: .leading, spacing: 5) {
                         Text(notice.title).font(.subheadline.weight(.semibold))
                         if !notice.description.isEmpty { Text(notice.description).font(.caption).foregroundStyle(.secondary) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Button { notices.dismiss(notice.id) } label: { Image(systemName: "xmark").frame(width: 32, height: 32) }.buttonStyle(.plain).accessibilityLabel("关闭通知")
-                }.padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.quaternary)).accessibilityElement(children: .contain)
+                    Button { notices.dismiss(notice.id) } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.buttonStyle(.plain).accessibilityLabel("关闭通知")
+                }.padding(14).background(Studio.floating, in: RoundedRectangle(cornerRadius: 16)).foregroundStyle(Studio.ink).overlay(RoundedRectangle(cornerRadius: 16).stroke(Studio.line)).accessibilityElement(children: .contain)
             }
         }.padding(.horizontal).padding(.top, 4)
     }
