@@ -109,9 +109,16 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
                 ]),
             );
         }
+        // 私网全段豁免（#145）：100.64/10 是 CGNAT/Tailscale tailnet 段，
+        // 不排除会被吸进隧道后落到兜底规则走代理，tailnet/内网全部不可达
         tun.insert(
             Value::from("route-exclude-address"),
-            Value::Sequence(vec![Value::from("192.168.0.0/16")]),
+            Value::Sequence(vec![
+                Value::from("192.168.0.0/16"),
+                Value::from("100.64.0.0/10"),
+                Value::from("10.0.0.0/8"),
+                Value::from("172.16.0.0/12"),
+            ]),
         );
         // Mihomo defaults macOS dns-mode to disabled, so hijacking port 53
         // alone does not make the system resolver use the TUN. Native mode
@@ -152,7 +159,33 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
     }
     let patch_yaml =
         serde_yaml::to_string(&Value::Mapping(patch)).map_err(|e| e.to_string())?;
-    apply_merge(base_yaml, &patch_yaml).map_err(|e| e.to_string())
+    let merged = apply_merge(base_yaml, &patch_yaml).map_err(|e| e.to_string())?;
+    inject_private_direct_rules(merged)
+}
+
+/// 私网直连规则前置（#145）：TUN 捕获场景下，tailnet/内网目的地若被
+/// 订阅兜底规则（Match→代理）接走，出口节点没有这些路由，内网必然
+/// 不可达。放在 rules 头部保证先于一切订阅规则命中。
+const PRIVATE_DIRECT_RULES: [&str; 4] = [
+    "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+    "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+    "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+];
+
+fn inject_private_direct_rules(merged: String) -> Result<String, String> {
+    let mut root: Value = serde_yaml::from_str(&merged).map_err(|e| e.to_string())?;
+    let Some(rules) = root
+        .as_mapping_mut()
+        .and_then(|m| m.get_mut(Value::from("rules")))
+        .and_then(Value::as_sequence_mut)
+    else {
+        return Ok(merged); // 订阅没有 rules 段则不注入
+    };
+    for rule in PRIVATE_DIRECT_RULES.iter().rev() {
+        rules.insert(0, Value::from(*rule));
+    }
+    serde_yaml::to_string(&root).map_err(|e| e.to_string())
 }
 
 fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, String> {
@@ -192,6 +225,9 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
                 "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
                 "auto_route": true,
                 "strict_route": true,
+                "route_exclude_address": [
+                    "192.168.0.0/16", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12",
+                ],
             }));
         }
     }
@@ -233,6 +269,32 @@ mod tests {
         assert!(!without_v6.contains("inet6-route-address"));
         assert!(!without_v6.contains("inet6-route-exclude-address"));
         assert!(without_v6.contains("ipv6: false"));
+    }
+
+    /// #145：私网豁免与 DIRECT 规则前置——tailnet/内网目的地不走代理
+    #[test]
+    fn private_network_exemptions() {
+        let base = "mixed-port: 7897\nproxies: []\nrules:\n  - MATCH,DIRECT\n";
+        let out = apply_runtime(
+            base,
+            &RuntimeConfig {
+                tun_enable: true,
+                controller_port: 19090,
+                controller_secret: "s3cret".into(),
+                ..RuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(out.contains("100.64.0.0/10"));
+        assert!(out.contains("10.0.0.0/8"));
+        assert!(out.contains("172.16.0.0/12"));
+        // 私网 DIRECT 前置：先于订阅的 MATCH 兜底
+        let rules_start = out.find("rules:").unwrap();
+        let head = &out[rules_start..];
+        let first = head.lines().nth(1).unwrap();
+        assert!(first.contains("100.64.0.0/10"), "首条应为 tailnet DIRECT: {first}");
+        assert!(first.ends_with("DIRECT,no-resolve"));
+        assert!(head.contains("MATCH,DIRECT"), "订阅规则必须保留");
     }
 
     #[test]

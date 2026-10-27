@@ -147,7 +147,33 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
         })
         .unwrap_or((false, Vec::new()));
 
-    build_findings(tunnel, service, cores)
+    let mut findings = build_findings(tunnel, service, cores);
+
+    // 3) Tailscale（#145）：exit node 接管默认路由 = 与 TUN 互斥（横幅）；
+    //    纯组网（tailscaled 在跑、无默认路由接管）= 兼容（信息性）
+    if let Some(text) = command_stdout("netstat", &["-rn", "-f", "inet"]) {
+        if tailscale_exit_node(&text) {
+            findings.push(CoexistFinding {
+                kind: "tunnel".into(),
+                detail: "检测到 Tailscale 出口节点接管默认路由，与 TUN 互斥；请在 Tailscale 关闭出口节点".into(),
+            });
+        }
+    }
+
+    findings
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+fn tailscale_exit_node(text: &str) -> bool {
+    text.lines().any(|line| {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        match cols.as_slice() {
+            [dest, _gw, _flags, netif, ..] => {
+                *dest == "default" && netif.eq_ignore_ascii_case("Tailscale")
+            }
+            _ => false,
+        }
+    })
 }
 
 /// Windows：tasklist 识别其他代理内核与常驻服务，Get-NetAdapter 识别
@@ -200,10 +226,31 @@ pub fn detect(_state: &crate::AppState) -> Vec<CoexistFinding> {
         }
     }
 
+    // 4) Tailscale（#145）：exit node（0.0.0.0/0 经 Tailscale 适配器）与 TUN
+    //    互斥 → 横幅；纯组网 → 信息性
+    if let Some(text) = command_stdout(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object -ExpandProperty InterfaceAlias",
+        ],
+    ) {
+        if text
+            .lines()
+            .any(|l| l.trim().eq_ignore_ascii_case("Tailscale"))
+        {
+            findings.push(CoexistFinding {
+                kind: "tunnel".into(),
+                detail: "检测到 Tailscale 出口节点接管默认路由，与 TUN 互斥；请在 Tailscale 关闭出口节点".into(),
+            });
+        }
+    }
+
     findings
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
     let output = crate::process::command(program).args(args).output().ok()?;
     output
@@ -268,8 +315,11 @@ fn foreign_tunnel_adapters(text: &str) -> Vec<String> {
         }
         let haystack = format!("{name} {desc}").to_lowercase();
         let is_tunnel_driver = TUNNEL_PATTERNS.iter().any(|p| haystack.contains(p));
+        // Tailscale 单独判定：纯组网不冲突（降噪），exit node 由下方
+        // 0.0.0.0/0 路由检查负责（#145）
+        let is_tailscale = haystack.contains("tailscale");
         let is_ours = haystack.contains("crossbow");
-        if is_tunnel_driver && !is_ours && !adapters.iter().any(|a| a.eq_ignore_ascii_case(name)) {
+        if is_tunnel_driver && !is_tailscale && !is_ours && !adapters.iter().any(|a| a.eq_ignore_ascii_case(name)) {
             adapters.push(format!("{name}（{desc}）"));
         }
     }
@@ -325,6 +375,20 @@ mod tests {
         );
         let adapters = foreign_tunnel_adapters(text);
         assert_eq!(adapters, vec!["mihomo（Wintun Userspace Tunnel）", "WireGuard（WireGuard Tunnel）"]);
+    
+        // Tailscale 不参与普通隧道误报（exit node 单独判定）
+        assert!(foreign_tunnel_adapters(concat!(
+            "\"Name\",\"InterfaceDescription\"\n",
+            "\"Tailscale\",\"Tailscale Tunnel\"\n",
+        )).is_empty());
+    }
+
+    /// #145：Tailscale exit node = default 路由经 Tailscale 接口
+    #[test]
+    fn tailscale_exit_node_detection() {
+        assert!(tailscale_exit_node("default 100.64.0.1 UGSc Tailscale\n"));
+        assert!(!tailscale_exit_node("default 192.168.31.1 UGScg en0\n"));
+        assert!(!tailscale_exit_node(""));
     }
 
     #[test]
