@@ -19,16 +19,11 @@ export default function SiteConnectivity({ contextKey }: { contextKey: string })
   const inFlight = useRef(false);
   const mounted = useRef(false);
   const generation = useRef(0);
-  const activeOperation = useRef<string | null>(null);
   const coreState = useRef<string | null>(null);
   const invalidate = () => {
     generation.current++;
     inFlight.current = false;
     setBusy(new Set()); setResults({});
-    if (activeOperation.current) {
-      notify.info(t("sites.changed"), activeOperation.current);
-      activeOperation.current = null;
-    }
   };
   useEffect(invalidate, [contextKey]);
   useEffect(() => {
@@ -51,13 +46,10 @@ export default function SiteConnectivity({ contextKey }: { contextKey: string })
     inFlight.current = true;
     setBusy(new Set(ids));
     setResults((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !ids.includes(id))));
-    const operation = `site-test-${crypto.randomUUID()}`;
     const currentGeneration = generation.current;
-    activeOperation.current = operation;
-    notify.start(operation, t("sites.testing"));
     const failures: unknown[] = [];
     try {
-      const checked = await Promise.all(ids.map(async (id) => {
+      await Promise.all(ids.map(async (id) => {
         let result: SiteResult;
         try { result = await ipc.testSite(id); }
         catch (error) { failures.push(error); result = { id, status: "error", http_status: null, latency_ms: null, error: "network" }; }
@@ -68,13 +60,14 @@ export default function SiteConnectivity({ contextKey }: { contextKey: string })
         return result;
       }));
       if (generation.current !== currentGeneration) return;
-      const ok = checked.filter((result) => result.status === "ok").length;
-      if (failures.length) notify.error(failures.map(String).join("; "), operation, t("sites.done"));
-      else notify.publish({ kind: ok === checked.length ? "success" : "warning", source: operation, operationId: operation,
-        title: t("sites.done"), description: `${ok}/${checked.length} ${t("sites.available")}` });
+      // 结果原位刷新即反馈（#140）；仅命令级失败按约定保留 error
+      if (failures.length) {
+        const operation = `site-test-${crypto.randomUUID()}`;
+        notify.error(failures.map(String).join("; "), operation, t("sites.done"));
+      }
     } finally {
       if (generation.current === currentGeneration) {
-        inFlight.current = false; activeOperation.current = null;
+        inFlight.current = false;
         if (mounted.current) setBusy(new Set());
       }
     }

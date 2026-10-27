@@ -40,9 +40,6 @@ export default function ProxiesPage() {
 
     batchInFlight.current = true;
     setTesting(name);
-    const operationId = `latency-${crypto.randomUUID()}`;
-    notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: name });
-    let finished = 0;
     setTestingNodes((current) => new Set([
       ...current,
       ...group.nodes.map((node) => nodeTestKey(name, node.name)),
@@ -72,8 +69,6 @@ export default function ProxiesPage() {
             },
           ));
         } finally {
-          finished++;
-          notify.publish({ kind: "progress", id: operationId, source: operationId, operationId, title: t("proxies.testing"), description: `${name} · ${finished}/${group.nodes.length}`, progress: finished / group.nodes.length * 100 });
           setTestingNodes((current) => {
             const next = new Set(current);
             next.delete(nodeTestKey(name, node.name));
@@ -89,8 +84,7 @@ export default function ProxiesPage() {
         () => worker(),
       ));
     } finally {
-      // 完成不发结果卡：原位更新即反馈，进度卡一并关闭
-      await notify.dismiss(operationId);
+      // 完成不发任何通知（#140）：延迟值原位刷新即反馈
       batchInFlight.current = false;
       setTesting(null);
     }
@@ -135,7 +129,7 @@ export default function ProxiesPage() {
     try {
       await ipc.selectProxy(group, node);
       setGroups((gs) => gs.map((g) => (g.name === group ? { ...g, now: node } : g)));
-      notify.success(node, `proxy-select-${group}`);
+
     } catch (e) {
       notify.error(e, `proxy-select-${group}`);
       load();
