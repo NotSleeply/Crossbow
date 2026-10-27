@@ -251,6 +251,7 @@ export default function App() {
         <div className="cb-global-tools">
           <button
             className="cb-source-pick"
+            title={profileName || t("studio.sources")}
             onClick={() => {
               setConfigTab("sources");
               go("profiles");
@@ -299,7 +300,7 @@ export default function App() {
             </button>
           </nav>
         )}
-        <div className="cb-page-content">
+        <div className={`cb-page-content cb-view-${page}`}>
           {page === "home" && <HomePage />}
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} />}

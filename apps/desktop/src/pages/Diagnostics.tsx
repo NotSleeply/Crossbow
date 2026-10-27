@@ -60,7 +60,7 @@ export default function DiagnosticsPage() {
   const allOk = results?.every((r) => r.ok);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-3.5">
+    <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
         <button className="cb-btn acc" onClick={run} disabled={running}>
           {running ? t("diag.running") : t("diag.run")}
@@ -99,6 +99,7 @@ export default function DiagnosticsPage() {
                 {!r.ok && (
                   <div
                     className="cb-selectable mt-0.5 text-[11.5px]"
+                    title={r.detail}
                     style={{ color: "var(--cb-text-dim)" }}
                   >
                     {r.detail}

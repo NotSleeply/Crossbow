@@ -337,7 +337,7 @@ export default function HomePage() {
         <aside className="cb-home-side">
           <section className="cb-takeover-panel">
             <h3>{t("studio.takeover")}</h3>
-            <div className="cb-takeover-row">
+            <div className="cb-takeover-row" title={t("studio.proxyHint")}>
               <div>
                 <b>{t("studio.proxy")}</b>
                 <p>{t("studio.proxyHint")}</p>
@@ -351,7 +351,7 @@ export default function HomePage() {
                 disabled={busy || !activeId}
               />
             </div>
-            <div className="cb-takeover-row">
+            <div className="cb-takeover-row" title={t("studio.tunHint")}>
               <div>
                 <b>{t("settings.tun")}</b>
                 <p>{t("studio.tunHint")}</p>
@@ -457,8 +457,7 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
-      className="mt-2 w-full"
-      style={{ height: 170 }}
+      className="cb-traffic-plot"
     >
       <g style={{ stroke: "var(--cb-line)" }}>
         <line x1="0" y1="30" x2={W} y2="30" />

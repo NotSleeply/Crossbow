@@ -7,7 +7,9 @@ import { useT } from "../i18n";
 import { PageHead } from "./Home";
 
 const ROW_H = 48;
-const BODY_H = 480;
+const CONNECTION_COLUMNS =
+  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 24px";
+const PROCESS_COLUMNS = "minmax(200px,1.6fr) 90px 100px 100px 90px";
 
 /** 连接页：列表 / 按进程聚合双视图（内核 connections WS → Rust 节流聚合）。 */
 export default function ConnectionsPage() {
@@ -68,7 +70,7 @@ export default function ConnectionsPage() {
   const apps = useMemo(() => aggregateByProcess(rows), [rows]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3">
+    <div className="cb-connections-page">
       <PageHead
         title={t("conn.title")}
         meta={`${snapshot.truncated ? `${snapshot.truncated} 条（显示前 ${rows.length}）` : `${rows.length} 条`} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
@@ -98,27 +100,28 @@ export default function ConnectionsPage() {
         </button>
       </PageHead>
 
-      <div className="cb-card cb-connection-table grow" style={{ padding: 0 }}>
+      <div className="cb-card cb-connection-table">
         {view === "list" ? (
-          <>
-            <div
-              className="cb-th grid px-3 py-2.5"
-              style={{
-                gridTemplateColumns:
-                  "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 110px 90px 90px 70px 24px",
-                borderBottom: "1px solid var(--cb-line)",
-              }}
-            >
-              <span>{t("col.target")}</span>
-              <span>{t("col.rule")}</span>
-              <span>{t("col.chains")}</span>
-              <span>{t("col.process")}</span>
-              <span className="text-right">{t("col.up")}</span>
-              <span className="text-right">{t("col.down")}</span>
-              <span className="text-right">{t("col.elapsed")}</span>
-              <span style={{ width: 24 }} />
-            </div>
-            {rows.length === 0 ? (
+          <VirtualList
+            items={rows}
+            rowHeight={ROW_H}
+            minWidth={1010}
+            header={
+              <div
+                className="cb-th cb-table-row"
+                style={{ gridTemplateColumns: CONNECTION_COLUMNS }}
+              >
+                <span>{t("col.target")}</span>
+                <span>{t("col.rule")}</span>
+                <span>{t("col.chains")}</span>
+                <span>{t("col.process")}</span>
+                <span className="text-right">{t("col.up")}</span>
+                <span className="text-right">{t("col.down")}</span>
+                <span className="text-right">{t("col.elapsed")}</span>
+                <span />
+              </div>
+            }
+            empty={
               <Empty
                 text={
                   snapshot.rows.length === 0
@@ -126,34 +129,29 @@ export default function ConnectionsPage() {
                     : t("conn.noMatch")
                 }
               />
-            ) : (
-              <VirtualList
-                items={rows}
-                rowHeight={ROW_H}
-                height={BODY_H}
-                render={(r: ConnRow) => (
-                  <Row key={r.id} row={r} onClose={() => closeOne(r.id)} />
-                )}
-              />
+            }
+            render={(row: ConnRow) => (
+              <Row key={row.id} row={row} onClose={() => closeOne(row.id)} />
             )}
-          </>
+          />
         ) : (
-          <>
-            <div
-              className="cb-th grid px-3 py-2.5"
-              style={{
-                gridTemplateColumns:
-                  "minmax(200px,1.6fr) 90px 100px 100px 90px",
-                borderBottom: "1px solid var(--cb-line)",
-              }}
-            >
-              <span>{t("col.process")}</span>
-              <span className="text-right">{t("conn.connCount")}</span>
-              <span className="text-right">{t("col.up")}</span>
-              <span className="text-right">{t("col.down")}</span>
-              <span className="text-right">{t("col.elapsed")}</span>
-            </div>
-            {apps.length === 0 ? (
+          <VirtualList
+            items={apps}
+            rowHeight={44}
+            minWidth={650}
+            header={
+              <div
+                className="cb-th cb-table-row"
+                style={{ gridTemplateColumns: PROCESS_COLUMNS }}
+              >
+                <span>{t("col.process")}</span>
+                <span className="text-right">{t("conn.connCount")}</span>
+                <span className="text-right">{t("col.up")}</span>
+                <span className="text-right">{t("col.down")}</span>
+                <span className="text-right">{t("col.elapsed")}</span>
+              </div>
+            }
+            empty={
               <Empty
                 text={
                   snapshot.rows.length === 0
@@ -161,24 +159,18 @@ export default function ConnectionsPage() {
                     : t("conn.noMatch")
                 }
               />
-            ) : (
-              <VirtualList
-                items={apps}
-                rowHeight={44}
-                height={BODY_H}
-                render={(a: ProcessAgg) => (
-                  <AppRow
-                    key={a.process}
-                    agg={a}
-                    onInspect={() => {
-                      setFilter(a.process);
-                      setView("list");
-                    }}
-                  />
-                )}
+            }
+            render={(app: ProcessAgg) => (
+              <AppRow
+                key={app.process}
+                agg={app}
+                onInspect={() => {
+                  setFilter(app.process);
+                  setView("list");
+                }}
               />
             )}
-          </>
+          />
         )}
       </div>
     </div>
@@ -189,7 +181,7 @@ function Empty({ text }: { text: string }) {
   return (
     <div
       className="flex items-center justify-center text-xs"
-      style={{ height: BODY_H, color: "var(--cb-text-dim)" }}
+      style={{ minHeight: 160, color: "var(--cb-text-dim)" }}
     >
       {text}
     </div>
@@ -200,11 +192,10 @@ function Row({ row, onClose }: { row: ConnRow; onClose: () => void }) {
   const t = useT();
   return (
     <div
-      className="cb-selectable cb-mono grid items-center px-3"
+      className="cb-table-row cb-selectable cb-mono"
       style={{
         height: ROW_H,
-        gridTemplateColumns:
-          "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 110px 90px 90px 70px 24px",
+        gridTemplateColumns: CONNECTION_COLUMNS,
         borderBottom: "1px solid var(--cb-line)",
         fontSize: 13,
         color: "var(--cb-text-dim)",
@@ -291,10 +282,10 @@ function AppRow({
     <button
       onClick={onInspect}
       title={t("conn.inspectHint")}
-      className="grid w-full items-center px-3 text-left"
+      className="cb-table-row w-full text-left"
       style={{
         height: 44,
-        gridTemplateColumns: "minmax(200px,1.6fr) 90px 100px 100px 90px",
+        gridTemplateColumns: PROCESS_COLUMNS,
         borderBottom: "1px solid var(--cb-line)",
       }}
     >

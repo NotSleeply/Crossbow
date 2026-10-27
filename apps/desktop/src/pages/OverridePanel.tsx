@@ -1,3 +1,4 @@
+import FitItems from "../components/FitItems";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useState } from "react";
 import { ipc, type OverrideDef, type OverrideKind, type Profile } from "../ipc";
@@ -147,27 +148,34 @@ export default function OverridePanel({
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("ov.title")}>
             <h2>{t("ov.title")}</h2>
-            {overrides.map((override) => (
-              <button
-                key={override.id}
-                className={selected?.id === override.id ? "active" : ""}
-                aria-current={selected?.id === override.id ? "page" : undefined}
-                onClick={() => {
-                  setEditingId(override.id);
-                  setDraft(override.content);
-                }}
-              >
-                <span>{override.name}</span>
-                <small>
-                  {override.kind === "script"
-                    ? t("ov.kindScript")
-                    : t("ov.kindMerge")}
-                </small>
-              </button>
-            ))}
+            <FitItems
+              items={overrides}
+              rowHeight={58}
+              label={t("ov.title")}
+              render={(override) => (
+                <button
+                  key={override.id}
+                  className={selected?.id === override.id ? "active" : ""}
+                  aria-current={
+                    selected?.id === override.id ? "page" : undefined
+                  }
+                  onClick={() => {
+                    setEditingId(override.id);
+                    setDraft(override.content);
+                  }}
+                >
+                  <span>{override.name}</span>
+                  <small>
+                    {override.kind === "script"
+                      ? t("ov.kindScript")
+                      : t("ov.kindMerge")}
+                  </small>
+                </button>
+              )}
+            />
           </nav>
           {selected && (
-            <div className="min-w-0">
+            <div className="cb-override-detail">
               <div className="cb-editor-tools">
                 <div className="flex flex-wrap items-center gap-3">
                   {renamingId === selected.id ? (
