@@ -1,60 +1,91 @@
-# XcodeGen 工程定义 — Crossbow iOS (M2)
-# 生成：xcodegen generate（需要完整 Xcode 与 libbox.xcframework）
 name: Crossbow
 options:
-  bundleIdPrefix: com.crossbow
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    DEVELOPMENT_TEAM: "" # TODO: 填写 Apple Developer Team ID
     CODE_SIGN_STYLE: Automatic
-packages:
-  # M2 引入：sing-box libbox 以 SPM binary target 或本地 xcframework 接入
-  # libbox:
-  #   url: https://github.com/SagerNet/sing-box
+    DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CROSSBOW_APP_GROUP: group.com.richard.crossbow.ios
+    CROSSBOW_TUNNEL_ID: com.richard.crossbow.ios.PacketTunnel
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ENABLE_DEBUG_DYLIB: NO
 targets:
   Crossbow:
     type: application
     platform: iOS
-    sources:
-      - Crossbow
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS:
+          enabled: 1
+        com.apple.NetworkExtensions:
+          enabled: 1
+    sources: [Crossbow, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.richard.crossbow.ios
+        PRODUCT_MODULE_NAME: CrossbowApp
+    dependencies:
+      - target: PacketTunnel
+        embed: true
     entitlements:
-      path: Crossbow/Crossbow.entitlements
+      path: .build/generated/Crossbow.entitlements
       properties:
-        com.apple.security.application-groups:
-          - group.com.crossbow.app
-        # NetworkExtension 主 App 权限
-        com.apple.developer.networking.networkextension:
-          - packet-tunnel-provider
+        com.apple.security.application-groups: [group.com.richard.crossbow.ios]
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
     info:
-      path: Crossbow/Info.plist
+      path: .build/generated/Crossbow-Info.plist
       properties:
+        CFBundleDisplayName: Crossbow
         UILaunchScreen: {}
-        NSLocalNetworkUsageDescription: Crossbow 需要访问本地网络以提供代理服务。
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        CrossbowAppGroup: "$(CROSSBOW_APP_GROUP)"
+        CrossbowTunnelID: "$(CROSSBOW_TUNNEL_ID)"
+        LSSupportsOpeningDocumentsInPlace: true
   PacketTunnel:
     type: app-extension
     platform: iOS
-    sources:
-      - PacketTunnel
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS:
+          enabled: 1
+        com.apple.NetworkExtensions:
+          enabled: 1
+    sources: [PacketTunnel, Shared]
+    dependencies:
+      - sdk: UIKit.framework
+      - framework: Frameworks/Tunnelcore.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(CROSSBOW_TUNNEL_ID)"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        OTHER_LDFLAGS: ["$(inherited)", "-lresolv"]
     entitlements:
-      path: PacketTunnel/PacketTunnel.entitlements
+      path: .build/generated/PacketTunnel.entitlements
       properties:
-        com.apple.security.application-groups:
-          - group.com.crossbow.app
+        com.apple.security.application-groups: [group.com.richard.crossbow.ios]
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
     info:
-      path: PacketTunnel/Info.plist
+      path: .build/generated/PacketTunnel-Info.plist
       properties:
         CFBundleDisplayName: Crossbow Tunnel
+        CrossbowAppGroup: "$(CROSSBOW_APP_GROUP)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).PacketTunnelProvider"
 schemes:
   Crossbow:
     build:
       targets:
         Crossbow: all
-        PacketTunnel: all
     run:
       config: Debug

@@ -1,0 +1,7 @@
+Crossbow iOS links sing-box/libbox 1.14.4 (GPL-3.0-or-later).
+Source commit: c005f35300ce76427dc285481ec5695f5b179cd2
+Source: https://github.com/SagerNet/sing-box/tree/v1.14.4
+License: sing-box-LICENSE.txt
+Corresponding source and build scripts: https://github.com/Richard-Zhang1019/Crossbow
+Crossbow is an independent application, not an official SagerNet client.
+Go module dependency versions and checksums are recorded in TunnelCore/go.mod and go.sum.

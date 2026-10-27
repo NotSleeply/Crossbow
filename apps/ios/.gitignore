@@ -1,0 +1,6 @@
+.build/
+Frameworks/
+*.xcodeproj/
+*.local.xcconfig
+TunnelCore/build/
+.swiftpm/
