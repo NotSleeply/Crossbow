@@ -378,6 +378,26 @@ impl CoreManager {
 
     /// 启动内核。`base_config` 是渲染后的订阅配置（未经运行时注入）。
     pub fn start(&self, base_config: &str, engine_rt: &RuntimeConfig) -> Result<(), String> {
+        self.start_internal(base_config, engine_rt, None)
+    }
+
+    /// 服务托管变体（Windows TUN，#81）：「拉起进程」外包给特权服务，
+    /// 端口/密钥生成、配置注入、就绪探测与状态簿记与常规路径完全一致。
+    pub fn start_with_spawner(
+        &self,
+        base_config: &str,
+        engine_rt: &RuntimeConfig,
+        spawner: Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>,
+    ) -> Result<(), String> {
+        self.start_internal(base_config, engine_rt, Some(spawner))
+    }
+
+    fn start_internal(
+        &self,
+        base_config: &str,
+        engine_rt: &RuntimeConfig,
+        spawner: Option<Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>>,
+    ) -> Result<(), String> {
         // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
         // 被旧探测超时路径误杀/误报。
         if self.status() == CoreStatus::Starting {
@@ -417,7 +437,15 @@ impl CoreManager {
                     inner.detached = false;
                 }
             }
-            if !kill_external(descriptor.pid, descriptor.binary_path.as_deref()) {
+            // Windows SYSTEM 内核 GUI 杀不动：先请服务停（服务没托管它时
+            // 回 Err，照常走常规 kill_external——普通内核路径不变）
+            #[cfg(target_os = "windows")]
+            let stopped_via_service = crate::service_client::stop_core().is_ok();
+            #[cfg(not(target_os = "windows"))]
+            let stopped_via_service = false;
+            if !stopped_via_service
+                && !kill_external(descriptor.pid, descriptor.binary_path.as_deref())
+            {
                 let msg = format!(
                     "无法确认旧内核进程 {} 已退出；描述文件已保留，请关闭旧内核后重试",
                     descriptor.pid
@@ -532,10 +560,46 @@ impl CoreManager {
         {
             let mut inner = self.shared.inner.lock().unwrap();
             inner.stopping = false;
-            inner.controller = Some((port, secret));
+            inner.controller = Some((port, secret.clone()));
             inner.restarts.clear();
         }
-        spawn_and_watch(self.shared.clone());
+        match spawner {
+            None => spawn_and_watch(self.shared.clone()),
+            Some(spawner) => {
+                // 与 spawn_child 相同约定：配置写盘 + 日志路径，交给服务拉起
+                let config_path = self.shared.work_dir.join("config.yaml");
+                std::fs::File::create(&config_path)
+                    .and_then(|mut f| f.write_all(final_config.as_bytes()))
+                    .map_err(|e| format!("write config: {e}"))?;
+                let log_path = self.shared.work_dir.join("core-stdio.log");
+                self.shared.notify(CoreStatus::Starting);
+                let pid = match spawner(&config_path, &log_path) {
+                    Ok(pid) => pid,
+                    Err(error) => {
+                        self.shared
+                            .notify(CoreStatus::Crashed(format!("服务拉起内核失败：{error}")));
+                        return Err(error);
+                    }
+                };
+                {
+                    let mut inner = self.shared.inner.lock().unwrap();
+                    inner.external_pid = Some(pid);
+                    inner.detached = true;
+                }
+                if let Err(error) = self
+                    .shared
+                    .write_descriptor(pid, port, &secret, &self.shared.binary_path)
+                {
+                    eprintln!("could not persist core descriptor: {error}");
+                }
+                // SYSTEM 内核归服务管理，这里只探测置 Running（无子进程句柄
+                // 可监视；死亡可感知性由 #20 健康监测的控制器探测兜底）
+                let shared = self.shared.clone();
+                std::thread::spawn(move || {
+                    probe_external_core(shared, port, secret);
+                });
+            }
+        }
         Ok(())
     }
 
@@ -618,6 +682,23 @@ impl CoreManager {
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
     pub fn stop(&self) -> bool {
+        // Windows TUN 内核以 SYSTEM 运行，GUI 杀不动：先请服务停
+        #[cfg(target_os = "windows")]
+        {
+            if crate::service_client::stop_core().is_ok() {
+                {
+                    let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+                    inner.stopping = true;
+                    inner.external_pid = None;
+                    inner.external_binary = None;
+                    inner.detached = false;
+                    inner.controller = None;
+                }
+                let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
+                self.shared.notify(CoreStatus::Stopped);
+                return true;
+            }
+        }
         {
             let mut inner = self.shared.inner.lock().unwrap();
             inner.stopping = true;
@@ -1128,6 +1209,27 @@ fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
         ));
         return;
     });
+}
+
+/// 服务托管内核的就绪探测（watch() 的无子进程变体）：置 Running 或 Crashed。
+fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
+    let timeout = Duration::from_secs(shared.opts.lock().unwrap().readiness_timeout_secs);
+    let probe = ControllerProbe { port, secret };
+    if probe.wait_ready(
+        timeout,
+        || shared.inner.lock().unwrap().stopping,
+        || false,
+    ) {
+        if shared.inner.lock().unwrap().stopping {
+            return;
+        }
+        shared.notify(CoreStatus::Running);
+    } else {
+        if shared.inner.lock().unwrap().stopping {
+            return;
+        }
+        shared.notify(CoreStatus::Crashed("服务托管内核启动失败/超时".into()));
+    }
 }
 
 fn watch(shared: Arc<Shared>, port: u16, secret: String) {

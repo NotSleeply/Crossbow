@@ -34,6 +34,10 @@ mod tray_speed;
 mod tray_state;
 #[cfg(target_os = "macos")]
 mod tun;
+#[cfg(windows)]
+mod tun_windows;
+#[cfg(windows)]
+mod service_client;
 mod ws_bridge;
 
 mod core_download;
@@ -224,7 +228,7 @@ fn wait_core_running(state: &AppState) -> Result<(), String> {
 }
 
 /// 调用方必须已持有 core_op（start_core / restart_core 入口）。
-fn start_core_locked(state: &AppState) -> Result<(), String> {
+pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
     let is_singbox = {
         let store = state.store.lock().unwrap();
@@ -266,9 +270,21 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
             }
             return state.core().start(&rendered.config, &rt);
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
         {
-            return Err("TUN 模式即将支持（Windows 走 wintun）".into());
+            // Windows TUN（#81）：内核须以 SYSTEM 运行创建 wintun 适配器，
+            // GUI 无从提权——把「拉起进程」外包给特权服务（crossbow-service，
+            // NSIS 注册开机自启），端口/密钥/配置注入/就绪探测仍由
+            // CoreManager::start_with_spawner 统一簿记。
+            let spawner = crate::service_client::make_core_spawner(&binary)?;
+            if !state.sysproxy.status().enabled {
+                let _ = state.sysproxy.suspend_for_tun()?;
+            }
+            return state.core().start_with_spawner(&rendered.config, &rt, Box::new(spawner));
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            return Err("TUN 模式即将支持".into());
         }
     }
     #[cfg(target_os = "macos")]
@@ -822,7 +838,18 @@ async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Re
         refresh_tray(&app);
         result
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        notifications::publish(&app, notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tun-switch"));
+        let result = crate::tun_windows::toggle_tun(&state, enable);
+        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        let actual = state.store.lock().unwrap().data().engine.tun_enable;
+        let _ = app.emit("tun://status", actual);
+        let _ = app.emit("sysproxy://status", state.sysproxy.status());
+        refresh_tray(&app);
+        result
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
         let _ = enable;
@@ -859,7 +886,20 @@ fn tun_status(state: State<AppState>) -> TunStatus {
             core_running: state.core().status() == CoreStatus::Running,
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        let enabled = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.tun_enable
+        };
+        TunStatus {
+            enabled,
+            // 服务随安装器注册即视为就绪（GUI 无需再授权）
+            ready: crate::service_client::installed(),
+            core_running: state.core().status() == CoreStatus::Running,
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         TunStatus {
             enabled: false,
@@ -2711,6 +2751,24 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             Ok(())
         }
         "toggle-tun" => {
+            #[cfg(target_os = "windows")]
+            {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    notifications::publish(&handle, notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tray-tun"));
+                    let state = handle.state::<AppState>();
+                    let enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                    let result = crate::tun_windows::toggle_tun(&state, !enabled);
+                    let actual = state.store.lock().unwrap().data().engine.tun_enable;
+                    let _ = handle.emit("tun://status", actual);
+                    let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                    refresh_tray(&handle);
+                    if let Err(error) = result {
+                        eprintln!("tray TUN toggle failed: {error}");
+                        show_tray_toggle_error(&handle, "tray-tun", "tray.tun", error);
+                    } else { notifications::result(&handle, "tray-tun", "tray.tun", Ok(())); }
+                });
+            }
             #[cfg(target_os = "macos")]
             {
                 let handle = app.clone();

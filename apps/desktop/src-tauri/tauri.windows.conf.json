@@ -1,0 +1,32 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/mihomo",
+      "binaries/crossbow-service"
+    ],
+    "resources": {
+      "binaries/wintun.dll": "wintun.dll"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/installer-hooks.nsh",
+        "installMode": "perMachine"
+      },
+      "digestAlgorithm": "sha256",
+      "signCommand": {
+        "cmd": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "windows\\sign_windows.ps1",
+          "%1"
+        ]
+      }
+    },
+    "targets": [
+      "nsis"
+    ]
+  }
+}

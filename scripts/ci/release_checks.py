@@ -27,8 +27,13 @@ def source_version(root=ROOT, tag=None):
     require(re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version), 'Invalid app version')
     require(package['version'] == cargo['workspace']['package']['version'] == version,
             'Tauri, desktop package.json and Cargo workspace versions must agree')
-    locked = [p['version'] for p in lock['package'] if p['name'] in ('crossbow-core', 'crossbow-desktop')]
-    require(locked == [version, version], 'Cargo.lock package versions do not match app version')
+    expected = {'crossbow-core', 'crossbow-desktop'}
+    if 'apps/service' in cargo['workspace'].get('members', []):
+        expected.add('crossbow-service')
+    locked = [p for p in lock['package'] if p['name'] in expected]
+    require(len(locked) == len(expected) and {p['name'] for p in locked} == expected
+            and all(p['version'] == version for p in locked),
+            'Cargo.lock package versions do not match app version')
     if tag is not None:
         require(tag == 'v' + version, f'Tag {tag!r} must equal v{version}')
     return version
