@@ -5,96 +5,168 @@
 
 #[cfg(target_os = "windows")]
 pub mod imp {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt as _;
-    use std::path::Path;
-
+    use std::ffi::{OsStr, OsString};
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
     use windows_sys::Win32::Foundation::{
-        CloseHandle, GetLastError, ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY,
+        CloseHandle, GetLastError, ERROR_FILE_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_BUSY,
+        GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     };
-    use windows_sys::Win32::Security::{GENERIC_READ, GENERIC_WRITE};
-    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING};
-    use windows_sys::Win32::System::Pipes::{WaitNamedPipeW, PIPE_ACCESS_DUPLEX};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, ReadFile, WriteFile, OPEN_EXISTING, SECURITY_IMPERSONATION,
+        SECURITY_SQOS_PRESENT,
+    };
+    use windows_sys::Win32::System::Pipes::{
+        GetNamedPipeServerProcessId, SetNamedPipeHandleState, WaitNamedPipeW, PIPE_NOWAIT,
+        PIPE_READMODE_BYTE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
 
     pub const PIPE_PATH: &str = "\\\\.\\pipe\\crossbow-service";
-
+    struct Handle(HANDLE);
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
     fn wide(s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s).encode_wide().chain(Some(0)).collect()
     }
-
-    /// 服务是否已随安装器注册（exe 同目录有服务二进制即视为已装）
-    pub fn installed() -> bool {
+    fn service_exe() -> Result<PathBuf, String> {
         std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join("crossbow-service.exe")))
-            .is_some_and(|p| p.is_file())
+            .map_err(|e| e.to_string())?
+            .parent()
+            .map(|dir| dir.join("crossbow-service.exe"))
+            .ok_or_else(|| "no install directory".into())
+    }
+    pub fn installed() -> bool {
+        service_exe().is_ok_and(|path| path.is_file())
     }
 
-    fn connect_pipe() -> Result<*mut core::ffi::c_void, String> {
-        let wide_path = wide(PIPE_PATH);
-        for attempt in 0..20 {
+    fn verify_server(pipe: HANDLE) -> Result<(), String> {
+        let mut pid = 0;
+        if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 {
+            return Err("cannot identify service".into());
+        }
+        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if process.is_null() {
+            return Err("cannot inspect service process".into());
+        }
+        let process = Handle(process);
+        let mut buffer = vec![0u16; 32768];
+        let mut len = buffer.len() as u32;
+        if unsafe { QueryFullProcessImageNameW(process.0, 0, buffer.as_mut_ptr(), &mut len) } == 0 {
+            return Err("cannot verify service image".into());
+        }
+        let image = PathBuf::from(OsString::from_wide(&buffer[..len as usize]))
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        let expected = service_exe()?.canonicalize().map_err(|e| e.to_string())?;
+        if !image
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&expected.to_string_lossy())
+        {
+            return Err("service pipe is owned by an unexpected process".into());
+        }
+        Ok(())
+    }
+    fn connect_pipe() -> Result<Handle, String> {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
             let handle = unsafe {
                 CreateFileW(
-                    wide_path.as_ptr(),
+                    wide(PIPE_PATH).as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
                     0,
                     std::ptr::null(),
                     OPEN_EXISTING,
-                    PIPE_ACCESS_DUPLEX,
-                    std::ptr::null(),
+                    SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION,
+                    std::ptr::null_mut(),
                 )
             };
-            let err = unsafe { GetLastError() };
-            if !handle.is_null() {
+            if handle != INVALID_HANDLE_VALUE && !handle.is_null() {
+                let handle = Handle(handle);
+                verify_server(handle.0)?;
+                let mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+                if unsafe {
+                    SetNamedPipeHandleState(handle.0, &mode, std::ptr::null(), std::ptr::null())
+                } == 0
+                {
+                    return Err("cannot configure service pipe".into());
+                }
                 return Ok(handle);
             }
-            if err == ERROR_PIPE_BUSY {
-                let wide = wide(PIPE_PATH);
-                unsafe {
-                    WaitNamedPipeW(wide.as_ptr(), 2000);
-                }
-            } else if err == ERROR_FILE_NOT_FOUND && attempt >= 5 {
-                // 服务没起来（安装器未注册/被禁用）：快速失败，调用方给指引
-                return Err("service not running".into());
+            let code = unsafe { GetLastError() };
+            if code != ERROR_FILE_NOT_FOUND && code != ERROR_PIPE_BUSY {
+                return Err(format!("service connection failed ({code})"));
             }
-            std::thread::sleep(std::time::Duration::from_millis(150));
+            if Instant::now() >= deadline {
+                return Err("Crossbow 服务未运行，请重新运行安装程序修复服务".into());
+            }
+            unsafe {
+                WaitNamedPipeW(wide(PIPE_PATH).as_ptr(), 100);
+            }
+            std::thread::sleep(Duration::from_millis(30));
         }
-        Err("service pipe timeout".into())
     }
-
-    /// 单行请求/应答。每次新建连接：服务端一连接一请求，串行处理。
     fn request(payload: serde_json::Value) -> Result<serde_json::Value, String> {
         let handle = connect_pipe()?;
-        let mut out = payload.to_string().into_bytes();
-        out.push(b'\n');
-        let sent = unsafe {
-            let mut written = 0u32;
-            let ok = WriteFile(handle, out.as_ptr(), out.len() as u32, &mut written, std::ptr::null_mut());
-            (ok, written)
-        };
-        if sent.0 == 0 {
-            unsafe { CloseHandle(handle) };
+        let out = format!("{payload}\n");
+        if out.len() > 4096 {
+            return Err("service request too large".into());
+        }
+        let mut written = 0;
+        if unsafe {
+            WriteFile(
+                handle.0,
+                out.as_ptr(),
+                out.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            )
+        } == 0
+            || written as usize != out.len()
+        {
             return Err("pipe write failed".into());
         }
-        let mut line = Vec::with_capacity(256);
-        unsafe {
-            let mut byte = [0u8; 1];
-            while line.len() < 4096 {
-                let mut read = 0u32;
-                if ReadFile(handle, byte.as_mut_ptr(), 1, &mut read, std::ptr::null_mut()) == 0
-                    || read == 0
-                {
-                    break;
-                }
-                if byte[0] == b'\n' {
-                    break;
-                }
-                line.push(byte[0]);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut line = Vec::new();
+        loop {
+            if Instant::now() >= deadline {
+                return Err("service response timeout".into());
             }
-            CloseHandle(handle);
+            let mut byte = 0u8;
+            let mut read = 0;
+            let ok = unsafe { ReadFile(handle.0, &mut byte, 1, &mut read, std::ptr::null_mut()) };
+            if ok != 0 && read == 1 {
+                if byte == b'\n' {
+                    break;
+                }
+                if line.len() >= 4096 {
+                    return Err("service response too large".into());
+                }
+                line.push(byte);
+            } else if unsafe { GetLastError() } == ERROR_NO_DATA || (ok != 0 && read == 0) {
+                std::thread::sleep(Duration::from_millis(10));
+            } else {
+                return Err("service disconnected before completing response".into());
+            }
         }
-        serde_json::from_slice(&line)
-            .map_err(|e| format!("service response: {e}"))
+        unsafe {
+            WriteFile(
+                handle.0,
+                b"\n".as_ptr(),
+                1,
+                &mut written,
+                std::ptr::null_mut(),
+            );
+        }
+        serde_json::from_slice(&line).map_err(|e| format!("service response: {e}"))
     }
 
     fn unwrap_ok(response: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -138,32 +210,10 @@ pub mod imp {
         Ok(ok.get("pid").and_then(|v| v.as_u64()).map(|p| p as u32))
     }
 
-    /// 服务缺失时的一次性兜底安装：PowerShell 弹 UAC 后 `sc create`。
-    /// 常规路径是 NSIS 安装器已注册；此处只在用户从非安装包环境跑时用。
+    /// Elevated service installation belongs to the signed installer, never an
+    /// arbitrary portable/user-writable executable path from the GUI.
     pub fn install_elevated() -> Result<(), String> {
-        let exe = std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .parent()
-            .ok_or("no parent")?
-            .join("crossbow-service.exe");
-        if !exe.is_file() {
-            return Err("crossbow-service.exe 未随应用安装".into());
-        }
-        let script = format!(
-            "Start-Process sc.exe -Verb RunAs -Wait -ArgumentList 'create','CrossbowService','binPath=','\"{}\"','start=','auto','obj=','LocalSystem','DisplayName=','\"Crossbow Service\"'",
-            exe.display()
-        );
-        let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !output.status.success() {
-            return Err(format!(
-                "服务安装失败（用户取消或权限不足）：{}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        Ok(())
+        Err("Windows TUN 需要完整安装：请重新运行 Crossbow 安装程序，以管理员权限安装到 Program Files".into())
     }
 }
 

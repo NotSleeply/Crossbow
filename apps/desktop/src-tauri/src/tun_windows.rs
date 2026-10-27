@@ -26,17 +26,18 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
         state.core().status(),
         crate::CoreStatus::Running | crate::CoreStatus::Starting
     );
+    if enable {
+        if !crate::service_client::installed() {
+            crate::service_client::install_elevated()?;
+        }
+        crate::service_client::running()?;
+    }
     let previous_proxy = state.sysproxy.status();
     let suspended_proxy = if enable && !previous_proxy.enabled {
         Some(state.sysproxy.suspend_for_tun()?)
     } else {
         None
     };
-
-    // 服务是 TUN 的前提（NSIS 安装器注册）；缺失时给一次性 UAC 兜底安装
-    if enable && !crate::service_client::installed() {
-        crate::service_client::install_elevated()?;
-    }
 
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
@@ -57,7 +58,13 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if should_restart {
         let start_result = crate::start_core_locked(state)
             .and_then(|()| crate::wait_core_running(state))
-            .and_then(|()| if enable { wait_tun_active(state) } else { Ok(()) });
+            .and_then(|()| {
+                if enable {
+                    wait_tun_active(state)
+                } else {
+                    Ok(())
+                }
+            });
         if let Err(start_error) = start_result {
             {
                 let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());

@@ -7,6 +7,7 @@ authors.workspace = true
 
 [dependencies]
 serde_json = { workspace = true }
+serde_yaml.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
@@ -14,6 +15,10 @@ windows-sys = { version = "0.59", features = [
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Pipes",
+    "Win32_System_IO",
+    "Win32_Security_Authorization",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
     "Win32_System_Services",
     "Win32_System_Threading",
 ] }

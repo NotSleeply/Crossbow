@@ -21,10 +21,12 @@ if (-not $tool) {
         Where-Object { $_.FullName -match "x64" } |
         Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $candidate) { throw "signtool.exe not found" }
-    $tool = $candidate
+    $toolPath = $candidate.FullName
+} else {
+    $toolPath = $tool.Source
 }
 
-& $tool.Source sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+& $toolPath sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
     /f $pfxPath /p $pfxPass $target
 if ($LASTEXITCODE -ne 0) { throw "signtool failed for $target" }
 Write-Host "sign_windows: signed $target"

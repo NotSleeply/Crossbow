@@ -56,7 +56,7 @@
 
 ## Windows
 
-正式 `release.yml` 在双平台检查通过后构建 Windows x64 NSIS 安装程序及更新器签名，由 macOS 发布任务统一附加到 Release，并写入 `latest.json` 与 `SHA256SUMS`。Windows 目前没有代码签名证书；更新器签名不等同于 Windows 代码签名。
+正式 `release.yml` 在双平台检查通过后构建 Windows x64 NSIS 安装程序及更新器签名，由 macOS 发布任务统一附加到 Release，并写入 `latest.json` 与 `SHA256SUMS`。可选 `WINDOWS_PFX_BASE64` / `WINDOWS_PFX_PASSWORD` 用于 Authenticode，未配置时发布未签名安装包；更新器签名不等同于 Windows 代码签名。Windows 发布使用系统级 NSIS 安装器，同时打包服务与 wintun。
 
 PR 的 build 工作流仍上传 NSIS/MSI 测试包。Windows 编译与后端测试通过 Actions 验证，GUI 和真实联网需按 [Windows 验收说明](WINDOWS-TESTING.md) 在实机测试。
 
