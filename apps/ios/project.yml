@@ -46,6 +46,7 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         CrossbowAppGroup: "$(CROSSBOW_APP_GROUP)"
         CrossbowTunnelID: "$(CROSSBOW_TUNNEL_ID)"
         LSSupportsOpeningDocumentsInPlace: true
