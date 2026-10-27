@@ -284,6 +284,12 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             // GUI 无从提权——把「拉起进程」外包给特权服务（crossbow-service，
             // NSIS 注册开机自启），端口/密钥/配置注入/就绪探测仍由
             // CoreManager::start_with_spawner 统一簿记。
+            // 服务只运行钉定的安装目录副本：引擎选中的是数据目录下载内核
+            // 时（升级后常见），TUN 会话改用钉定副本，这里记录差异供诊断
+            state.core().log_decision(&format!(
+                "tun: engine core {} → service pinned sibling",
+                binary.display()
+            ));
             let spawner = crate::service_client::make_core_spawner(&binary)?;
             if !state.sysproxy.status().enabled {
                 let _ = state.sysproxy.suspend_for_tun()?;
