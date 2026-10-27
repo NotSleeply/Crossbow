@@ -23,8 +23,15 @@ export default function HomePage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
-  const [proxy, setProxy] = useState<SysProxyStatus>({ enabled: false, port: 0 });
-  const [tun, setTun] = useState({ enabled: false, ready: false, coreRunning: false });
+  const [proxy, setProxy] = useState<SysProxyStatus>({
+    enabled: false,
+    port: 0,
+  });
+  const [tun, setTun] = useState({
+    enabled: false,
+    ready: false,
+    coreRunning: false,
+  });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
@@ -43,9 +50,12 @@ export default function HomePage() {
       receivedEvent = true;
       setUpdate(state);
     });
-    void un.then(() => ipc.updateStateGet()).then((state) => {
-      if (active && !receivedEvent) setUpdate(state);
-    }).catch(() => {});
+    void un
+      .then(() => ipc.updateStateGet())
+      .then((state) => {
+        if (active && !receivedEvent) setUpdate(state);
+      })
+      .catch(() => {});
     return () => {
       active = false;
       void un.then((f) => f());
@@ -66,24 +76,42 @@ export default function HomePage() {
         const tunnel = findings.find((finding) => finding.kind === "tunnel");
         if (tunnel) {
           hadConflict = true;
-          notify.publish({ kind: "warning", title: t("home.coexistTitle"), description: t("home.coexistHint"), details: findings.map((finding) => finding.detail).join("\n"), source: "coexist", operationId: "coexist", duration: 0, actions: ["diagnostics"] });
+          notify.publish({
+            kind: "warning",
+            title: t("home.coexistTitle"),
+            description: t("home.coexistHint"),
+            details: findings.map((finding) => finding.detail).join("\n"),
+            source: "coexist",
+            operationId: "coexist",
+            duration: 0,
+            actions: ["diagnostics"],
+          });
         } else if (hadConflict) {
           hadConflict = false;
           notify.success(notificationText("coexist.resolved"), "coexist");
         }
-      } catch (error) { if (active) notify.error(error, "coexist-read"); }
+      } catch (error) {
+        if (active) notify.error(error, "coexist-read");
+      }
     };
     void check();
     const timer = window.setInterval(check, 60_000);
-    return () => { active = false; window.clearInterval(timer); };
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
     setProfiles(await ipc.listProfiles().catch(() => []));
     setActiveId(await ipc.activeProfileId().catch(() => null));
-    setCore(await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })));
-    setProxy(await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })));
+    setCore(
+      await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })),
+    );
+    setProxy(
+      await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })),
+    );
     setTun(
       await ipc.tunStatus().catch(() => ({
         enabled: false,
@@ -102,9 +130,16 @@ export default function HomePage() {
     refresh();
     const un1 = ipc.onCoreStatus((status) => {
       setCore(status);
-      if (active) ipc.tunStatus().then(setTun).catch((e) => notify.error(e, "tun-state-read"));
+      if (active)
+        ipc
+          .tunStatus()
+          .then(setTun)
+          .catch((e) => notify.error(e, "tun-state-read"));
     });
     const un2 = ipc.onSysproxyStatus(setProxy);
+    const untun = ipc.onTunStatus((enabled) => {
+      if (active) setTun((current) => ({ ...current, enabled }));
+    });
     const un3 = ipc.onCoreMode(setMode);
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!active || !mounted.current) return;
@@ -117,7 +152,7 @@ export default function HomePage() {
 
     // Install event listeners before starting the streams so that the first
     // websocket frames after a TUN/core restart cannot race past the webview.
-    const subscribe = Promise.all([un1, un2, un3, un4, un5]).then(() => {
+    const subscribe = Promise.all([un1, un2, un3, un4, un5, untun]).then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
       return Promise.allSettled([
         ipc.subscribeTraffic(),
@@ -128,18 +163,21 @@ export default function HomePage() {
     return () => {
       active = false;
       mounted.current = false;
-      for (const un of [un1, un2, un3, un4, un5]) void un.then((f) => f());
+      for (const un of [un1, un2, un3, un4, un5, untun])
+        void un.then((f) => f());
       // React StrictMode immediately mounts this page again in development.
       // Wait for in-flight subscribe commands, then let the new generation
       // decide whether the backend streams should remain active.
-      void subscribe.catch(() => {}).finally(() => {
-        queueMicrotask(() => {
-          if (subscriptionGeneration.current === generation) {
-            ipc.unsubscribeTraffic().catch(() => {});
-            ipc.unsubscribeConnections().catch(() => {});
-          }
+      void subscribe
+        .catch(() => {})
+        .finally(() => {
+          queueMicrotask(() => {
+            if (subscriptionGeneration.current === generation) {
+              ipc.unsubscribeTraffic().catch(() => {});
+              ipc.unsubscribeConnections().catch(() => {});
+            }
+          });
         });
-      });
     };
   }, [refresh]);
 
@@ -168,6 +206,23 @@ export default function HomePage() {
     }
   };
 
+  const toggleTun = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await ipc.setTun(!tun.enabled);
+    } catch (error) {
+      notify.error(
+        error,
+        "tun-switch",
+        t(tun.enabled ? "settings.tunOffFailed" : "settings.tunFailed"),
+      );
+    } finally {
+      await refresh();
+      setBusy(false);
+    }
+  };
+
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
@@ -175,227 +230,203 @@ export default function HomePage() {
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
   const statusTitle = tun.enabled
-    ? (running
-      ? (proxy.enabled ? t("home.tunAndSysproxyOn") : t("home.tunOn"))
-      : t("home.tunCoreStopped"))
-    : (proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff"));
+    ? running
+      ? proxy.enabled
+        ? t("home.tunAndSysproxyOn")
+        : t("home.tunOn")
+      : t("home.tunCoreStopped")
+    : proxy.enabled
+      ? t("home.sysproxyOn")
+      : t("home.sysproxyOff");
 
+  const go = (page: string) =>
+    window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
   return (
-    <div className="mx-auto max-w-4xl space-y-3.5">
-      <PageHead title={t("nav.home")} meta={`mixed :${proxy.port || 7897} · ${mode}`} />
-
-      {update && (
-        <UpdateBanner
-          update={update}
-          onOpen={() => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "settings" }))}
-        />
-      )}
-
-      {/* 状态卡 */}
-      <section className="cb-card flex h-[88px] items-center gap-4 px-5 py-3">
-        <span
-          className={`cb-dot ${
-            core.state === "Crashed" || (routingEnabled && !running)
-              ? "bad"
-              : routingEnabled && running
-                ? "ok"
-                : "idle"
-          }`}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">
-            {statusTitle}
+    <div className="cb-home-page">
+      <PageHead title={t("studio.workbench")} meta={t("studio.overviewHint")}>
+        <button className="cb-btn" onClick={() => go("diagnostics")}>
+          <Icon name="pulse" />
+          {t("diag.run")}
+        </button>
+      </PageHead>
+      {update && <UpdateBanner update={update} onOpen={() => go("settings")} />}
+      <div className="cb-home-layout">
+        <section className="cb-home-main">
+          <div className="cb-home-lead">
+            <div className="cb-status-line">
+              <i
+                className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
+              />
+              {coreText(t, core)}
+            </div>
+            <h2>{statusTitle}</h2>
+            <p>
+              {t("home.activeProfile")} {active?.name ?? t("home.none")}
+            </p>
           </div>
-          <div className="mt-0.5 truncate text-[11.5px]" style={{ color: "var(--cb-text-dim)" }} title={`${coreText(t, core)} · ${t("home.activeProfile")} ${active ? active.name : t("home.none")}`}>
-            {coreText(t, core)} · {t("home.activeProfile")}{" "}
-            {active ? active.name : t("home.none")}
+          <div className="cb-route-flow">
+            <div>
+              <Icon name="device" size={23} />
+              <b>{t("studio.thisDevice")}</b>
+              <small>
+                {navigator.userAgent.includes("Windows") ? "Windows" : "macOS"}
+              </small>
+            </div>
+            <span className="cb-route-line" />
+            <div>
+              <Icon name="sliders" size={23} />
+              <b>{t("studio.routing")}</b>
+              <small>{t(`mode.${mode}`)}</small>
+            </div>
+            <span className="cb-route-line" />
+            <div>
+              <Icon name="globe" size={23} />
+              <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
+              <small>
+                {outbound?.delay_ms != null
+                  ? outbound.delay_ms > 0
+                    ? `${outbound.delay_ms} ms`
+                    : t("sites.error.timeout")
+                  : coreText(t, core)}
+              </small>
+            </div>
           </div>
-        </div>
-        <div className="cb-seg">
-          {CORE_MODES.map((m) => (
-            <button
-              key={m.id}
-              className={mode === m.id ? "on" : ""}
-              onClick={() => notify.run("core-mode", notificationText("core.mode"), () => ipc.setCoreMode(m.id))}
-            >
-              {t(`mode.${m.id}` as const)}
+          <div className="cb-home-actions">
+            <button className="cb-btn primary" onClick={() => go("proxies")}>
+              <Icon name="bolt" />
+              {t("studio.chooseNode")}
             </button>
-          ))}
-        </div>
-        <button
-          className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
-          onClick={toggleProxy}
-          disabled={busy || !activeId}
-          title={activeId ? undefined : t("home.noProfiles")}
-        />
-        <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />
-        <div className="min-w-0 w-[220px] shrink-0 text-right">
-          <div className="cb-micro">{t("home.outbound")}</div>
-          {outbound ? (
-            <>
-              <div className="cb-mono mt-0.5 truncate text-[13.5px] font-semibold" title={outbound.node}>
-                {outbound.node}
-                {outbound.delay_ms != null && (
-                  <span
-                    className="ml-1.5 text-[11px] font-normal"
-                    style={{
-                      color:
-                        outbound.delay_ms <= 200
-                          ? "var(--cb-ok)"
-                          : outbound.delay_ms <= 500
-                            ? "var(--cb-warn)"
-                            : "var(--cb-bad)",
-                    }}
+            <button className="cb-btn" onClick={() => go("connections")}>
+              <Icon name="cube" />
+              {t("studio.viewConnections")}
+            </button>
+          </div>
+          <section className="cb-live-chart">
+            <div className="cb-chart-head">
+              <div>
+                <h3>{t("home.rate")}</h3>
+                <p>{t("studio.lastMinute")} · KB/s</p>
+              </div>
+              <div className="cb-rate-pair">
+                <span>
+                  ↓ <b>{fmtBytes(latest?.down ?? 0)}</b>/s
+                </span>
+                <span>
+                  ↑ <b>{fmtBytes(latest?.up ?? 0)}</b>/s
+                </span>
+              </div>
+            </div>
+            <Sparkline rates={rates} />
+            <div className="cb-chart-foot">
+              <span>{t("studio.lastMinute")}</span>
+              <span>{t("studio.now")}</span>
+            </div>
+          </section>
+          <div className="cb-session-strip">
+            <span>
+              {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
+            </span>
+            <span>
+              {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
+            </span>
+            <span>
+              {t("home.connections")} <b>{connCount ?? "—"}</b>
+            </span>
+          </div>
+        </section>
+        <aside className="cb-home-side">
+          <section className="cb-takeover-panel">
+            <h3>{t("studio.takeover")}</h3>
+            <div className="cb-takeover-row">
+              <div>
+                <b>{t("studio.proxy")}</b>
+                <p>{t("studio.proxyHint")}</p>
+              </div>
+              <button
+                className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
+                role="switch"
+                aria-label={t("studio.proxy")}
+                aria-checked={proxy.enabled}
+                onClick={toggleProxy}
+                disabled={busy || !activeId}
+              />
+            </div>
+            <div className="cb-takeover-row">
+              <div>
+                <b>{t("settings.tun")}</b>
+                <p>{t("studio.tunHint")}</p>
+              </div>
+              <button
+                className={`cb-toggle ${tun.enabled ? "on" : ""}`}
+                role="switch"
+                aria-label={t("settings.tun")}
+                aria-checked={tun.enabled}
+                onClick={toggleTun}
+                disabled={busy || !activeId}
+              />
+            </div>
+            <div className="cb-mode-control">
+              <p>{t("studio.mode")}</p>
+              <div className="cb-seg">
+                {CORE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    className={mode === m.id ? "on" : ""}
+                    aria-pressed={mode === m.id}
+                    onClick={() =>
+                      notify.run(
+                        "core-mode",
+                        notificationText("core.mode"),
+                        () => ipc.setCoreMode(m.id),
+                      )
+                    }
                   >
-                    {outbound.delay_ms}ms
-                  </span>
-                )}
+                    {t(`mode.${m.id}`)}
+                  </button>
+                ))}
               </div>
-              <div
-              className="cb-mono mt-0.5 truncate text-[11px]"
-                style={{ color: "var(--cb-faint)" }}
-                title={outbound.chain.join(" → ")}
-              >
-                {outbound.chain.join(" → ")} · {outbound.mode}
-              </div>
-            </>
-          ) : (
-            <div
-              className="cb-mono mt-0.5 text-[11px]"
-              style={{ color: "var(--cb-faint)" }}
-            >
-              内核未运行
             </div>
+            <p className="cb-control-note">{t("studio.independent")}</p>
+          </section>
+          <button className="cb-source-strip" onClick={() => go("profiles")}>
+            <Icon name="document" size={26} />
+            <div>
+              <b>{active?.name ?? t("home.none")}</b>
+              <p>
+                {t("studio.currentSource")} ·{" "}
+                {active?.kind === "remote"
+                  ? t("profiles.remote")
+                  : t("profiles.local")}
+              </p>
+            </div>
+            <Icon name="chevron" size={17} />
+          </button>
+          {!activeId && (
+            <p className="cb-control-note">{t("studio.noSource")}</p>
           )}
-        </div>
-      </section>
-
-      {/* KPI */}
-      <div className="grid grid-cols-3 gap-3">
-        <Kpi
-          micro="↑ 上行速率"
-          value={fmtBytes(latest?.up ?? 0)}
-          delta={`累计 ${fmtBytes(totals.up)}`}
-        />
-        <Kpi
-          micro="↓ 下行速率"
-          value={fmtBytes(latest?.down ?? 0)}
-          delta={`累计 ${fmtBytes(totals.down)}`}
-        />
-        <Kpi micro={t("home.connections")} value={connCount != null ? String(connCount) : "—"} delta="" />
+        </aside>
       </div>
-
-      {/* 速率曲线 */}
-      <section className="cb-card grow px-4 pb-2 pt-4">
-        <div className="flex items-baseline">
-          <span className="cb-micro flex-1">{t("home.rate")}</span>
-          <span className="cb-mono text-[12px]" style={{ color: "var(--cb-up)" }}>
-            ↑ {fmtBytes(latest?.up ?? 0)}/s
-          </span>
-          <span className="cb-mono ml-3 text-[12px]" style={{ color: "var(--cb-down)" }}>
-            ↓ {fmtBytes(latest?.down ?? 0)}/s
-          </span>
-        </div>
-        <Sparkline rates={rates} />
-      </section>
-
-      {/* 配置档案 */}
-      <section className="cb-card px-4 pb-4 pt-[14px]">
-        <div className="cb-micro">{t("home.profiles")}</div>
-        <div className="mt-2.5 flex flex-col gap-2">
-          {profiles.length === 0 ? (
-            <div className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
-              {t("home.noProfiles")}
-            </div>
-          ) : (
-            profiles.map((p) => {
-              const on = p.id === activeId;
-              const tr = p.traffic;
-              const used = tr ? tr.upload + tr.download : 0;
-              const pct = tr && tr.total > 0 ? Math.min(100, (used / tr.total) * 100) : 0;
-              return (
-                <div
-                  key={p.id}
-                  className="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5"
-                  style={{
-                    border: `1px solid ${on ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
-                    background: on
-                      ? "linear-gradient(180deg, var(--cb-accent-soft), transparent)"
-                      : "var(--cb-surface-2)",
-                  }}
-                >
-                  <span className={on ? "cb-badge" : "cb-badge gray"}>
-                    {on ? "当前" : p.kind === "remote" ? "订阅" : "本地"}
-                  </span>
-                  <b className="text-[12.5px] font-medium">{p.name}</b>
-                  {tr && tr.total > 0 && (
-                    <>
-                      <div
-                        className="h-[3px] flex-1 overflow-hidden rounded-full"
-                        style={{ background: "color-mix(in srgb, var(--cb-text) 7%, transparent)" }}
-                      >
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${pct}%`,
-                            background: "linear-gradient(90deg, var(--cb-accent), var(--cb-down))",
-                          }}
-                        />
-                      </div>
-                      <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>
-                        {fmtBytes(used)} / {fmtBytes(tr.total)}
-                      </span>
-                    </>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </section>
     </div>
   );
 }
 
-export function PageHead({ title, meta, children }: { title: string; meta?: string; children?: React.ReactNode }) {
+export function PageHead({
+  title,
+  meta,
+  children,
+}: {
+  title: string;
+  meta?: string;
+  children?: React.ReactNode;
+}) {
   return (
-    <div
-      className="mb-1 flex items-center gap-3"
-      onMouseDown={(e) => {
-        // 页头空白区拖窗（title/meta/span 上的点击才触发，按钮不受影响）
-        const tag = (e.target as HTMLElement).tagName;
-        if (e.button === 0 && (tag === "H1" || tag === "SPAN" || tag === "DIV")) {
-          import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-            getCurrentWindow().startDragging(),
-          );
-        }
-      }}
-    >
-      <h1 className="text-[15px] font-semibold tracking-tight">{title}</h1>
-      {meta && (
-        <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>
-          {meta}
-        </span>
-      )}
-      <span className="flex-1" />
-      {children}
-    </div>
-  );
-}
-
-function Kpi({ micro, value, delta }: { micro: string; value: string; delta: string }) {
-  return (
-    <section className="cb-card px-4 py-3.5">
-      <div className="cb-micro">{micro}</div>
-      <div className="cb-mono mt-1 text-[21px] font-semibold tracking-tight">
-        {value}
+    <header className="cb-page-head">
+      <div className="cb-page-heading">
+        <h1>{title}</h1>
+        {meta && <p>{meta}</p>}
       </div>
-      {delta && (
-        <div className="cb-mono mt-1 text-[10.5px]" style={{ color: "var(--cb-faint)" }}>
-          {delta}
-        </div>
-      )}
-    </section>
+      {children && <div className="cb-page-actions">{children}</div>}
+    </header>
   );
 }
 
@@ -423,13 +454,12 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   };
   const upLine = smooth("up");
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-2 w-full" style={{ height: 120 }}>
-      <defs>
-        <linearGradient id="au" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" style={{ stopColor: "var(--cb-up)", stopOpacity: 0.16 }} />
-          <stop offset="1" style={{ stopColor: "var(--cb-up)", stopOpacity: 0 }} />
-        </linearGradient>
-      </defs>
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="mt-2 w-full"
+      style={{ height: 170 }}
+    >
       <g style={{ stroke: "var(--cb-line)" }}>
         <line x1="0" y1="30" x2={W} y2="30" />
         <line x1="0" y1="60" x2={W} y2="60" />
@@ -437,12 +467,22 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
       </g>
       {upLine && (
         <>
-          <path d={`${upLine} L${W},${H} L0,${H} Z`} fill="url(#au)" />
-          <path d={upLine} fill="none" style={{ stroke: "var(--cb-up)" }} strokeWidth="1.6" />
+          <path
+            d={upLine}
+            fill="none"
+            style={{ stroke: "var(--cb-up)" }}
+            strokeWidth="1.6"
+          />
         </>
       )}
       {smooth("down") && (
-        <path d={smooth("down")} fill="none" style={{ stroke: "var(--cb-down)" }} strokeWidth="1.4" opacity=".9" />
+        <path
+          d={smooth("down")}
+          fill="none"
+          style={{ stroke: "var(--cb-down)" }}
+          strokeWidth="1.4"
+          opacity=".9"
+        />
       )}
     </svg>
   );
@@ -460,6 +500,3 @@ function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
       return t("home.coreStopped");
   }
 }
-
-// Icon 供 KPI 卡未来扩展使用，避免未用告警
-void Icon;

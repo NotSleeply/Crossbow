@@ -47,7 +47,14 @@ function consumeSingBox(
   const entry = (): SbPending => {
     let e = pending.get(id);
     if (!e) {
-      e = { type: "", process: "", source: "", target: "", outbound: "", seen: Date.now() };
+      e = {
+        type: "",
+        process: "",
+        source: "",
+        target: "",
+        outbound: "",
+        seen: Date.now(),
+      };
       pending.set(id, e);
     }
     return e;
@@ -55,7 +62,12 @@ function consumeSingBox(
   if (comp.startsWith("inbound/")) {
     const tag = tagOf(comp); // tun-in / mixed-in
     const e = entry();
-    e.type = tag === "tun-in" ? "TUN" : tag === "mixed-in" ? "MIXED" : tag.toUpperCase();
+    e.type =
+      tag === "tun-in"
+        ? "TUN"
+        : tag === "mixed-in"
+          ? "MIXED"
+          : tag.toUpperCase();
     const TO = "inbound connection to ";
     const FROM = "inbound connection from ";
     if (msg.startsWith(TO)) e.target = msg.slice(TO.length);
@@ -68,7 +80,10 @@ function consumeSingBox(
     entry().process = path.split("/").pop() ?? path;
     return true;
   }
-  if (comp.startsWith("outbound/") && msg.startsWith("outbound connection to ")) {
+  if (
+    comp.startsWith("outbound/") &&
+    msg.startsWith("outbound connection to ")
+  ) {
     const e = entry();
     e.outbound = tagOf(comp) || comp;
     e.target = msg.slice("outbound connection to ".length);
@@ -104,7 +119,14 @@ function parseLog(payload: string): ParsedLog | null {
   // 右段：目标 match 规则 using 出口
   const rm = /^(.+?)\s+match\s+(.*?)\s+using\s+(.+)$/.exec(right);
   if (!rm) return null;
-  return { network, process, source, target: rm[1], rule: rm[2], outbound: rm[3] };
+  return {
+    network,
+    process,
+    source,
+    target: rm[1],
+    rule: rm[2],
+    outbound: rm[3],
+  };
 }
 
 /** 规则段拆成「类型 + 明细」：DomainSuffix(qq.com) → DomainSuffix / qq.com */
@@ -137,7 +159,9 @@ export default function LogsPage() {
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
     let active = true;
-    const unstatus = ipc.onLogsStatus((status) => { if (active) setConnected(status.connected); });
+    const unstatus = ipc.onLogsStatus((status) => {
+      if (active) setConnected(status.connected);
+    });
     let receivedCoreEvent = false;
     const uncore = ipc.onCoreStatus((status) => {
       if (!active) return;
@@ -145,9 +169,13 @@ export default function LogsPage() {
       setCoreRunning(status.state === "Running");
       if (status.state !== "Running") setConnected(false);
     });
-    void uncore.then(() => ipc.coreStatus()).then((status) => {
-      if (active && !receivedCoreEvent) setCoreRunning(status.state === "Running");
-    }).catch(() => {});
+    void uncore
+      .then(() => ipc.coreStatus())
+      .then((status) => {
+        if (active && !receivedCoreEvent)
+          setCoreRunning(status.state === "Running");
+      })
+      .catch(() => {});
     // Register the Tauri event handler before the backend can emit its first batch.
     const unlisten = ipc.onLogs((entries) => {
       const out: LogEntry[] = [];
@@ -180,7 +208,9 @@ export default function LogsPage() {
       }
       setLines((prev) => {
         const next = [...prev, ...out];
-        return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
+        return next.length > MAX_LINES
+          ? next.slice(next.length - MAX_LINES)
+          : next;
       });
     });
 
@@ -197,17 +227,20 @@ export default function LogsPage() {
     return () => {
       active = false;
       setConnected(false);
-      for (const pending of [unlisten, unstatus, uncore]) void pending.then((remove) => remove());
+      for (const pending of [unlisten, unstatus, uncore])
+        void pending.then((remove) => remove());
       // Delay unsubscription until any in-flight subscribe has settled. A
       // StrictMode remount advances the generation synchronously and keeps the
       // replacement subscription alive.
-      void subscribe.catch(() => {}).finally(() => {
-        queueMicrotask(() => {
-          if (subscriptionGeneration.current === generation) {
-            ipc.unsubscribeLogs().catch(() => {});
-          }
+      void subscribe
+        .catch(() => {})
+        .finally(() => {
+          queueMicrotask(() => {
+            if (subscriptionGeneration.current === generation) {
+              ipc.unsubscribeLogs().catch(() => {});
+            }
+          });
         });
-      });
     };
   }, []);
 
@@ -227,16 +260,26 @@ export default function LogsPage() {
   }, [lines, enabled, keyword]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-3" style={{ height: "100%" }}>
-      <div className="flex items-center gap-3">
-        <h1 className="text-[15px] font-semibold tracking-tight">{t("logs.title")}</h1>
+    <div
+      className="mx-auto flex max-w-6xl flex-col gap-3"
+      style={{ height: "100%" }}
+    >
+      <div className="cb-log-toolbar flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("logs.title")}
+        </h1>
         {LEVELS.map((lv) => (
-          <label key={lv} className="flex items-center gap-1 text-xs"
-            style={{ color: "var(--cb-text-dim)" }}>
+          <label
+            key={lv}
+            className="flex items-center gap-1 text-xs"
+            style={{ color: "var(--cb-text-dim)" }}
+          >
             <input
               type="checkbox"
               checked={enabled[lv]}
-              onChange={(e) => setEnabled({ ...enabled, [lv]: e.target.checked })}
+              onChange={(e) =>
+                setEnabled({ ...enabled, [lv]: e.target.checked })
+              }
             />
             {lv}
           </label>
@@ -257,17 +300,33 @@ export default function LogsPage() {
         ref={boxRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          pinned.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
-        className="cb-card cb-selectable cb-mono text-[11px] leading-5"
+        className="cb-card cb-log-scroll cb-selectable cb-mono text-[13px] leading-5"
         style={{ height: 520, overflowY: "auto" }}
       >
         {shown.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3"
-            style={{ color: "var(--cb-text-dim)" }}>
-            <span>{!coreRunning ? t("logs.stopped") : connected ? t("logs.empty") : t("logs.connecting")}</span>
+          <div
+            className="flex h-full flex-col items-center justify-center gap-3"
+            style={{ color: "var(--cb-text-dim)" }}
+          >
+            <span>
+              {!coreRunning
+                ? t("logs.stopped")
+                : connected
+                  ? t("logs.empty")
+                  : t("logs.connecting")}
+            </span>
             {(!coreRunning || !connected) && (
-              <button className="cb-btn" onClick={() => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "diagnostics" }))}>
+              <button
+                className="cb-btn"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("cb:goto", { detail: "diagnostics" }),
+                  )
+                }
+              >
                 {t("nav.diagnostics")}
               </button>
             )}
@@ -285,8 +344,13 @@ export default function LogsPage() {
               const parsed = parseLog(l.payload);
               if (!parsed) {
                 return (
-                  <div key={i} className="cb-log-raw"
-                    style={{ color: LEVEL_COLOR[l.type] ?? "var(--cb-text-dim)" }}>
+                  <div
+                    key={i}
+                    className="cb-log-raw"
+                    style={{
+                      color: LEVEL_COLOR[l.type] ?? "var(--cb-text-dim)",
+                    }}
+                  >
                     {l.payload}
                   </div>
                 );
@@ -296,35 +360,62 @@ export default function LogsPage() {
               return (
                 <div key={i} className="cb-log-grid cb-log-row">
                   <span>
-                    <span className="cb-log-tag"
+                    <span
+                      className="cb-log-tag"
                       style={
                         parsed.network === "UDP"
-                          ? { color: "var(--cb-down)", background: "rgba(183, 166, 248, 0.13)" }
-                          : { color: "var(--cb-accent)", background: "var(--cb-accent-soft)" }
-                      }>
+                          ? {
+                              color: "var(--cb-down)",
+                              background: "rgba(183, 166, 248, 0.13)",
+                            }
+                          : {
+                              color: "var(--cb-accent)",
+                              background: "var(--cb-accent-soft)",
+                            }
+                      }
+                    >
                       {parsed.network}
                     </span>
                   </span>
                   <span className="cb-log-process">
                     <span className="truncate">{parsed.process || "—"}</span>
-                    <span className="cb-log-source">{parsed.source || "—"}</span>
+                    <span className="cb-log-source">
+                      {parsed.source || "—"}
+                    </span>
                   </span>
-                  <span className="truncate" style={{ color: "var(--cb-text)" }}>
+                  <span
+                    className="truncate"
+                    style={{ color: "var(--cb-text)" }}
+                  >
                     {parsed.target}
                   </span>
-                  <span className="truncate" style={{ color: "var(--cb-text-dim)" }}>
+                  <span
+                    className="truncate"
+                    style={{ color: "var(--cb-text-dim)" }}
+                  >
                     {rule.type}
                     {rule.detail && (
-                      <span style={{ color: "var(--cb-faint)" }}> · {rule.detail}</span>
+                      <span style={{ color: "var(--cb-faint)" }}>
+                        {" "}
+                        · {rule.detail}
+                      </span>
                     )}
                   </span>
                   <span>
-                    <span className="cb-log-outbound"
+                    <span
+                      className="cb-log-outbound"
                       style={
                         direct
-                          ? { color: "var(--cb-ok)", background: "rgba(74, 222, 128, 0.1)" }
-                          : { color: "var(--cb-accent)", background: "var(--cb-accent-soft)" }
-                      }>
+                          ? {
+                              color: "var(--cb-ok)",
+                              background: "rgba(74, 222, 128, 0.1)",
+                            }
+                          : {
+                              color: "var(--cb-accent)",
+                              background: "var(--cb-accent-soft)",
+                            }
+                      }
+                    >
                       {parsed.outbound}
                     </span>
                   </span>

@@ -1,11 +1,6 @@
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ipc,
-  type OverrideDef,
-  type OverrideKind,
-  type Profile,
-} from "../ipc";
+import { ipc, type OverrideDef, type OverrideKind, type Profile } from "../ipc";
 import { useT } from "../i18n";
 
 /** 覆写面板：列表 + 新建 + 编辑器 + 绑定当前订阅。 */
@@ -60,10 +55,10 @@ export default function OverridePanel({
    * 1. 落库内容 → 2. 校验渲染 → 失败：⚠ 标注错误、内核不动
    *                     → 成功：清除错误并热重启应用
    */
-  const save = async (id: string) => {
+  const save = async (id: string, content: string) => {
     notify.start("override-save", t("ov.title"));
     try {
-      await ipc.updateOverride(id, draft);
+      await ipc.updateOverride(id, content);
       await ipc.validateOverrides();
       await ipc.applyOverrides();
       setEditingId(null);
@@ -112,172 +107,172 @@ export default function OverridePanel({
     }
   };
 
-  const bound = (oid: string) =>
-    active?.override_ids.includes(oid) ?? false;
+  const bound = (oid: string) => active?.override_ids.includes(oid) ?? false;
 
+  const selected =
+    overrides.find((override) => override.id === editingId) ?? overrides[0];
   return (
-    <section className="cb-card px-4 pb-4 pt-[14px]">
-      <div className="flex items-center gap-2">
-        <span className="cb-micro flex-1">{t("ov.title")}</span>
+    <section className="cb-overrides-workspace">
+      <div className="cb-override-create">
         <input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && newName.trim() && !creating) create("script");
+            if (e.key === "Enter" && newName.trim() && !creating)
+              void create("script");
           }}
           placeholder={t("ov.namePlaceholder")}
-          className="cb-input cb-selectable w-44"
+          className="cb-input cb-selectable"
         />
         <button
-          className="cb-btn acc py-1"
+          className="cb-btn"
           disabled={creating || !newName.trim()}
           onClick={() => create("script")}
         >
           {creating ? "…" : t("ov.newScript")}
         </button>
         <button
-          className="cb-btn py-1"
+          className="cb-btn"
           disabled={creating || !newName.trim()}
           onClick={() => create("merge")}
         >
           {t("ov.newMerge")}
         </button>
       </div>
-
       {overrides.length === 0 ? (
-        <div className="mt-2 text-xs" style={{ color: "var(--cb-text-dim)" }}>
-          {t("ov.empty")}
+        <div className="cb-empty">
+          <p>{t("ov.empty")}</p>
         </div>
       ) : (
-        <div className="mt-2 space-y-2">
-          {overrides.map((o) => {
-            const isBound = activeId ? bound(o.id) : false;
-            return (
-              <div
-                key={o.id}
-                className="rounded-[10px] border px-3 py-2.5"
-                style={{
-                  borderColor: o.enabled
-                    ? "var(--cb-line-strong)"
-                    : "var(--cb-line)",
-                  background: "var(--cb-surface-2)",
-                  opacity: o.enabled ? 1 : 0.55,
+        <div className="cb-context-layout">
+          <nav className="cb-context-nav" aria-label={t("ov.title")}>
+            <h2>{t("ov.title")}</h2>
+            {overrides.map((override) => (
+              <button
+                key={override.id}
+                className={selected?.id === override.id ? "active" : ""}
+                aria-current={selected?.id === override.id ? "page" : undefined}
+                onClick={() => {
+                  setEditingId(override.id);
+                  setDraft(override.content);
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={o.enabled}
-                    onChange={(e) =>
-                      ipc
-                        .setOverrideEnabled(o.id, e.target.checked)
-                        .then(() => { onChanged(); notify.success(t("ov.enabled"), "override-enabled"); })
-                        .catch((error) => notify.error(error, "override-enabled"))
-                    }
-                    title={t("ov.enabled")}
-                  />
-                  {renamingId === o.id ? (
+                <span>{override.name}</span>
+                <small>
+                  {override.kind === "script"
+                    ? t("ov.kindScript")
+                    : t("ov.kindMerge")}
+                </small>
+              </button>
+            ))}
+          </nav>
+          {selected && (
+            <div className="min-w-0">
+              <div className="cb-editor-tools">
+                <div className="flex flex-wrap items-center gap-3">
+                  {renamingId === selected.id ? (
                     <input
                       autoFocus
                       value={nameDraft}
                       onChange={(e) => setNameDraft(e.target.value)}
-                      onBlur={() => commitRename(o.id, nameDraft)}
+                      onBlur={() => commitRename(selected.id, nameDraft)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter")
-                          commitRename(o.id, nameDraft);
+                        if (e.key === "Enter") e.currentTarget.blur();
                         if (e.key === "Escape") setRenamingId(null);
                       }}
-                      className="cb-input py-0.5 text-[12.5px]"
-                      style={{ width: 180 }}
+                      className="cb-input"
                     />
                   ) : (
-                    <>
-                      <span
-                        className="text-[12.5px] font-medium"
-                        onDoubleClick={() => {
-                          setNameDraft(o.name);
-                          setRenamingId(o.id);
-                        }}
-                      >
-                        {o.name}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setNameDraft(o.name);
-                          setRenamingId(o.id);
-                        }}
-                        title={t("profiles.rename")}
-                        className="text-[11px] leading-none hover:opacity-80"
-                        style={{ color: "var(--cb-faint)" }}
-                      >
-                        ✎
-                      </button>
-                    </>
+                    <h2 className="text-lg font-medium">{selected.name}</h2>
                   )}
-                  {o.last_error && (
-                    <span className="cb-tip cursor-help text-[12px]" style={{ color: "var(--cb-warn)" }} tabIndex={0}>
-                      ⚠
-                      <span className="cb-tip-pop">{o.last_error}</span>
-                    </span>
-                  )}
-                  <span className="cb-badge gray">
-                    {o.kind === "script" ? t("ov.kindScript") : t("ov.kindMerge")}
-                  </span>
-                  <div className="flex-1" />
-                  <label
-                    className="flex items-center gap-1 text-[11px]"
-                    style={{ color: isBound ? "var(--cb-accent)" : "var(--cb-faint)" }}
+                  <button
+                    className="cb-btn"
+                    onClick={() => {
+                      setNameDraft(selected.name);
+                      setRenamingId(selected.id);
+                    }}
                   >
+                    {t("profiles.rename")}
+                  </button>
+                </div>
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={selected.enabled}
+                    onChange={(e) =>
+                      ipc
+                        .setOverrideEnabled(selected.id, e.target.checked)
+                        .then(async () => {
+                          await refresh();
+                          onChanged();
+                          notify.success(t("ov.enabled"), "override-enabled");
+                        })
+                        .catch((error) =>
+                          notify.error(error, "override-enabled"),
+                        )
+                    }
+                  />
+                  {t("ov.enabled")}
+                </label>
+              </div>
+              <div className="cb-editor">
+                <div className="cb-editor-head">
+                  <span>
+                    {selected.kind === "script" ? "JavaScript" : "YAML"}
+                  </span>
+                  <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={isBound}
+                      checked={activeId ? bound(selected.id) : false}
                       disabled={!activeId}
-                      onChange={(e) => toggleBind(o.id, e.target.checked)}
+                      onChange={(e) =>
+                        toggleBind(selected.id, e.target.checked)
+                      }
                     />
                     {t("ov.bind")}
                   </label>
-                  <button
-                    className="cb-btn py-0.5"
-                    onClick={() => {
-                      setEditingId(editingId === o.id ? null : o.id);
-                      setDraft(o.content);
-                    }}
-                  >
-                    {t("ov.edit")}
-                  </button>
-                  <button
-                    className="cb-btn py-0.5"
-                    style={{ color: "var(--cb-bad)" }}
-                    onClick={() => remove(o.id)}
-                  >
-                    ✕
-                  </button>
                 </div>
-
-                {editingId === o.id && (
-                  <div className="mt-2">
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      spellCheck={false}
-                      className="cb-selectable w-full rounded-lg border p-2.5 font-mono text-[11.5px] leading-5 outline-none"
-                      style={{
-                        height: 180,
-                        borderColor: "var(--cb-line-strong)",
-                        background: "var(--cb-bg)",
-                        color: "var(--cb-text)",
-                      }}
-                    />
-                    <div className="mt-1.5 flex justify-end">
-                      <button className="cb-btn acc py-1" onClick={() => save(o.id)}>
-                        {t("ov.save")}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <textarea
+                  aria-label={t("ov.edit")}
+                  spellCheck={false}
+                  value={editingId === selected.id ? draft : selected.content}
+                  onChange={(e) => {
+                    setEditingId(selected.id);
+                    setDraft(e.target.value);
+                  }}
+                  className="cb-selectable"
+                />
               </div>
-            );
-          })}
+              {selected.last_error && (
+                <p
+                  className="cb-control-note"
+                  style={{ color: "var(--cb-warn)" }}
+                >
+                  {selected.last_error}
+                </p>
+              )}
+              <div className="cb-profile-actions">
+                <button
+                  className="cb-btn"
+                  style={{ color: "var(--cb-bad)" }}
+                  onClick={() => remove(selected.id)}
+                >
+                  {t("profiles.remove")}
+                </button>
+                <button
+                  className="cb-btn primary"
+                  onClick={() =>
+                    save(
+                      selected.id,
+                      editingId === selected.id ? draft : selected.content,
+                    )
+                  }
+                >
+                  {t("ov.save")}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

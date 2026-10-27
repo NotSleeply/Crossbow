@@ -20,31 +20,23 @@ export function dragWindow(e: React.MouseEvent) {
   }
 }
 import { ipc, type UiSettings } from "./ipc";
-import { Icon } from "./components/Icon";
-import { NotificationHistory, useNotificationNavigation } from "./notifications/NotificationProvider";
+import {
+  NotificationHistory,
+  useNotificationNavigation,
+} from "./notifications/NotificationProvider";
 
-const NAV = [
-  {
-    section: "proxy",
-    items: [
-      { id: "home", icon: "activity", key: "nav.home" },
-      { id: "proxies", icon: "bolt", key: "nav.proxies" },
-      { id: "connections", icon: "cube", key: "nav.connections" },
-      { id: "logs", icon: "lines", key: "nav.logs" },
-      { id: "diagnostics", icon: "pulse", key: "nav.diagnostics" },
-    ],
-  },
-  {
-    section: "general",
-    items: [
-      { id: "profiles", icon: "grid", key: "nav.profiles" },
-
-      { id: "settings", icon: "gear", key: "nav.settings" },
-    ],
-  },
+const PAGES = [
+  "home",
+  "proxies",
+  "connections",
+  "logs",
+  "diagnostics",
+  "profiles",
+  "settings",
 ] as const;
-
-type PageId = (typeof NAV)[number]["items"][number]["id"];
+type PageId = (typeof PAGES)[number];
+const isPage = (value: string): value is PageId =>
+  PAGES.includes(value as PageId);
 
 /// 从版本串提取短版本：mihomo「… v1.19.32 …」→ v1.19.32；sing-box「sing-box version 1.14.2」→ 1.14.2
 function shortVersion(version: string | undefined): string {
@@ -52,7 +44,13 @@ function shortVersion(version: string | undefined): string {
   const vTok = v.match(/v\d+\.\d+\.\d+/);
   if (vTok) return vTok[0];
   const i = v.indexOf("version ");
-  if (i >= 0) return v.slice(i + 8).trim().split(/\s+/)[0] || v;
+  if (i >= 0)
+    return (
+      v
+        .slice(i + 8)
+        .trim()
+        .split(/\s+/)[0] || v
+    );
   return v.split(/\s+/).slice(0, 1).join(" ");
 }
 
@@ -68,7 +66,57 @@ export default function App() {
   const t = useT();
   const isWindows = navigator.userAgent.includes("Windows");
   const [page, setPage] = useState<PageId>("home");
+  const [settingSection, setSettingSection] = useState<
+    "network" | "appearance" | "logs" | "app"
+  >("network");
+  const [configTab, setConfigTab] = useState<"sources" | "overrides">(
+    "sources",
+  );
+  const [profileName, setProfileName] = useState("");
+  const [appVersion, setAppVersion] = useState("");
+  const [coreRunning, setCoreRunning] = useState(false);
   const [coreLabel, setCoreLabel] = useState<string>("");
+
+  useEffect(() => {
+    let active = true;
+    let receivedStatus = false;
+    const un = ipc.onCoreStatus((status) => {
+      receivedStatus = true;
+      if (active) setCoreRunning(status.state === "Running");
+    });
+    void un
+      .then(() => ipc.coreStatus())
+      .then((status) => {
+        if (active && !receivedStatus)
+          setCoreRunning(status.state === "Running");
+      })
+      .catch(() => {});
+    void ipc
+      .appVersion()
+      .then((value) => {
+        if (active) setAppVersion(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      void un.then((off) => off());
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([ipc.listProfiles(), ipc.activeProfileId()])
+      .then(([profiles, id]) => {
+        if (alive)
+          setProfileName(
+            profiles.find((profile) => profile.id === id)?.name ?? "",
+          );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [page]);
 
   const refreshCoreLabel = () => {
     ipc
@@ -76,13 +124,17 @@ export default function App() {
       .then((e) =>
         ipc
           .coreBinaryInfoFor(e.engine)
-          .then((info) => setCoreLabel(`${e.engine === "singbox" ? "sing-box" : "mihomo"} ${shortVersion(info?.version)}`)),
+          .then((info) =>
+            setCoreLabel(
+              `${e.engine === "singbox" ? "sing-box" : "mihomo"} ${shortVersion(info?.version)}`,
+            ),
+          ),
       )
       .catch((error) => notify.error(error, "app-settings-read"));
   };
 
   useEffect(() => {
-    // 侧栏底部的内核标识：跟随持久化引擎与其二进制版本；引擎切换时重取
+    // 窗口底部的内核标识：跟随持久化引擎与其二进制版本；引擎切换时重取
     refreshCoreLabel();
     let unlisten: (() => void) | null = null;
     ipc.onEngineChanged(refreshCoreLabel).then((f) => {
@@ -96,7 +148,11 @@ export default function App() {
   // 托盘「发现新版本」等入口跳转设置页
   useEffect(() => {
     const un = ipc.onGoto((p) => {
-      if (NAV.some((group) => group.items.some((item) => item.id === p))) setPage(p as PageId);
+      if (isPage(p)) {
+        setPage(p);
+        if (p === "settings") setSettingSection("app");
+        if (p === "profiles") setConfigTab("sources");
+      }
     });
     return () => {
       void un.then((f) => f());
@@ -106,11 +162,19 @@ export default function App() {
   useEffect(() => {
     initLang();
     let currentTheme: UiSettings["theme"] = "system";
-    const updateTheme = (theme: UiSettings["theme"]) => { currentTheme = theme; applyTheme(theme); };
-    ipc.getUiSettings().then((u) => updateTheme(u.theme)).catch((error) => notify.error(error, "app-settings-read"));
+    const updateTheme = (theme: UiSettings["theme"]) => {
+      currentTheme = theme;
+      applyTheme(theme);
+    };
+    ipc
+      .getUiSettings()
+      .then((u) => updateTheme(u.theme))
+      .catch((error) => notify.error(error, "app-settings-read"));
     const un = ipc.onTheme(updateTheme);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onSystem = () => { if (currentTheme === "system") applyTheme("system"); };
+    const onSystem = () => {
+      if (currentTheme === "system") applyTheme("system");
+    };
     mq.addEventListener("change", onSystem);
     return () => {
       void un.then((f) => f());
@@ -121,96 +185,162 @@ export default function App() {
   useEffect(() => {
     const navigate = (event: Event) => {
       const next = (event as CustomEvent<string>).detail;
-      if (NAV.some((group) => group.items.some((item) => item.id === next))) setPage(next as PageId);
+      if (isPage(next)) {
+        setPage(next);
+        if (next === "settings") setSettingSection("app");
+        if (next === "profiles") setConfigTab("sources");
+      }
     };
     window.addEventListener("cb:goto", navigate);
     return () => window.removeEventListener("cb:goto", navigate);
   }, []);
 
   useNotificationNavigation((next) => {
-    if (NAV.some((group) => group.items.some((item) => item.id === next))) setPage(next as PageId);
+    if (isPage(next)) {
+      setPage(next);
+      if (next === "settings") setSettingSection("app");
+      if (next === "profiles") setConfigTab("sources");
+    }
   });
 
+  const workspace = ["connections", "logs", "diagnostics"].includes(page)
+    ? "monitor"
+    : page;
+  const go = (next: PageId) => {
+    setPage(next);
+  };
   return (
-    <div className="flex h-full">
-      {/* Overlay 标题栏：顶部 24px 拖拽区（内容区各页起始线 y≥24，不遮挡交互） */}
-      {!isWindows && <div
-        data-tauri-drag-region
-        onMouseDown={dragWindow}
-        className="fixed inset-x-0 top-0 z-40 h-6"
-        style={{ backgroundColor: "var(--cb-bg)" }}
-      />}
-      <aside
-        className={`flex w-52 shrink-0 flex-col gap-px border-r pb-5 pl-3 pr-3 ${isWindows ? "pt-6" : "pt-11"}`}
-        style={{ borderColor: "var(--cb-line)" }}
-      >
+    <div className={`cb-frame ${isWindows ? "is-windows" : "is-mac"}`}>
+      {!isWindows && (
         <div
-          className="mb-5 flex items-center gap-2.5 px-2.5"
+          className="cb-window-drag"
+          data-tauri-drag-region
           onMouseDown={dragWindow}
+          aria-hidden="true"
+        />
+      )}
+      <header className="cb-global-nav">
+        <button
+          className="cb-wordmark"
+          onClick={() => go("home")}
+          aria-label="Crossbow"
         >
-          <img
-            src={logoGlyph}
-            alt=""
-            className="h-6 w-6"
-            style={{ flex: "none" }}
-            draggable={false}
-          />
-          <b className="text-[13.5px] font-semibold tracking-tight">Crossbow</b>
+          <img src={logoGlyph} alt="" draggable={false} />
+          <b>Crossbow</b>
+        </button>
+        <nav className="cb-primary-nav" aria-label={t("studio.navigation")}>
+          {(
+            [
+              ["home", "studio.connect"],
+              ["proxies", "studio.nodes"],
+              ["monitor", "studio.monitor"],
+              ["profiles", "studio.config"],
+              ["settings", "studio.settings"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              className={workspace === id ? "active" : ""}
+              aria-current={workspace === id ? "page" : undefined}
+              onClick={() => go(id === "monitor" ? "connections" : id)}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </nav>
+        <div className="cb-global-tools">
+          <button
+            className="cb-source-pick"
+            onClick={() => {
+              setConfigTab("sources");
+              go("profiles");
+            }}
+          >
+            <span>{profileName || t("studio.sources")}</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <NotificationHistory />
         </div>
-        {NAV.map((group) => (
-          <div key={group.section}>
-            <div className="text-[11px] font-medium tracking-wide px-2.5 pb-1.5 pt-3.5" style={{ color: "var(--cb-faint)" }}>{t(group.section === "proxy" ? "section.proxy" : "section.general")}</div>
-            {group.items.map((item) => {
-              const on = page === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setPage(item.id)}
-                  className="cb-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[14px]"
-                  style={{
-                    color: on ? "var(--cb-text)" : "var(--cb-text-dim)",
-                    background: on ? "var(--cb-surface-2)" : undefined,
-                    boxShadow: on ? "inset 0 0 0 1px var(--cb-line)" : undefined,
-                  }}
-                >
-                  <Icon
-                    name={item.icon}
-                    size={15}
-                    stroke={on ? "var(--cb-accent)" : "var(--cb-faint)"}
-                  />
-                  {t(item.key)}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-        <div className="mt-auto"><NotificationHistory /></div>
-        <div
-          className="flex items-center gap-2 border-t px-2.5 pt-3 text-[11.5px]"
-          style={{ borderColor: "var(--cb-line)", color: "var(--cb-faint)" }}
-        >
-          <span className="cb-dot idle" />
-          {coreLabel || t("settings.notInstalled")}
+      </header>
+      <main className="cb-paper" id="main-content">
+        {workspace === "monitor" && (
+          <nav className="cb-subnav" aria-label={t("studio.monitor")}>
+            {(
+              [
+                ["connections", "nav.connections"],
+                ["logs", "nav.logs"],
+                ["diagnostics", "nav.diagnostics"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                className={page === id ? "active" : ""}
+                aria-current={page === id ? "page" : undefined}
+                onClick={() => go(id)}
+              >
+                {t(label)}
+              </button>
+            ))}
+          </nav>
+        )}
+        {page === "profiles" && (
+          <nav className="cb-subnav" aria-label={t("studio.config")}>
+            <button
+              className={configTab === "sources" ? "active" : ""}
+              onClick={() => setConfigTab("sources")}
+            >
+              {t("studio.sources")}
+            </button>
+            <button
+              className={configTab === "overrides" ? "active" : ""}
+              onClick={() => setConfigTab("overrides")}
+            >
+              {t("studio.overrides")}
+            </button>
+          </nav>
+        )}
+        <div className="cb-page-content">
+          {page === "home" && <HomePage />}
+          {page === "proxies" && <ProxiesPage />}
+          {page === "profiles" && <ProfilesPage tab={configTab} />}
+          {page === "connections" && <ConnectionsPage />}
+          {page === "diagnostics" && <DiagnosticsPage />}
+          {page === "logs" && <LogsPage />}
+          {page === "settings" && (
+            <div className="cb-context-layout cb-settings-layout">
+              <nav className="cb-context-nav" aria-label={t("studio.settings")}>
+                <h2>{t("studio.preferences")}</h2>
+                {(
+                  [
+                    ["network", "studio.network"],
+                    ["appearance", "settings.appearance"],
+                    ["logs", "settings.logsSection"],
+                    ["app", "studio.application"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    className={settingSection === id ? "active" : ""}
+                    aria-current={settingSection === id ? "page" : undefined}
+                    onClick={() => setSettingSection(id)}
+                  >
+                    {t(label)}
+                  </button>
+                ))}
+              </nav>
+              <SettingsPage section={settingSection} />
+            </div>
+          )}
         </div>
-      </aside>
-
-      <main
-        className={`relative flex-1 overflow-y-auto px-7 pb-6 ${isWindows ? "pt-5" : "pt-8"}`}
-        style={{
-          background:
-            "radial-gradient(900px 420px at 75% -8%, color-mix(in srgb, var(--cb-accent) 5%, transparent), transparent 60%)",
-        }}
-      >
-        {page === "home" && <HomePage />}
-        {page === "proxies" && <ProxiesPage />}
-        {page === "profiles" && <ProfilesPage />}
-        {page === "connections" && <ConnectionsPage />}
-        {page === "diagnostics" && <DiagnosticsPage />}
-        {page === "logs" && <LogsPage />}
-        {page === "settings" && <SettingsPage />}
-
-
       </main>
+      <footer className="cb-system-foot">
+        <span>
+          <i className={`cb-dot ${coreRunning ? "ok" : "idle"}`} />
+          {coreRunning ? t("home.coreRunning") : t("home.coreStopped")} ·{" "}
+          {coreLabel || t("settings.notInstalled")}
+        </span>
+        <span>Crossbow {appVersion && `v${appVersion}`}</span>
+      </footer>
     </div>
   );
 }
