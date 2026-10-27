@@ -7,7 +7,12 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') {
 $installer = (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
 if (-not $installer) { throw 'NSIS installer not found' }
 function Install-Crossbow {
-    $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+    $process = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
+    if (-not $process.WaitForExit(120000)) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        throw 'Installer timed out after 120 seconds'
+    }
+    $process.Refresh()
     if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
     $service = Get-Service CrossbowService
     $service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, [TimeSpan]::FromSeconds(10))
@@ -39,6 +44,10 @@ try {
     # Installing over the running service exercises stop-before-overwrite hooks.
     Install-Crossbow
     Write-Host 'Windows service installation, rejection, stop/restart and upgrade checks passed'
+} catch {
+    Get-CimInstance Win32_Service -Filter "Name='CrossbowService'" |
+        Select-Object Name, State, PathName | Format-List
+    throw
 } finally {
     $service = Get-Service CrossbowService -ErrorAction SilentlyContinue
     if ($service -and $service.Status -ne 'Stopped') { Stop-Service CrossbowService }
