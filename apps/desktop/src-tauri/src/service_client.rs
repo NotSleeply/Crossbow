@@ -181,6 +181,30 @@ pub mod imp {
         }
     }
 
+    /// Preserve CoreManager's descriptor identity: the broker must launch exactly
+    /// the binary selected by the manager, never silently substitute another core.
+    pub fn make_core_spawner(
+        binary: &Path,
+    ) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
+        let binary = binary.canonicalize().map_err(|e| e.to_string())?;
+        let expected = service_exe()?
+            .parent()
+            .ok_or("missing install dir")?
+            .join("mihomo.exe")
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        if !binary
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&expected.to_string_lossy())
+        {
+            return Err(
+                "Windows TUN 仅支持完整安装包中随附的 mihomo 内核，请切回 mihomo 或修复安装".into(),
+            );
+        }
+        running()?;
+        Ok(move |config: &Path, log: &Path| start_core(&binary, config, log))
+    }
+
     /// 让服务以 SYSTEM 拉起内核，返回 pid
     pub fn start_core(binary: &Path, config: &Path, log: &Path) -> Result<u32, String> {
         let path_str = |p: &Path| p.to_string_lossy().into_owned();
