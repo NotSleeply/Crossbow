@@ -425,11 +425,11 @@ button:not(:disabled):hover {
 
 /* 滚动条弱化 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--cb-line-strong);
+  background: color-mix(in srgb, var(--cb-text) 16%, transparent);
   border-radius: 99px;
 }
 ::-webkit-scrollbar-track {
@@ -816,6 +816,9 @@ summary:focus-visible {
   border-color: var(--cb-primary);
 }
 .cb-btn.primary:hover:not(:disabled) {
+  background: var(--cb-primary);
+  color: var(--cb-on-primary);
+  border-color: var(--cb-primary);
   opacity: 0.9;
 }
 .cb-input {
@@ -1773,10 +1776,21 @@ body,
 .cb-context-nav > h2 {
   flex: none;
 }
-.cb-context-nav > button {
+.cb-context-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 4px;
+}
+.cb-context-scroll > button {
   flex: none;
 }
-.cb-context-nav .cb-fit-cells > button {
+.cb-context-scroll > button {
   padding: 8px 10px;
   border-radius: 8px;
   font-size: 13px;
@@ -1786,21 +1800,21 @@ body,
   width: 100%;
   min-width: 0;
 }
-.cb-context-nav .cb-fit-cells > button:hover {
+.cb-context-scroll > button:hover {
   background: var(--cb-surface);
 }
-.cb-context-nav .cb-fit-cells > button.active {
+.cb-context-scroll > button.active {
   background: var(--cb-surface-2);
   color: var(--cb-text);
   font-weight: 500;
 }
-.cb-context-nav .cb-fit-cells > button > span {
+.cb-context-scroll > button > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cb-context-nav .cb-fit-cells > button > small {
+.cb-context-scroll > button > small {
   margin-top: 2px;
 }
 .cb-fit-items {
@@ -1852,7 +1866,8 @@ body,
 }
 .cb-home-main {
   display: grid;
-  grid-template-rows: auto auto auto minmax(60px, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  align-content: start;
   gap: clamp(6px, 1.2vh, 14px);
   min-height: 0;
 }
@@ -1934,11 +1949,39 @@ body,
 .cb-home-side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
+}
+.cb-traffic-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  flex: 1 1 auto;
+  padding: 14px 18px;
+  background: var(--cb-surface);
+  border: 1px solid var(--cb-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cb-traffic-panel .cb-chart-head {
+  margin-bottom: 8px;
+}
+.cb-traffic-panel .cb-chart-foot {
+  margin-top: 4px;
+}
+.cb-home-side .cb-session-strip {
+  flex: none;
+  margin: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 .cb-takeover-panel {
   padding: 16px 20px;
+  flex: none;
 }
 .cb-takeover-row {
   padding: 12px 0;
@@ -2015,14 +2058,14 @@ body,
 .cb-settings-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-height: 0;
 }
 .cb-settings-group {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1;
+  flex: none;
 }
 .cb-settings-group > div:first-child {
   padding-bottom: 10px;
@@ -2032,15 +2075,15 @@ body,
 .cb-settings-group .cb-rows {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 24px;
-  grid-auto-rows: minmax(0, 1fr);
-  flex: 1;
-  max-height: 680px;
+  column-gap: 28px;
+  row-gap: 2px;
+  align-content: start;
+  flex: none;
 }
 .cb-setting-row {
-  padding: 10px 0;
+  min-height: 68px;
+  padding: 15px 0;
   gap: 12px;
-  min-height: 0;
   min-width: 0;
   align-items: center;
 }

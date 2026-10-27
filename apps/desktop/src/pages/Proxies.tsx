@@ -259,11 +259,8 @@ export default function ProxiesPage() {
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2>{t("studio.groups")}</h2>
-            <FitItems
-              items={groups}
-              rowHeight={58}
-              label={t("studio.groups")}
-              render={(group) => (
+            <div className="cb-context-scroll">
+              {groups.map((group) => (
                 <button
                   key={group.name}
                   className={selectedGroup?.name === group.name ? "active" : ""}
@@ -275,8 +272,8 @@ export default function ProxiesPage() {
                   <span>{group.name}</span>
                   <small>{group.kind}</small>
                 </button>
-              )}
-            />
+              ))}
+            </div>
           </nav>
           <div className="cb-nodes-workspace">
             {selectedGroup && (
@@ -516,7 +513,7 @@ function GroupCard({
               aria-disabled={selecting === `${group.name}:${n.name}`}
               className={`cb-node-card group relative rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
                 selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
-              } hover:border-[var(--cb-accent-line)]`}
+              }`}
               style={{
                 border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
                 background: sel

@@ -301,7 +301,9 @@ export default function HomePage() {
               {t("studio.viewConnections")}
             </button>
           </div>
-          <section className="cb-live-chart">
+        </section>
+        <aside className="cb-home-side">
+          <div className="cb-traffic-panel">
             <div className="cb-chart-head">
               <div>
                 <h3>{t("home.rate")}</h3>
@@ -321,7 +323,7 @@ export default function HomePage() {
               <span>{t("studio.lastMinute")}</span>
               <span>{t("studio.now")}</span>
             </div>
-          </section>
+          </div>
           <div className="cb-session-strip">
             <span>
               {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
@@ -333,8 +335,6 @@ export default function HomePage() {
               {t("home.connections")} <b>{connCount ?? "—"}</b>
             </span>
           </div>
-        </section>
-        <aside className="cb-home-side">
           <section className="cb-takeover-panel">
             <h3>{t("studio.takeover")}</h3>
             <div className="cb-takeover-row" title={t("studio.proxyHint")}>
