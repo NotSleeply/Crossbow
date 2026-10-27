@@ -29,7 +29,11 @@ try {
             throw 'Broker did not reject the foreign client before opening files'
         }
     } finally { $pipe.Dispose() }
+    $idle = [IO.Pipes.NamedPipeClientStream]::new('.', 'crossbow-service', [IO.Pipes.PipeDirection]::InOut)
+    $idle.Connect(5000)
+    # A connected client that never writes must not block SCM stop.
     Stop-Service CrossbowService
+    $idle.Dispose()
     (Get-Service CrossbowService).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(10))
     Start-Service CrossbowService
     # Installing over the running service exercises stop-before-overwrite hooks.

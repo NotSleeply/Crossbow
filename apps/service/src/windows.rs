@@ -302,24 +302,26 @@ impl Broker {
             lpSecurityDescriptor: descriptor,
             bInheritHandle: 0,
         };
+        let pipe = unsafe {
+            CreateNamedPipeW(
+                text(PIPE).as_ptr(),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                1,
+                8192,
+                8192,
+                0,
+                &attributes,
+            )
+        };
+        if pipe == INVALID_HANDLE_VALUE || pipe.is_null() {
+            return;
+        }
+        // Retain the first-instance handle for the broker's entire lifetime.
+        // Recreating it per request races the previous client's CloseHandle and
+        // lets another process squat on the pipe between requests.
+        let pipe = Handle(pipe);
         while !STOP.load(Ordering::SeqCst) {
-            let pipe = unsafe {
-                CreateNamedPipeW(
-                    text(PIPE).as_ptr(),
-                    PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                    1,
-                    8192,
-                    8192,
-                    0,
-                    &attributes,
-                )
-            };
-            // Fail closed if another process owns the pipe name.
-            if pipe == INVALID_HANDLE_VALUE || pipe.is_null() {
-                break;
-            }
-            let pipe = Handle(pipe);
             loop {
                 if STOP.load(Ordering::SeqCst) {
                     break;
@@ -386,18 +388,23 @@ impl Broker {
                     let stderr = log.try_clone().map_err(|e| e.to_string())?;
                     drop(impersonation);
                     no_reparse(&self.runtime)?;
+                    // A second Windows account must not inherit another user's
+                    // provider/cache data or controller configuration.
+                    let runtime = self.runtime.join(&owner);
+                    std::fs::create_dir_all(&runtime).map_err(|e| e.to_string())?;
+                    no_reparse(&runtime)?;
                     for (path,bytes) in assets {
-                        let output = self.runtime.join(path);
+                        let output = runtime.join(path);
                         std::fs::create_dir_all(output.parent().ok_or("invalid asset path")?).map_err(|e|e.to_string())?;
                         no_reparse(output.parent().unwrap())?;
                         if output.exists() { no_reparse(&output)?; }
                         std::fs::write(output, bytes).map_err(|e|e.to_string())?;
                     }
-                    let config = self.runtime.join("runtime.yaml");
+                    let config = runtime.join("runtime.yaml");
                     if config.exists() { no_reparse(&config)?; }
                     std::fs::write(&config, yaml).map_err(|e|e.to_string())?;
-                    let child = std::process::Command::new(&allowed).arg("-d").arg(&self.runtime).arg("-f").arg(config)
-                        .current_dir(&self.runtime).env_remove("SAFE_PATHS").env_remove("SKIP_SAFE_PATH_CHECK")
+                    let child = std::process::Command::new(&allowed).arg("-d").arg(&runtime).arg("-f").arg(config)
+                        .current_dir(&runtime).env_remove("SAFE_PATHS").env_remove("SKIP_SAFE_PATH_CHECK")
                         .creation_flags(CREATE_NO_WINDOW).stdout(log).stderr(stderr).spawn().map_err(|e|e.to_string())?;
                     let pid = child.id(); self.child = Some(Managed { child, owner });
                     Ok(serde_json::json!({"ok":true,"pid":pid}))
