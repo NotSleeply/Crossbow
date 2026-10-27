@@ -1996,6 +1996,7 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
     let handle = app.clone();
     std::thread::spawn(move || {
         let mut failures = 0u8;
+        let mut drift_strikes = 0u8;
         let mut reported_disable_failure = false;
         loop {
             let cycle_started = std::time::Instant::now();
@@ -2006,6 +2007,20 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                     failures = 0;
                     reported_disable_failure = false;
                 } else {
+                    // 接管漂移（#154）：路由/系统 DNS 被 macOS 还原后，连通性
+                    // 探测可能假绿（gstatic 存在国内可达地址），显式检查接管
+                    // 本体；连续 2 次漂移即关开重建立，失败计入现有失败计数。
+                    #[cfg(target_os = "macos")]
+                    let drifted = crate::tun::takeover_drift();
+                    #[cfg(not(target_os = "macos"))]
+                    let drifted = false;
+                    if drifted {
+                        drift_strikes = drift_strikes.saturating_add(1);
+                    } else {
+                        drift_strikes = 0;
+                    }
+                    let reestablishing = drifted && drift_strikes >= 2;
+
                     let probe = if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
                         // proxy after Crossbow has established its route.
@@ -2016,7 +2031,33 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                 eprintln!("tun system proxy cleanup failed: {error}");
                             }
                         }
-                        probe_tun_network()
+                        if reestablishing {
+                            // 重建立周期跳过连通性探测：关开本身即恢复动作
+                            eprintln!("tun takeover drift persists, re-establishing TUN");
+                            drift_strikes = 0;
+                            match crate::tun::toggle_tun(&state, false)
+                                .and_then(|()| crate::tun::toggle_tun(&state, true))
+                            {
+                                Ok(()) => {
+                                    let _ = handle.emit("tun://status", true);
+                                    let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                                    refresh_tray(&handle);
+                                    let mut notice = notifications::Notice::new(
+                                        notifications::Kind::Info,
+                                        "tun.reestablished",
+                                        "tun-health",
+                                    );
+                                    notifications::publish(&handle, notice);
+                                }
+                                Err(error) => {
+                                    eprintln!("tun takeover re-establish failed: {error}");
+                                    failures = failures.saturating_add(1);
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            probe_tun_network()
+                        }
                     } else {
                         // Give the core's automatic restart time to recover.
                         // A persistent Crashed/Stopped state is a dead TUN.

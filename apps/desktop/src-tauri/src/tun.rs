@@ -49,6 +49,48 @@ fn native_v6_default(text: &str) -> bool {
     })
 }
 
+/// TUN 接管漂移检测（#154）：TUN 声称开启时，捕获路由与系统 DNS 接管
+/// 任意缺失即视为漂移——内核重启恰逢接口变化时 macOS 会还原两者，此后
+/// 所有系统解析走路由器 DNS 被污染，且没有自愈（2026-10-27 实测 Codex
+/// 反复断连）。任一探测失败按「未漂移」处理（fail-open 保持现行为）。
+#[cfg(target_os = "macos")]
+pub fn takeover_drift() -> bool {
+    !capture_route_present() || !system_dns_captures()
+}
+
+/// v4 捕获路由在位：default 或分片默认路由经 TUN 接口
+#[cfg(target_os = "macos")]
+fn capture_route_present() -> bool {
+    let Ok(output) = std::process::Command::new("netstat")
+        .args(["-rn", "-f", "inet"])
+        .output()
+    else {
+        return true;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines().any(|line| {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        match cols.as_slice() {
+            [dest, _gateway, _flags, netif, ..] => {
+                is_default_route(dest) && netif.starts_with("utun")
+            }
+            _ => false,
+        }
+    })
+}
+
+/// 系统 DNS 是否由 TUN 接管（dns-mode native 指向 198.18.0.0/30 网段）
+#[cfg(target_os = "macos")]
+fn system_dns_captures() -> bool {
+    let Ok(output) = std::process::Command::new("scutil")
+        .arg("--dns")
+        .output()
+    else {
+        return true;
+    };
+    String::from_utf8_lossy(&output.stdout).contains("198.18.0.")
+}
+
 /// 把 TUN 内核放到版本化的用户数据目录，避免更新 `.app` 时覆盖掉
 /// 已授权的 setuid 文件。只有核心版本变化时才需要重新授权。
 fn persistent_core_bin(state: &AppState, source: &Path) -> Result<PathBuf, String> {
@@ -238,6 +280,28 @@ mod route_tests {
     /// #136：netstat -f inet6 解析——fe80/utun 噪音不算原生 v6；
     /// 经物理口的 default（fe80 网关或全局网关）算；空表不算；
     /// 残行（列数不足）不 panic 也不误判。
+    /// #154：接管漂移解析——分片/完整 default 经 utun 即捕获在位；
+    /// 只有 fe80/物理口路由 = 漂移；scutil 输出含 198.18.0.x = DNS 接管。
+    #[test]
+    fn capture_route_detection() {
+        let captured = concat!(
+            "Routing tables\n",
+            "default 192.168.31.1 UGScg en0\n",
+            "0/1 198.18.0.1 UGScg utun4\n",
+            "128.0/1 198.18.0.1 UGScg utun4\n",
+        );
+        let lost = "Routing tables\ndefault 192.168.31.1 UGScg en0\n";
+        let lines = |t: &str| t.lines().any(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            match cols.as_slice() {
+                [dest, _gw, _flags, netif, ..] => is_default_route(dest) && netif.starts_with("utun"),
+                _ => false,
+            }
+        });
+        assert!(lines(captured));
+        assert!(!lines(lost));
+    }
+
     #[test]
     fn native_v6_default_needs_physical_default_route() {
         let noise = concat!(
