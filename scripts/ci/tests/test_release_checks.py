@@ -167,6 +167,7 @@ class ReleaseChecks(unittest.TestCase):
              patch.object(download_sidecar, 'ASSETS', {target: ('fixture.zip', digest)}), \
              patch.object(sys, 'argv', ['download_sidecar.py', target]), \
              patch.object(download_sidecar.urllib.request, 'urlopen', return_value=io.BytesIO(data)), \
+             patch.object(download_sidecar, 'fetch_wintun', lambda *_: None), \
              patch.object(Path, 'read_text', windows_read):
             download_sidecar.main()
         output = self.root / 'apps/desktop/src-tauri/binaries/mihomo-x86_64-pc-windows-msvc.exe'

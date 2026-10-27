@@ -105,6 +105,27 @@ jobs:
         shell: pwsh
         run: python scripts/ci/download_sidecar.py x86_64-pc-windows-msvc
 
+      - name: Build crossbow-service sidecar
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
+          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
+
+      - name: Prepare Authenticode certificate (optional, B-plan self-signed)
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGN_PFX_BASE64) {
+            Write-Host "WINDOWS_PFX_BASE64 not set; building unsigned"
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "crossbow-win-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGN_PFX_BASE64))
+          "WINDOWS_SIGN_PFX_PATH=$pfx" >> $env:GITHUB_ENV
+          "WINDOWS_SIGN_PFX_PASSWORD=$env:WINDOWS_SIGN_PFX_PASSWORD" >> $env:GITHUB_ENV
+
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 

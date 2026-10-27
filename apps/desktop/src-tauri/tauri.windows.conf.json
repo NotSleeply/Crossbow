@@ -14,7 +14,7 @@
           "-ExecutionPolicy",
           "Bypass",
           "-File",
-          "scripts\\ci\\sign_windows.ps1",
+          "windows\\sign_windows.ps1",
           "%1"
         ]
       }
