@@ -1,0 +1,18 @@
+{
+  "title": "Crossbow 概览连接路径动效",
+  "version": "v01",
+  "date": "2026-10-27",
+  "status": "proposed",
+  "issue": 160,
+  "source_commit": "8d6da7168c6b093da0223f0c676c517b42b6d015",
+  "reference_attachment": "codex-clipboard-26b0955f-ae5a-42bf-859e-6de84237bafe.png",
+  "reference_sha256": "0b1c45e32fae9982e1e2a75b1b51e60d167abd2825016ed386de93b212df7d17",
+  "scope": "Design prototype only; no production UI changes",
+  "files": [
+    "index.html",
+    "SPEC.md",
+    "preview-light.jpg",
+    "preview-dark.jpg",
+    "manifest.json"
+  ]
+}
