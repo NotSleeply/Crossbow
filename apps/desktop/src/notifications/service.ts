@@ -56,6 +56,7 @@ const copy = {
   "core.recovered": ["内核已恢复运行", "Core is running again"],
   "core.safeMode": ["已进入安全模式", "Safe mode enabled"],
   "tun.disabled": ["TUN 已自动关闭", "TUN turned off automatically"],
+  "tun.takeoverGiveUp": ["TUN 接管异常，已停止自动恢复", "TUN takeover abnormal; auto-recovery paused"],
   "tun.disableFailed": ["TUN 自动恢复失败", "TUN recovery failed"],
   "import.done": ["订阅导入成功", "Subscription imported"], "import.failed": ["订阅导入失败", "Import failed"],
   "update.available": ["发现新版本", "An update is available"],
