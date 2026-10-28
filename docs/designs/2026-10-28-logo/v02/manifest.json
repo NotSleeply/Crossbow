@@ -1,0 +1,247 @@
+{
+  "date": "2026-10-28",
+  "version": "v02",
+  "status": "exploration-not-selected",
+  "issue": 178,
+  "baseline": "32970cc",
+  "selectedMaster": "v01/assets/b1.svg",
+  "input": "用户要求适配当前界面主题重做 Logo，最终确认第一轮 B1 弧路",
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "3182a4d624bc8499d177dba54441d288ebf26c791d02db7b4cd30e81c53837c7"
+    },
+    {
+      "path": "assets/OFL-Manrope.txt",
+      "sha256": "d6a309fcfb963d329a93baf9df66fa5f3c23a4be2b5f67edf24d6cafecde12ac"
+    },
+    {
+      "path": "assets/b1-01-16.png",
+      "sha256": "3089a9d470f2aeb36efe033fd7f688ebaec8132df1fcd79e44d310b3db0970eb"
+    },
+    {
+      "path": "assets/b1-01-22.png",
+      "sha256": "73dc601f8234e36d903d316824dd668df006dea22db3f77fe4e18ab58ca535bc"
+    },
+    {
+      "path": "assets/b1-01-32.png",
+      "sha256": "6e74397160ca1ddfd1c2f3817f445b131e2a2e576e092c83ab88062d869298cd"
+    },
+    {
+      "path": "assets/b1-01-512.png",
+      "sha256": "6af95d88096ce2d530e300b571ecaa84b3199ff2e5d7511d48c5bca8ed317ee3"
+    },
+    {
+      "path": "assets/b1-01-app.svg",
+      "sha256": "db88ccd25239b98f9df688825c39294fb4fa1d7a285396868b0f310c1adebc44"
+    },
+    {
+      "path": "assets/b1-01-mono.svg",
+      "sha256": "6745b5cc834f3a832fe5f1e0fc100bc90a9652d2c8b568b4b8c538a4791cf2ba"
+    },
+    {
+      "path": "assets/b1-01-reverse.svg",
+      "sha256": "5f398c2af8e8bfceedc1590c54aa857b0164fe3f6ff44298fc1eb2ca3bea6793"
+    },
+    {
+      "path": "assets/b1-01.svg",
+      "sha256": "ae85f0c1b0392f037a294c84edcf73c2f4674eb26fbc2b9b89d9899b3ee44adf"
+    },
+    {
+      "path": "assets/b1-02-16.png",
+      "sha256": "f59c747154caa96e5f851130086278b2f45d9f69d2a5446fc04fe1e5d6ee2f25"
+    },
+    {
+      "path": "assets/b1-02-22.png",
+      "sha256": "025f1ca8e9ba55484557afc96a37597dc6de2a41a46ffa9c0624dab1af27584a"
+    },
+    {
+      "path": "assets/b1-02-32.png",
+      "sha256": "3a60302894117435fe8280c6b2a0cda72729130d3cb4a4748ad2ba54c95da3e2"
+    },
+    {
+      "path": "assets/b1-02-512.png",
+      "sha256": "22578d49a3d31ccee735249646f81f18af6615fade3bccd82dc60fc7d22c92ce"
+    },
+    {
+      "path": "assets/b1-02-app.svg",
+      "sha256": "b4d9cce7f4b87731c75f85afea7f202b3da3274f700952413b708fd33ae84685"
+    },
+    {
+      "path": "assets/b1-02-mono.svg",
+      "sha256": "e74a10a768e4d4b99fb9f63cdb9608220bdc1b038fd36210f56f7cc96c931bfd"
+    },
+    {
+      "path": "assets/b1-02-reverse.svg",
+      "sha256": "e464f05d839d8929ecb7045568256a3fb7dd8c60783c0bceec42604e2c62c4b2"
+    },
+    {
+      "path": "assets/b1-02.svg",
+      "sha256": "57424950cdfc0bf3448439580a2ca05963dc99d73a10916cefa44f0e91ec04b8"
+    },
+    {
+      "path": "assets/b1-03-16.png",
+      "sha256": "de7d601a761bd41bb57ec2eb5ebd71e3d67224c4c87cde830122c7046001ce13"
+    },
+    {
+      "path": "assets/b1-03-22.png",
+      "sha256": "ca8ff27825e8db9ab4fa00a448557ea31d9b29e8a4ae7d10247aa66f465e585a"
+    },
+    {
+      "path": "assets/b1-03-32.png",
+      "sha256": "710b7263367cb77c5fa034fc7010204504213a5b7263e78d31a3bb955188bbf8"
+    },
+    {
+      "path": "assets/b1-03-512.png",
+      "sha256": "98b5c290134d593af3202f213151d9e4d731e6a1da222f4ffee5b17d0772083c"
+    },
+    {
+      "path": "assets/b1-03-app.svg",
+      "sha256": "5347b00b25d3a8c953de66e1bcc81deecc141d9de5dd02e4b5d63922e5a5c224"
+    },
+    {
+      "path": "assets/b1-03-mono.svg",
+      "sha256": "66099282355973d1d232fc0d9ca173074bf4227853c8e8989c3440480fef178f"
+    },
+    {
+      "path": "assets/b1-03-reverse.svg",
+      "sha256": "1e6fb3cfddd67d236a4c77347ee7c914706f8ccd9202d304942f2b23fd8ea901"
+    },
+    {
+      "path": "assets/b1-03.svg",
+      "sha256": "2605633b42b42309608c1a5e2db69f7dd21e4b8019d8d4c7e1efc5cdb5f63092"
+    },
+    {
+      "path": "assets/b1-04-16.png",
+      "sha256": "e635783471fbd1663a40969e7751e40af855a315a0b6588475769f3c4188df00"
+    },
+    {
+      "path": "assets/b1-04-22.png",
+      "sha256": "85578cb67ee6665c558df4c5634c150da44bce412368c56181ebad6d178087f9"
+    },
+    {
+      "path": "assets/b1-04-32.png",
+      "sha256": "deae24d4fbcfc71ea6465f080e9dba98f3f2242791a6e20c63bc55a1158e01e5"
+    },
+    {
+      "path": "assets/b1-04-512.png",
+      "sha256": "50d3059d59394c93a1c95de8b7cca574e2d73404c5cd003542b018b6bd36f384"
+    },
+    {
+      "path": "assets/b1-04-app.svg",
+      "sha256": "7e3380207ca4d344d19b3486988482a8adf2f143badee159eb5248cf503ea058"
+    },
+    {
+      "path": "assets/b1-04-mono.svg",
+      "sha256": "4b1289e75ddb11550ad0ca608116c03cb13f175925d5d6e391ef63125f3d7fca"
+    },
+    {
+      "path": "assets/b1-04-reverse.svg",
+      "sha256": "8634b8b086c836bc73790a2f7f168da34566991abc88bd258746779377fa7657"
+    },
+    {
+      "path": "assets/b1-04.svg",
+      "sha256": "08214785396ff34c1912972fce95fe620a813103442dd6ad9d0f8f6c685a404b"
+    },
+    {
+      "path": "assets/b1-05-16.png",
+      "sha256": "d60e38eb46a1f73ed0ff968e2fe93d96ade620d57926b685bf9680aa4d8374a4"
+    },
+    {
+      "path": "assets/b1-05-22.png",
+      "sha256": "55f36312b52de18d314a3f2c9664e3e7a70e7801599ec540103956f2d36f8c46"
+    },
+    {
+      "path": "assets/b1-05-32.png",
+      "sha256": "b2493093d8c8073ae8d69005de6705681218e90ee9ad0a10eb72513d4b866221"
+    },
+    {
+      "path": "assets/b1-05-512.png",
+      "sha256": "4d50fd4dc621519a049f7c767a7a2caefca893814a2b6442b96c5f59e095bdd6"
+    },
+    {
+      "path": "assets/b1-05-app.svg",
+      "sha256": "32aa63da9394146c1a43885da55cf9da024080770bab6fd76a5f302f149e9021"
+    },
+    {
+      "path": "assets/b1-05-mono.svg",
+      "sha256": "3d8bc659b14d16175ab08d99f1060a924d57763cbfb8ba6d33444b55d23c714b"
+    },
+    {
+      "path": "assets/b1-05-reverse.svg",
+      "sha256": "b163c50c960f919350ef99509ec48dd4f49770148a3c0d51a8ff6caff56dd884"
+    },
+    {
+      "path": "assets/b1-05.svg",
+      "sha256": "fdb3d3cd8d04f6c1cffce3fe4c1e9edfc0768a44e3b7e8a479b6591e1d362ae7"
+    },
+    {
+      "path": "assets/b1-06-16.png",
+      "sha256": "da26636332865457e3a62210132875caaa04ae26ca0a200f0bb3c81b0de8bd68"
+    },
+    {
+      "path": "assets/b1-06-22.png",
+      "sha256": "ceba337935270b827488f30de8b8c67ed47cfc92e25aa2f7983551f7e5d5bfa0"
+    },
+    {
+      "path": "assets/b1-06-32.png",
+      "sha256": "f65ccf8197192a587f4163e740ed5e131fccb67b14ceff83339216062568d76d"
+    },
+    {
+      "path": "assets/b1-06-512.png",
+      "sha256": "b963e6c66b4b7e52329cb5b5fe351db050b40931ab6a55c6e667e517bfd9ca56"
+    },
+    {
+      "path": "assets/b1-06-app.svg",
+      "sha256": "9dd89dfb9b1efa117c425628465cc0fc729ba33f524b7cd42ca20c25670d2509"
+    },
+    {
+      "path": "assets/b1-06-mono.svg",
+      "sha256": "77aed3cef3c013c8d58c65d66dcf3cc67d1b5e8847615172c21b7585275dcff8"
+    },
+    {
+      "path": "assets/b1-06-reverse.svg",
+      "sha256": "d936624e7b506cd3ca97382b067ee33826a1a265afb263bad96430f75735d5da"
+    },
+    {
+      "path": "assets/b1-06.svg",
+      "sha256": "8db1ca58549f6bbfe765dbee9d48452dfee6762e6e85671455e2db973f8bcc23"
+    },
+    {
+      "path": "assets/manrope-regular.ttf",
+      "sha256": "ed335894f8d954263675f7e457bf657374d8b7be629be4dc43aef97c309ad3ae"
+    },
+    {
+      "path": "assets/manrope-semibold.ttf",
+      "sha256": "68ed4be49ec7d32f07b42f9232dc01ca1df7a77be1d9b0731aac74db58235f34"
+    },
+    {
+      "path": "contact-sheet.svg",
+      "sha256": "59a775e37aec50ef83a5a36974daccfcd16e8b0d8e865d75d4858b61219de521"
+    },
+    {
+      "path": "generate-study.py",
+      "sha256": "4698b50f556ac89e0a00fad62b73751caff58f8f0b788d07a93e3fe4e5689168"
+    },
+    {
+      "path": "index.html",
+      "sha256": "ab48027a2f37855a5009f0edda3a908a4a5218a7bbd5c9b331d988b62f2b8906"
+    },
+    {
+      "path": "previews/contact-sheet.png",
+      "sha256": "60728330a834d00072c983d943268021bb6b3c3c5e9353d96413b1b216e80a00"
+    },
+    {
+      "path": "showcase.js",
+      "sha256": "b617d193369a1105e79444cb67d3d011ba82e1660a33a34e85c54c570c2421cd"
+    },
+    {
+      "path": "style.css",
+      "sha256": "c8c26d749ccfe687289e573eaf5f2fbd18ce9085aeaf6a9e905b7dfb209a1eed"
+    },
+    {
+      "path": "variants.json",
+      "sha256": "fbe089e7df6973402bc1f43dee2a452049e48532425a161598b22b7c759b4755"
+    }
+  ]
+}

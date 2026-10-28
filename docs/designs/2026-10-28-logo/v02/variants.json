@@ -1,0 +1,62 @@
+[
+  {
+    "id": "b1-01",
+    "family": "B1 深化 / 圆弧",
+    "name": "圆弧",
+    "english": "ROUND",
+    "title": "留住 B1，放松一点呼吸。",
+    "rationale": "保留最接近原 B1 的开放 C 与水平箭头。适度收细笔画，拉开弧端与箭头之间的留白，保持轻巧。",
+    "tradeoff": "最接近你选中的 B1；方向明确，但 C 加箭头的构形较通用。",
+    "geometry": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M70 24A32 32 0 1 0 70 76\"/><path d=\"M48 50H83M71 38L83 50L71 62\"/></g>"
+  },
+  {
+    "id": "b1-02",
+    "family": "B1 深化 / 方圆",
+    "name": "方圆",
+    "english": "SOFT SQUARE",
+    "title": "把弧线，收进界面的秩序。",
+    "rationale": "把圆形 C 改成圆角矩形轮廓。横竖更稳定，和 Crossbow 的窗口、卡片与控件呼应，依旧保持向右的出口。",
+    "tradeoff": "偏理性、工具感更强；圆形的流动感稍弱。",
+    "geometry": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M71 23H41C26 23 19 32 19 47V53C19 68 26 77 41 77H71\"/><path d=\"M47 50H84M72 38L84 50L72 62\"/></g>"
+  },
+  {
+    "id": "b1-03",
+    "family": "B1 深化 / 连笔",
+    "name": "连笔",
+    "english": "CONTINUOUS",
+    "title": "一段连接，不再分开。",
+    "rationale": "让下方弧线自然接入箭头，用连续的走向把 C 和出口连成整体。没有分离的小部件，字标组合更紧凑。",
+    "tradeoff": "整体感强；更容易读成 G，需要结合 Crossbow 字标使用来判断。",
+    "geometry": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M70 24C56 13 35 17 24 32C12 50 20 73 39 80C53 85 69 80 77 69C82 62 84 56 84 50H48\"/><path d=\"M71 37L84 50L71 63\"/></g>"
+  },
+  {
+    "id": "b1-04",
+    "family": "B1 深化 / 负形",
+    "name": "留白",
+    "english": "COUNTERFORM",
+    "title": "连接的方向，藏在留白里。",
+    "rationale": "从实心圆环中切出出口箭头，让负形承担方向信息。减少细线，获得更扎实的体块，适合应用图标与小尺寸。",
+    "tradeoff": "轮廓最厚实，视觉重量更高；需要确认你是否喜欢偏实心的风格。",
+    "geometry": "<defs><mask id=\"cutout\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\"><rect width=\"100\" height=\"100\" fill=\"white\"/><circle cx=\"50\" cy=\"50\" r=\"22\" fill=\"black\"/><path d=\"M47 41H66V30L93 50L66 70V59H47Z\" fill=\"black\"/></mask></defs><circle cx=\"50\" cy=\"50\" r=\"38\" fill=\"currentColor\" mask=\"url(#cutout)\"/>"
+  },
+  {
+    "id": "b1-05",
+    "family": "B1 深化 / 破界",
+    "name": "破界",
+    "english": "OUTWARD",
+    "title": "沿着 C，向外多走一步。",
+    "rationale": "把出口转向右上，箭头从 C 的开口穿出。保留连接的语义，同时增加一点向前的张力，适合更有个性的标记。",
+    "tradeoff": "方向感最强；与外链符号的语义接近，需要留意独特性。",
+    "geometry": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M62 28A30 30 0 1 0 71 65\"/><path d=\"M45 55L82 18M64 18H82V36\"/></g>"
+  },
+  {
+    "id": "b1-06",
+    "family": "B1 深化 / 弓弧",
+    "name": "弓弧",
+    "english": "BOW ARC",
+    "title": "一段 C 形弓臂，保留 Crossbow 的名字。",
+    "rationale": "在 C 的开口中加入一段简化弓弦，再让箭头从中穿过。沿着你喜欢的 B1 轮廓，重新找回一点十字弓含义。",
+    "tradeoff": "品牌名称关联更强；16px 下交汇处会更密，后续需做托盘专用光学稿。",
+    "geometry": "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M71 22C48 22 25 32 25 50S48 78 71 78\" stroke-width=\"10\"/><path d=\"M71 22L51 50L71 78\" stroke-width=\"6\"/><path d=\"M38 50H84M68 34L84 50L68 66\" stroke-width=\"9\"/></g>"
+  }
+]

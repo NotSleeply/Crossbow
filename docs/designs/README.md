@@ -15,6 +15,9 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-28 | Logo 三方向六提案 | v01 | B1 已确认 | [规格](2026-10-28-logo/v01/SPEC.md) · [预览](2026-10-28-logo/v01/previews/contact-sheet.png) | #178 |
+| 2026-10-28 | B1 六种深化 | v02 | 留存，未采用 | [规格](2026-10-28-logo/v02/SPEC.md) · [预览](2026-10-28-logo/v02/previews/contact-sheet.png) | #178 |
+| 2026-10-28 | B1 原版正式品牌资产 | v03 | 已确认 / 已实现 | [规格](2026-10-28-logo/v03/SPEC.md) · [预览](2026-10-28-logo/v03/previews/brand-sheet.png) | #178 |
 | 2026-10-28 | 官网 V3 白色首屏 + 原功能/上手/下载卡片 | v01 | 已实现，待评审 | [规格](2026-10-28-website-implementation/v01/SPEC.md) · [源文件快照](2026-10-28-website-implementation/v01/source.zip) · [首屏预览](2026-10-28-website-implementation/v01/previews/home-1440.jpg) | #176 |
 | 2026-10-27 | 概览连接路径数据传输动效 | v01 | 提案 | [原型](2026-10-27-connection-flow/v01/index.html) · [规格](2026-10-27-connection-flow/v01/SPEC.md) | #160 |
 | 2026-10-28 | 概览连接路径单条快速传输 | v02 | 提案 | [原型](2026-10-27-connection-flow/v02/index.html) · [规格](2026-10-27-connection-flow/v02/SPEC.md) | #160 |
