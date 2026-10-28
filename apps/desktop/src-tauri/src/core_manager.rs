@@ -359,6 +359,24 @@ impl CoreManager {
         self.shared.config_cache.lock().unwrap().clone()
     }
 
+    /// 本次启动使用的配置文件。热重载必须写回这个路径，内核才认。
+    pub fn config_path(&self) -> PathBuf {
+        self.shared.work_dir.join("config.yaml")
+    }
+
+    /// 覆盖配置文件，不更新崩溃重启用的缓存。
+    /// 热重载成功后才调用 `replace_cached_config`，失败时缓存仍是旧内容。
+    pub fn write_config_file(&self, content: &str) -> Result<(), String> {
+        std::fs::write(self.config_path(), content).map_err(|e| format!("write config: {e}"))
+    }
+
+    pub fn replace_cached_config(&self, content: String) {
+        *self.shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(content);
+    }
+
     /// 启动链决策日志（独立文件 core-decision.log），排查引擎切换竞态。
     pub fn log_decision(&self, line: &str) {
         append_decision(&self.shared.work_dir, line);

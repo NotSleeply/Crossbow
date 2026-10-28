@@ -139,6 +139,39 @@ impl Controller {
         }
     }
 
+    /// 重载已经写好的配置文件，不杀进程。
+    ///
+    /// mihomo：`PUT /configs?force=true`。路径必须是本次 `-f` 用的 config.yaml，
+    /// 它在工作目录内，不需要额外的 SAFE_PATHS。sing-box 的 clash_api 不走这里。
+    pub fn reload_config(&self, path: &std::path::Path) -> Result<(), String> {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "path": path.to_string_lossy(),
+            "payload": ""
+        }))
+        .map_err(|e| e.to_string())?;
+        let resp = Self::req_on(
+            &Self::reload_agent(),
+            self.port,
+            &self.secret,
+            "PUT",
+            "/configs?force=true",
+        )
+        .send_bytes(&body)
+        .map_err(|e| format!("reload config: {e}"))?;
+        if resp.status() < 300 {
+            Ok(())
+        } else {
+            Err(format!("reload config: HTTP {}", resp.status()))
+        }
+    }
+
+    fn reload_agent() -> ureq::Agent {
+        ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .timeout(Duration::from_secs(60))
+            .build()
+    }
+
     pub fn patch_mode(&self, mode: &str) -> Result<(), String> {
         if !MODES.contains(&mode) {
             return Err(format!("unknown mode: {mode}"));
