@@ -39,6 +39,17 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
         None
     };
 
+    // 与 macOS 相同：先停现有内核再翻转。CoreManager 的启动预检要求
+    // Stopped/Crashed，直接 start 会报「core is Running, stop it first」
+    // （v0.11.0 实测，#159 用户反馈）。服务托管的 SYSTEM 内核由 stop()
+    // 内部路由给特权服务停止，用户态内核走常规路径。
+    if was_running && !state.core().stop() {
+        if let Some(suspended) = suspended_proxy {
+            state.sysproxy.restore_after_failed_tun(suspended)?;
+        }
+        return Err("旧内核未退出，TUN 状态未改变；请重试切换".into());
+    }
+
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().engine.tun_enable = enable;
