@@ -62,12 +62,37 @@ pub fn spawn_checker(app: &AppHandle) {
 }
 
 /// 手动/定时共用的单次检查。auto_download=true 时发现新版立即后台下载。
+/// updater 构建统一入口：内核运行时注入本机混合端口代理——
+/// GitHub Releases 直连在 CN 网络被限速（30MB 数分钟），经隧道走节点即恢复。
+/// 未运行时直连（与旧行为一致）。
+fn updater_with_proxy(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let mut builder = app.updater_builder();
+    if let Some(proxy) = updater_proxy(app) {
+        builder = builder.proxy(proxy);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// 本机代理地址：内核运行时 = 混合端口（HTTP+SOCKS5 共用）。
+fn updater_proxy(app: &AppHandle) -> Option<tauri::Url> {
+    let state = app.try_state::<crate::AppState>()?;
+    if state.core().status() != crate::CoreStatus::Running {
+        return None;
+    }
+    let port = state
+        .store
+        .lock()
+        .ok()
+        .and_then(|s| Some(s.data().engine.mixed_port))?;
+    format!("http://127.0.0.1:{port}").parse().ok()
+}
+
 pub fn check_once(
     app: &AppHandle,
     auto_download: bool,
     notify_available: bool,
 ) -> Result<Option<String>, String> {
-    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+    let updater = updater_with_proxy(app)?;
     // Updater requests have no default timeout. Limit only the check, so a slow
     // download is not aborted by the same deadline.
     let update = tauri::async_runtime::block_on(async {
