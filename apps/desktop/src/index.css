@@ -917,6 +917,7 @@ summary:focus-visible {
   margin: 0;
 }
 .cb-route-flow {
+  position: relative;
   display: grid;
   grid-template-columns:
     minmax(70px, auto) minmax(15px, 1fr) minmax(70px, auto)
@@ -959,6 +960,70 @@ summary:focus-visible {
   border-top: 1px solid var(--cb-line-strong);
   border-right: 1px solid var(--cb-line-strong);
   transform: rotate(45deg);
+}
+/* One packet across both tracks. Mask the middle label without creating a
+   second animated object; travel 840 ms, wait 2560 ms, then repeat (v03). */
+.cb-route-motion {
+  position: absolute;
+  height: 12px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right,
+    #000 0, #000 var(--cb-flow-first-end),
+    transparent var(--cb-flow-first-end),
+    transparent var(--cb-flow-second-start),
+    #000 var(--cb-flow-second-start), #000 100%);
+  mask-image: linear-gradient(to right,
+    #000 0, #000 var(--cb-flow-first-end),
+    transparent var(--cb-flow-first-end),
+    transparent var(--cb-flow-second-start),
+    #000 var(--cb-flow-second-start), #000 100%);
+}
+.cb-route-packet {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.cb-route-packet::before,
+.cb-route-packet::after {
+  content: "";
+  position: absolute;
+  background: var(--cb-accent);
+  border-radius: 2px;
+}
+.cb-route-packet::before {
+  right: 100%;
+  top: 5px;
+  width: 36px;
+  height: 2px;
+  opacity: .22;
+}
+.cb-route-packet::after {
+  left: 0;
+  top: 4px;
+  width: 7px;
+  height: 4px;
+}
+.cb-route-flow[data-transferring="true"] .cb-route-packet {
+  animation: cb-route-transmit 3400ms linear infinite;
+}
+.cb-route-flow[data-paused="true"] .cb-route-packet {
+  animation-play-state: paused;
+}
+@keyframes cb-route-transmit {
+  0% { transform: translateX(0); opacity: 0; }
+  1% { opacity: 1; }
+  23.7% { opacity: 1; }
+  24.705882%, 100% { transform: translateX(100%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-route-flow[data-transferring] .cb-route-packet {
+    animation: none;
+    opacity: 0;
+  }
+  .cb-route-flow[data-transferring="true"] .cb-route-line {
+    background: var(--cb-accent);
+  }
 }
 .cb-home-actions {
   display: flex;
