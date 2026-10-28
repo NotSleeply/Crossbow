@@ -1,0 +1,201 @@
+{
+  "date": "2026-10-28",
+  "version": "v01",
+  "status": "implemented-pending-review",
+  "issue": 176,
+  "designPR": 175,
+  "baseline": "9d11f1ce5900b71f01556fd24b7aadc0859ba31a",
+  "inputs": [
+    "V3 white single-screen concept",
+    "codex-clipboard-b8c6ecee-12cf-4953-aa74-efb0126d1f55.png",
+    "codex-clipboard-f0ad5da7-7b96-4982-b20f-ee53e290886d.png"
+  ],
+  "sourceFiles": [
+    {
+      "path": "apps/site/index.html",
+      "sha256": "cb2e68ef002613869c2b52d2d9b24398384eb06b334a8cbee7a8f22849f71d02"
+    },
+    {
+      "path": "apps/site/package.json",
+      "sha256": "7f9a4cb945b8e5107b5e1164f274263f8c8f201452e5cc6e585059b789b299df"
+    },
+    {
+      "path": "apps/site/public/_redirects",
+      "sha256": "6036983e5fc00f0169c9e939b1816ed771eee00e27f2fcc517b819041460b9ef"
+    },
+    {
+      "path": "apps/site/public/apple-touch-icon.png",
+      "sha256": "41b4ad83216f667711843be377ce3a4fa3f6db7cb8b953811429dccc15f02923"
+    },
+    {
+      "path": "apps/site/public/favicon-16.png",
+      "sha256": "b4924ad2b8b0d86281b742523126ffb5005739e42f90a5c895bf72aab16dec3d"
+    },
+    {
+      "path": "apps/site/public/favicon-192.png",
+      "sha256": "7c4cfed3956cde67f5a0cdc0d2a8eb7066c909917ee46381950e7972a12050e2"
+    },
+    {
+      "path": "apps/site/public/favicon-32.png",
+      "sha256": "f9587722ccdbf38504b4af89bd98f90f56bc29745ad63134139cb4534b6971ce"
+    },
+    {
+      "path": "apps/site/public/favicon.ico",
+      "sha256": "ed138e259159b1d72e10a91ab1791c22c280c5709bc73d29c9909b9cd8abeb44"
+    },
+    {
+      "path": "apps/site/src/App.tsx",
+      "sha256": "8f0801008bb7e7a779a85c0fc66a074c2a360b1a523870821f2a850753e03c75"
+    },
+    {
+      "path": "apps/site/src/Download.tsx",
+      "sha256": "7e3f1ab5063966b335b92bf5d8749bc681a7b9d5f2f7b0a24a8d27430a7f7bb1"
+    },
+    {
+      "path": "apps/site/src/assets/fonts/OFL-Manrope.txt",
+      "sha256": "d6a309fcfb963d329a93baf9df66fa5f3c23a4be2b5f67edf24d6cafecde12ac"
+    },
+    {
+      "path": "apps/site/src/assets/fonts/manrope-regular.ttf",
+      "sha256": "ed335894f8d954263675f7e457bf657374d8b7be629be4dc43aef97c309ad3ae"
+    },
+    {
+      "path": "apps/site/src/assets/fonts/manrope-semibold.ttf",
+      "sha256": "68ed4be49ec7d32f07b42f9232dc01ca1df7a77be1d9b0731aac74db58235f34"
+    },
+    {
+      "path": "apps/site/src/assets/logo-glyph.png",
+      "sha256": "ab873fe798730d5f51e833422a2475889f408b7f8706bf6fbe7113b1421a36d8"
+    },
+    {
+      "path": "apps/site/src/components.tsx",
+      "sha256": "1774cb14401ca06bb68402f24706103fe819a6da0acc509504d60832ce8fc8f2"
+    },
+    {
+      "path": "apps/site/src/hooks/useLatestRelease.ts",
+      "sha256": "0178ab88bd0f17a8522c5a758ecdbe92ca9f1c141c0b2cc5844f2f8ccf8ed913"
+    },
+    {
+      "path": "apps/site/src/main.tsx",
+      "sha256": "cf8f899d967549a0047d1150ba9533f83fb70ff86686ef22f2202aa3d435c060"
+    },
+    {
+      "path": "apps/site/src/pages/FeaturesPage.tsx",
+      "sha256": "23f9fa9fb3eed2c2354356354e98ae217bb4b3fb972ee365f4ebfe4226f69753"
+    },
+    {
+      "path": "apps/site/src/pages/GuidePage.tsx",
+      "sha256": "36bde32106283013d47fd89f42513cd0b9922548c407c6960c58547fb8b7abce"
+    },
+    {
+      "path": "apps/site/src/pages/HomePage.tsx",
+      "sha256": "c1998caf1db77da0ee5f52e1d5df529d4c42284d751d96e8119c958f7dfbd3e7"
+    },
+    {
+      "path": "apps/site/src/site-meta.ts",
+      "sha256": "c9d655adb3c3d0287f6fc550f757ce602f6f2011f2b50d0c700da46f69918891"
+    },
+    {
+      "path": "apps/site/src/site.css",
+      "sha256": "4dd09966b49c59e43f678f38f6294944b077270b667a80a7a08d49ed203105ee"
+    },
+    {
+      "path": "apps/site/src/vite-env.d.ts",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
+    },
+    {
+      "path": "apps/site/tsconfig.json",
+      "sha256": "4d3d9a8807f85c3cf86f49970c1850e142b17d922cbd7914195860e7b4a9d5e9"
+    },
+    {
+      "path": "apps/site/vite.config.ts",
+      "sha256": "a7b721b365e0a7df9a9bc08079afa6f3c9b27068536d39a6ef7e997b9ccbe9a5"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "SPEC.md",
+      "sha256": "aa0b0e5b44d896f2c358f7a477a75339ff27b9ace5bf2c82aeb0a73dcaa247fc"
+    },
+    {
+      "path": "browser-checks.json",
+      "sha256": "2a651fcd67cdd6dc1e3dd10a1f41bd056eb34b5ee8ba33f1093a4b8a1a3f2027"
+    },
+    {
+      "path": "previews/download-1440.jpg",
+      "sha256": "2531311f664e4117baa08ee9483ff0722ed6cd92a24fb3bbf360527703e26ae0"
+    },
+    {
+      "path": "previews/download-390.jpg",
+      "sha256": "5e0a1d74186fcb5126b634665071442bd00ff792aa2ddf435e20586a277a1627"
+    },
+    {
+      "path": "previews/download-768.jpg",
+      "sha256": "cd57a5012f21cdfb554de1e2173f79b735dbf27f0604e349303f0efd1ecbc3a8"
+    },
+    {
+      "path": "previews/download-home.jpg",
+      "sha256": "3fe425d69a0189e7d66c84d44814719d6b7ce3d667e7d11897f52a5a33bc753b"
+    },
+    {
+      "path": "previews/faq-desktop.jpg",
+      "sha256": "82771ef979401c15b72eb2892a30f4a52f6d95b2713d76730c18188da994877f"
+    },
+    {
+      "path": "previews/features-1440.jpg",
+      "sha256": "11537f1f62c032bc87022b5e9c21081506a03be19bb7c0474368bc893c95fa2b"
+    },
+    {
+      "path": "previews/features-390.jpg",
+      "sha256": "317d67b9aa6c6d2bfa18ed2d213f0cbf2645535c5e678d7a6729fd9d31a05a32"
+    },
+    {
+      "path": "previews/features-768.jpg",
+      "sha256": "a9fd763961c3ec8940be991430d779d5a14a40c1de22bd3d65787c094a2f3a20"
+    },
+    {
+      "path": "previews/features-home.jpg",
+      "sha256": "13b223e12f49fdd63efacdca661f739847fba62ff1d5f94f2251a95486b7a08e"
+    },
+    {
+      "path": "previews/guide-1440.jpg",
+      "sha256": "59876ff68ce7c9360e1a5655b917cf54767e10bbc795a01c6b950a370cce77c0"
+    },
+    {
+      "path": "previews/guide-390.jpg",
+      "sha256": "7c223f3d65f4a1759041d40dd859738811e1659d9a09d85c08c837b8e85fadc5"
+    },
+    {
+      "path": "previews/guide-768.jpg",
+      "sha256": "3d0d2921aab05ad29999f0c0f168ac17a9f666fa791ccbccad683dc93b27314c"
+    },
+    {
+      "path": "previews/home-1440.jpg",
+      "sha256": "318a524337fdb21aa512842d1c7454871028a6aba8b38c100b3a70cc0545db6b"
+    },
+    {
+      "path": "previews/home-320.jpg",
+      "sha256": "f305bc2fe4da7728bfc25b2e5a4017ce5fcfc3889b06f6a95dd3f26f7257c3e4"
+    },
+    {
+      "path": "previews/home-390.jpg",
+      "sha256": "8c62c27a1d01e44f252a819b2b9c08edef093bee39ebfa98cac4615ed9467f2d"
+    },
+    {
+      "path": "previews/home-768.jpg",
+      "sha256": "7a3053a30d939631a0683b85f484008a952216908a9d8bded5069c2a098d17ea"
+    },
+    {
+      "path": "previews/home-desktop.jpg",
+      "sha256": "923d010dfe976a613835cc7392208b836684766928ebadecac0ee57343df8467"
+    },
+    {
+      "path": "previews/mobile-menu.jpg",
+      "sha256": "967ecec351fee18558d29ac8b7ed0967251761092979119a80bb689bab2126bb"
+    },
+    {
+      "path": "source.zip",
+      "sha256": "c5cf6103f469171e6d72758beefb82ba63ba0f105bd52be61eeda47218e9abed"
+    }
+  ]
+}
