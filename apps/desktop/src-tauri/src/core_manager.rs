@@ -359,6 +359,24 @@ impl CoreManager {
         self.shared.config_cache.lock().unwrap().clone()
     }
 
+    /// 本次启动使用的配置文件。热重载必须写回这个路径，内核才认。
+    pub fn config_path(&self) -> PathBuf {
+        self.shared.work_dir.join("config.yaml")
+    }
+
+    /// 覆盖配置文件，不更新崩溃重启用的缓存。
+    /// 热重载成功后才调用 `replace_cached_config`，失败时缓存仍是旧内容。
+    pub fn write_config_file(&self, content: &str) -> Result<(), String> {
+        std::fs::write(self.config_path(), content).map_err(|e| format!("write config: {e}"))
+    }
+
+    pub fn replace_cached_config(&self, content: String) {
+        *self.shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(content);
+    }
+
     /// 启动链决策日志（独立文件 core-decision.log），排查引擎切换竞态。
     pub fn log_decision(&self, line: &str) {
         append_decision(&self.shared.work_dir, line);
@@ -1702,6 +1720,45 @@ pub(crate) mod tests {
             std::thread::sleep(Duration::from_millis(100));
         }
         panic!("expected Crashed, got {:?}", mgr.status());
+    }
+
+    /// Network-free integration: real mihomo, private ports and temporary files.
+    #[test]
+    fn real_core_reload_preserves_pid_and_restores_rejected_config() {
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else { return; };
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = CoreManager::new(PathBuf::from(bin), dir.path().to_path_buf());
+        mgr.set_options(CoreOptions { ensure_geo_files: false, ..CoreOptions::default() });
+        let rt = RuntimeConfig { mixed_port: free_port().unwrap(), ..RuntimeConfig::default() };
+        let base = "proxies: []\nrules: ['MATCH,DIRECT']\n";
+        mgr.start(base, &rt).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while mgr.status() != CoreStatus::Running {
+            assert!(Instant::now() < deadline, "core not ready: {:?}", mgr.status());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let pid = mgr.pid();
+        let (port, secret) = mgr.controller().unwrap();
+        let controller = crate::mihomo_api::Controller { port, secret: secret.clone() };
+        let old = mgr.current_config().unwrap();
+        let new_config = old.replace("mode: rule", "mode: direct");
+        assert_ne!(old, new_config);
+        mgr.write_config_file(&new_config).unwrap();
+        controller.reload_config(&mgr.config_path()).unwrap();
+        mgr.replace_cached_config(new_config.clone());
+        assert_eq!(mgr.pid(), pid);
+        assert_eq!(mgr.controller(), Some((port, secret)));
+        assert_eq!(mgr.current_config(), Some(new_config.clone()));
+        mgr.write_config_file("proxies: [invalid-proxy-entry]").unwrap();
+        assert!(controller.reload_config(&mgr.config_path()).is_err());
+        assert_eq!(mgr.current_config(), Some(new_config));
+        mgr.write_config_file(&old).unwrap();
+        controller.reload_config(&mgr.config_path()).unwrap();
+        mgr.replace_cached_config(old.clone());
+        assert_eq!(mgr.pid(), pid);
+        assert_eq!(mgr.current_config(), Some(old));
+        assert!(mgr.stop());
     }
 
     /// 真实内核冒烟：CROSSBOW_CORE_BIN 指向 mihomo 时才运行。

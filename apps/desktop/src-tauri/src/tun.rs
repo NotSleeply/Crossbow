@@ -382,6 +382,38 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     // Serialize the entire transition with core start/restart and the health
     // monitor. The saved flag must never get ahead of a failed stop.
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    toggle_tun_locked(state, enable)
+}
+
+/// 健康检查重建立。先拿到与开关相同的锁，再读标志。
+/// 用户已经关掉时直接返回，避免「关了又被打开」。
+pub fn reestablish_if_enabled(state: &AppState) -> Result<(), String> {
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    let enabled = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data().engine.tun_enable
+    };
+    if !enabled {
+        return Ok(());
+    }
+    toggle_tun_locked(state, false)?;
+    toggle_tun_locked(state, true)
+}
+
+/// 连通性失败时关闭。持锁后再读，避免关掉用户刚刚打开的 TUN。
+pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    let enabled = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data().engine.tun_enable
+    };
+    if !enabled {
+        return Ok(());
+    }
+    toggle_tun_locked(state, false)
+}
+
+fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
     let previous_tun = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.tun_enable

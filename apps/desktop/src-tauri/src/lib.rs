@@ -17,6 +17,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod coexist;
+mod config_transition;
 mod core_manager;
 mod diagnose;
 mod site_tests;
@@ -54,6 +55,7 @@ pub struct AppState {
     update_handoff: std::sync::atomic::AtomicBool,
     /// 安全模式：坏覆写导致内核启动失败后，跳过覆写链启动一次。
     safe_mode: std::sync::atomic::AtomicBool,
+    config_transition: std::sync::atomic::AtomicBool,
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
@@ -187,15 +189,16 @@ fn render_current(
     let mut store = state.store.lock().unwrap();
     match crossbow_core::render_config_with(store.data(), use_overrides) {
         Ok(r) => {
+            // 不在这里落盘。配置切换要等内核就绪后才保存；这里保存会把
+            // 尚未确认的内存修改写进磁盘。覆写错误的清除留在内存里，
+            // 下一次成功的保存会带上。
             store.data_mut().clear_override_errors();
-            let _ = store.save();
             Ok(r)
         }
         Err(crossbow_core::RenderError::OverrideFailed { id, detail, .. }) => {
             store
                 .data_mut()
                 .set_override_error(&id, Some(detail.clone()));
-            let _ = store.save();
             Err(format!("覆写执行失败：{detail}"))
         }
         Err(e) => Err(e.to_string()),
@@ -362,13 +365,344 @@ fn ensure_unprivileged_core_binary(
     Ok(binary)
 }
 
-/// 热重启：切换/更新配置后让新配置生效。
-fn restart_core(state: &AppState) -> Result<(), String> {
+/// 改存储里的配置，并让正在跑的内核跟上。
+///
+/// 先记住改之前的存储和运行配置，再在内存里改。渲染失败、热重载失败、
+/// 重启失败，都把内存和磁盘退回改之前，并尽量把旧内核拉回来。新状态只有
+/// 在内核确认就绪，或内核本来没在跑时，才落盘。
+///
+/// TUN 开关不走这里。它要换特权进程，仍由各平台 `toggle_tun` 处理。
+fn commit_config_change(
+    state: &AppState,
+    mutate: impl FnOnce(&mut crossbow_core::StoreSchema) -> Result<(), String>,
+) -> Result<(), String> {
+    commit_config_change_inner(state, mutate, false)
+}
+
+fn commit_config_change_inner(
+    state: &AppState,
+    mutate: impl FnOnce(&mut crossbow_core::StoreSchema) -> Result<(), String>,
+    exit_safe_mode: bool,
+) -> Result<(), String> {
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-    if !state.core().stop() {
-        return Err("旧内核未退出，已中止重启".into());
+    let _recovery = config_transition::RecoveryOwner::enter(&state.config_transition);
+    let before = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let previous_safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+    let proxy = state.sysproxy.status();
+    {
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        if let Err(error) = mutate(store.data_mut()) {
+            *store.data_mut() = before;
+            return Err(error);
+        }
+        if store.data().engine.tun_enable != before.engine.tun_enable {
+            *store.data_mut() = before;
+            return Err("TUN 开关不走配置切换".into());
+        }
     }
-    start_core_locked(state)
+    if exit_safe_mode {
+        state
+            .safe_mode
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    let after = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let old_config = state.core().current_config();
+    let status = state.core().status();
+    let running = matches!(status, CoreStatus::Running | CoreStatus::Starting);
+    let live = config_transition::LiveCore {
+        running,
+        mihomo: before.engine.engine == crossbow_core::Engine::Mihomo
+            && status == CoreStatus::Running,
+        controller: state.core().controller().is_some(),
+        cached_config: old_config.is_some(),
+        service_managed: cfg!(windows) && before.engine.tun_enable,
+    };
+    let plan = if config_transition::needs_new_process(
+        before.engine.engine,
+        after.engine.engine,
+        before.engine.mixed_port,
+        after.engine.mixed_port,
+        before.engine.allow_lan,
+        after.engine.allow_lan,
+        before.engine.tun_enable,
+        after.engine.tun_enable,
+    ) {
+        config_transition::plan_identity(live)
+    } else {
+        config_transition::plan_content(live)
+    };
+    state
+        .core()
+        .log_decision(&format!("config change: {plan:?}"));
+    let mut transaction = ConfigChange {
+        state,
+        before,
+        previous_safe,
+        proxy,
+        old_config,
+        plan,
+        touched_core: false,
+        restarted: false,
+        stopped: false,
+    };
+    let result = config_transition::execute(&mut transaction);
+    // Rollback may have changed the actual proxy state, even when it failed.
+    let _ = state.app.emit("sysproxy://status", state.sysproxy.status());
+    if result.is_ok() && running {
+        // A successful reload does not produce a CoreManager Running callback.
+        // Invalidate the old group's cache before fetching the new group order.
+        state
+            .node_menu
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .invalidate_config();
+        #[cfg(target_os = "macos")]
+        refresh_tray_nodes(&state.app, false);
+    }
+    let _ = state.app.emit("core://status", state.core().status());
+    sync_tray_traffic(&state.app);
+    update_logs_persistence(&state.app);
+    refresh_tray(&state.app);
+    result
+}
+
+struct ConfigChange<'a> {
+    state: &'a AppState,
+    before: crossbow_core::StoreSchema,
+    previous_safe: bool,
+    proxy: SysProxyStatus,
+    old_config: Option<String>,
+    plan: config_transition::Plan,
+    touched_core: bool,
+    restarted: bool,
+    stopped: bool,
+}
+
+impl ConfigChange<'_> {
+    fn restart(&mut self) -> Result<(), String> {
+        self.restarted = true;
+        if !self.state.core().stop() {
+            return Err("旧内核未退出，已中止切换".into());
+        }
+        self.stopped = true;
+        self.touched_core = true;
+        start_core_locked(self.state).and_then(|()| wait_core_running(self.state))
+    }
+
+    fn restore_runtime(&mut self) -> Result<(), String> {
+        if self.restarted && !self.stopped {
+            return Err("无法确认旧内核已停止，保留现场供重试".into());
+        }
+        if !self.touched_core {
+            return Ok(());
+        }
+        let mut reload_error = None;
+        if !self.restarted {
+            if let Some(old) = &self.old_config {
+                match reload_final_config(self.state, old) {
+                    Ok(()) => return Ok(()),
+                    Err(error) => reload_error = Some(error),
+                }
+            }
+        }
+        // Stop failed candidates and their restart watchers before restoring.
+        self.restart().map_err(|error| match reload_error {
+            Some(reload) => format!("旧配置重载失败：{reload}；重启失败：{error}"),
+            None => error,
+        })
+    }
+}
+
+impl config_transition::Transaction for ConfigChange<'_> {
+    fn apply(&mut self) -> Result<(), String> {
+        if self.plan == config_transition::Plan::PersistOnly {
+            return Ok(());
+        }
+        // Render/validate before stopping a healthy core. A broken override must
+        // not interrupt the current network merely to discover it cannot render.
+        let rendered = render_current(
+            self.state,
+            !self
+                .state
+                .safe_mode
+                .load(std::sync::atomic::Ordering::SeqCst),
+        )?;
+        let controller = self.state.core().controller();
+        let (port, secret) = controller.unwrap_or((0, String::new()));
+        let final_config =
+            crossbow_core::apply_runtime(&rendered.config, &runtime_for(self.state, port, secret))?;
+        if self.plan == config_transition::Plan::HotReload {
+            self.touched_core = true;
+            if let Err(error) = reload_final_config(self.state, &final_config) {
+                self.state
+                    .core()
+                    .log_decision(&format!("hot reload failed, restarting: {error}"));
+                self.restart()
+                    .map_err(|restart| format!("热重载失败：{error}；重启失败：{restart}"))?;
+            }
+        } else {
+            self.restart()?;
+        }
+        // Proxy retargeting is part of the transaction, before persistence.
+        if self.proxy.enabled {
+            let store = self.state.store.lock().unwrap_or_else(|e| e.into_inner());
+            let port = store.data().engine.mixed_port;
+            let tun = store.data().engine.tun_enable;
+            drop(store);
+            restore_config_proxy(
+                self.state,
+                SysProxyStatus {
+                    enabled: true,
+                    port,
+                },
+                tun,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn persist(&mut self) -> Result<(), String> {
+        persist_schema(self.state)
+    }
+
+    fn rollback(&mut self) -> Result<(), String> {
+        self.state
+            .safe_mode
+            .store(self.previous_safe, std::sync::atomic::Ordering::SeqCst);
+        let mut errors = Vec::new();
+        // Disk failure must not prevent restoring the old runtime/network.
+        if let Err(error) = restore_store(&self.state.store, &self.before) {
+            errors.push(format!("旧状态保存失败：{error}"));
+        }
+        let runtime_ok = match self.restore_runtime() {
+            Ok(()) => true,
+            Err(error) => {
+                errors.push(format!("旧内核恢复失败：{error}"));
+                false
+            }
+        };
+        if runtime_ok {
+            if let Err(error) =
+                restore_config_proxy(self.state, self.proxy, self.before.engine.tun_enable)
+            {
+                errors.push(format!("系统代理恢复失败：{error}"));
+            }
+        } else if self.stopped && self.state.core().stop() {
+            // Only restore third-party TUN proxy settings once our routes are gone.
+            if let Err(error) = recover_config_network(self.state) {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("；"))
+        }
+    }
+}
+
+fn reload_final_config(state: &AppState, config: &str) -> Result<(), String> {
+    let (port, secret) = state
+        .core()
+        .controller()
+        .ok_or("控制器不可用，无法热重载")?;
+    let core = state.core();
+    core.write_config_file(config)?;
+    mihomo_api::Controller { port, secret }.reload_config(&core.config_path())?;
+    core.replace_cached_config(config.to_string());
+    Ok(())
+}
+
+fn restore_config_proxy(
+    state: &AppState,
+    expected: SysProxyStatus,
+    tun: bool,
+) -> Result<(), String> {
+    let actual = state.sysproxy.status();
+    if actual.enabled == expected.enabled && (!expected.enabled || actual.port == expected.port) {
+        return Ok(());
+    }
+    if expected.enabled {
+        if tun {
+            state.sysproxy.enable_during_tun(expected.port)
+        } else {
+            state.sysproxy.enable(expected.port)
+        }
+    } else if tun {
+        state.sysproxy.disable_during_tun()
+    } else {
+        state.sysproxy.disable()
+    }
+}
+
+fn runtime_for(state: &AppState, controller_port: u16, controller_secret: String) -> RuntimeConfig {
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let tun_enable = store.data().engine.tun_enable;
+    #[cfg(target_os = "macos")]
+    let native_ipv6 = !tun_enable || crate::tun::has_native_ipv6();
+    #[cfg(not(target_os = "macos"))]
+    let native_ipv6 = true;
+    RuntimeConfig {
+        engine: store.data().engine.engine,
+        mixed_port: store.data().engine.mixed_port,
+        allow_lan: store.data().engine.allow_lan,
+        controller_port,
+        controller_secret,
+        log_level: "info".into(),
+        tun_enable,
+        native_ipv6,
+    }
+}
+
+fn persist_schema(state: &AppState) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    store.save().map_err(|e| e.to_string())
+}
+
+/// Restore in-memory state before attempting I/O; a failed save must not
+/// leave the rejected candidate visible to the next operation.
+fn restore_store(store: &Mutex<Store>, before: &crossbow_core::StoreSchema) -> Result<(), String> {
+    let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+    *store.data_mut() = before.clone();
+    store.save().map_err(|e| e.to_string())
+}
+
+/// 内核没回来时，按退出路径把系统代理还回去，避免代理指向一个死端口。
+fn recover_network_if_core_dead(state: &AppState) {
+    if let Err(error) = recover_config_network(state) {
+        eprintln!("network recovery failed: {error}");
+    }
+}
+
+fn recover_config_network(state: &AppState) -> Result<(), String> {
+    let tun = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
+    let proxy = state.sysproxy.disable();
+    let tun_proxy = if tun {
+        state.sysproxy.recover_tun_without_core()
+    } else {
+        Ok(())
+    };
+    match (proxy, tun_proxy) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(a), Err(b)) => Err(format!("系统代理恢复失败：{a}；TUN 代理恢复失败：{b}")),
+        (Err(error), _) | (_, Err(error)) => Err(error),
+    }
 }
 
 fn make_profile(id: String, name: String, kind: ProfileKind, url: Option<String>) -> Profile {
@@ -494,8 +828,8 @@ fn import_content_blocking(
     Ok(profile)
 }
 
-/// 刷新一次订阅（命令与调度器共用）：拉取 → 校验 → 落库（失败保留旧内容
-/// 并记录结果）→ 运行中热重启。网络请求不持有 store 锁。
+/// 刷新一次订阅（命令与调度器共用）：拉取 → 校验 → 当前档案走配置切换
+/// （能热重载就热重载，失败退回旧内容）→ 记录结果。网络请求不持有 store 锁。
 fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile, String> {
     let url = {
         let store = state.store.lock().unwrap();
@@ -531,33 +865,54 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
         return Err(e.to_string());
     }
 
-    let was_active_and_running = {
+    let active = {
         let store = state.store.lock().unwrap();
         store.data().active_profile.as_deref() == Some(id)
-            && state.core().status() == CoreStatus::Running
     };
-    let profile = {
+    let content = fetched.content.clone();
+    let traffic = fetched.traffic;
+    let updated_at = now_secs();
+    // 当前档案才需要让内核跟上。其它档案只落盘，避免把正在用的网拆掉。
+    let apply = if active {
+        commit_config_change(state, |data| {
+            data.update_profile_content(id, content.clone(), updated_at, traffic)
+        })
+    } else {
         let mut store = state.store.lock().unwrap();
-        store.data_mut().update_profile_content(
-            id,
-            fetched.content.clone(),
-            now_secs(),
-            fetched.traffic,
-        )?;
-        let _ = store.data_mut().set_profile_outcome(
+        store
+            .data_mut()
+            .update_profile_content(id, content, updated_at, traffic)?;
+        store.save().map_err(|e| e.to_string())
+    };
+    if let Err(error) = apply {
+        let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
             id,
             crossbow_core::UpdateOutcome {
-                ok: true,
-                detail: None,
+                ok: false,
+                detail: Some(error.clone()),
                 at: now_secs(),
             },
         );
-        store.save().map_err(|e| e.to_string())?;
-        store.data().profile(id).cloned().unwrap()
-    };
-    if was_active_and_running {
-        restart_core(state)?;
+        let _ = state.store.lock().unwrap().save();
+        return Err(error);
     }
+    let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
+        id,
+        crossbow_core::UpdateOutcome {
+            ok: true,
+            detail: None,
+            at: now_secs(),
+        },
+    );
+    let _ = state.store.lock().unwrap().save();
+    let profile = state
+        .store
+        .lock()
+        .unwrap()
+        .data()
+        .profile(id)
+        .cloned()
+        .ok_or("profile not found")?;
     Ok(profile)
 }
 
@@ -644,13 +999,7 @@ async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
 /// 校验通过后应用覆写：复位安全模式，运行中则热重启。
 #[tauri::command]
 async fn apply_overrides(state: State<'_, AppState>) -> Result<(), String> {
-    state
-        .safe_mode
-        .store(false, std::sync::atomic::Ordering::SeqCst);
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
-    }
-    Ok(())
+    commit_config_change_inner(&state, |_| Ok(()), true)
 }
 
 #[tauri::command]
@@ -660,39 +1009,40 @@ fn update_override(
     content: Option<String>,
     name: Option<String>,
 ) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    let mut content_changed = false;
-    let o = store
-        .data_mut()
-        .overrides
-        .iter_mut()
-        .find(|o| o.id == id)
-        .ok_or("override not found")?;
-    if let Some(c) = content {
-        o.content = c;
-        content_changed = true;
-    }
-    if let Some(n) = name {
-        o.name = n;
-    }
-    let oid = id.clone();
-    store.save().map_err(|e| e.to_string())?;
-    drop(store);
-    if content_changed {
-        let store = state.store.lock().unwrap();
-        let binds_active = store
-            .data()
-            .active_profile
-            .as_deref()
-            .and_then(|pid| store.data().profile(pid))
-            .map(|p| p.override_ids.contains(&oid))
-            .unwrap_or(false);
-        drop(store);
-        if binds_active && state.core().status() == CoreStatus::Running {
-            restart_core(&state)?;
+    let affects_running = content.is_some() && override_affects_active(&state, &id);
+    let edit = |data: &mut crossbow_core::StoreSchema| {
+        let o = data
+            .overrides
+            .iter_mut()
+            .find(|o| o.id == id)
+            .ok_or("override not found")?;
+        if let Some(c) = content {
+            o.content = c;
         }
+        if let Some(n) = name {
+            o.name = n;
+        }
+        Ok(())
+    };
+    if affects_running {
+        commit_config_change(&state, edit)?;
+    } else {
+        let mut store = state.store.lock().unwrap();
+        edit(store.data_mut())?;
+        store.save().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 这条覆写是否挂在当前档案上。没挂上的修改不该碰正在跑的内核。
+fn override_affects_active(state: &AppState, override_id: &str) -> bool {
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    store
+        .data()
+        .active_profile
+        .as_deref()
+        .and_then(|pid| store.data().profile(pid))
+        .is_some_and(|profile| profile.override_ids.iter().any(|id| id == override_id))
 }
 
 /// 删除覆写（并从所有 Profile 摘除引用）。
@@ -702,15 +1052,20 @@ async fn remove_override(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    store.data_mut().overrides.retain(|o| o.id != id);
-    for p in store.data_mut().profiles.iter_mut() {
-        p.override_ids.retain(|oid| oid != &id);
-    }
-    store.save().map_err(|e| e.to_string())?;
-    drop(store);
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
+    let affects_running = override_affects_active(&state, &id);
+    let edit = |data: &mut crossbow_core::StoreSchema| {
+        data.overrides.retain(|o| o.id != id);
+        for profile in data.profiles.iter_mut() {
+            profile.override_ids.retain(|oid| oid != &id);
+        }
+        Ok(())
+    };
+    if affects_running {
+        commit_config_change(&state, edit)?;
+    } else {
+        let mut store = state.store.lock().unwrap();
+        edit(store.data_mut())?;
+        store.save().map_err(|e| e.to_string())?;
     }
     refresh_tray(&app);
     Ok(())
@@ -724,24 +1079,31 @@ async fn toggle_override_binding(
     override_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    let p = store
-        .data_mut()
-        .profiles
-        .iter_mut()
-        .find(|p| p.id == profile_id)
-        .ok_or("profile not found")?;
-    if enabled {
-        if !p.override_ids.contains(&override_id) {
-            p.override_ids.push(override_id);
+    let affects_running = {
+        let store = state.store.lock().unwrap();
+        store.data().active_profile.as_deref() == Some(profile_id.as_str())
+    };
+    let edit = |data: &mut crossbow_core::StoreSchema| {
+        let profile = data
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == profile_id)
+            .ok_or("profile not found")?;
+        if enabled {
+            if !profile.override_ids.contains(&override_id) {
+                profile.override_ids.push(override_id);
+            }
+        } else {
+            profile.override_ids.retain(|oid| oid != &override_id);
         }
+        Ok(())
+    };
+    if affects_running {
+        commit_config_change(&state, edit)?;
     } else {
-        p.override_ids.retain(|oid| oid != &override_id);
-    }
-    store.save().map_err(|e| e.to_string())?;
-    drop(store);
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
+        let mut store = state.store.lock().unwrap();
+        edit(store.data_mut())?;
+        store.save().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -753,18 +1115,22 @@ async fn set_override_enabled(
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    let o = store
-        .data_mut()
-        .overrides
-        .iter_mut()
-        .find(|o| o.id == id)
-        .ok_or("override not found")?;
-    o.enabled = enabled;
-    store.save().map_err(|e| e.to_string())?;
-    drop(store);
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
+    let affects_running = override_affects_active(&state, &id);
+    let edit = |data: &mut crossbow_core::StoreSchema| {
+        let override_def = data
+            .overrides
+            .iter_mut()
+            .find(|o| o.id == id)
+            .ok_or("override not found")?;
+        override_def.enabled = enabled;
+        Ok(())
+    };
+    if affects_running {
+        commit_config_change(&state, edit)?;
+    } else {
+        let mut store = state.store.lock().unwrap();
+        edit(store.data_mut())?;
+        store.save().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -816,22 +1182,15 @@ async fn set_engine(
     if !core_download::resolve_core_for(&state.data_dir, Some(&engine)).is_some() {
         return Err(format!("内核 {need_bin} 未安装，请先在设置页下载"));
     }
-    {
-        let mut store = state.store.lock().unwrap();
-        store.data_mut().engine.engine = target;
-        store.save().map_err(|e| e.to_string())?;
-    }
+    // 新引擎写进存储的时机在内核确认就绪之后。失败会退回旧引擎并拉起旧核。
+    commit_config_change(&state, |data| {
+        data.engine.engine = target;
+        Ok(())
+    })?;
     state.core().log_decision(&format!(
         "set_engine: -> {engine} status={:?}",
         state.core().status()
     ));
-    // Running 热重启；Starting（上次尝试还在探测）也要收掉后按新引擎拉起
-    if matches!(
-        state.core().status(),
-        CoreStatus::Running | CoreStatus::Starting
-    ) {
-        restart_core(&state)?;
-    }
     refresh_tray(&app);
     // 通知侧栏 footer 等跟随引擎的 UI 重新取标识
     let _ = app.emit("engine://changed", engine.clone());
@@ -952,15 +1311,7 @@ fn set_profile_interval(
 
 #[tauri::command]
 async fn set_active_profile(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let running = state.core().status() == CoreStatus::Running;
-    {
-        let mut store = state.store.lock().unwrap();
-        store.data_mut().set_active_profile(&id)?;
-        store.save().map_err(|e| e.to_string())?;
-    }
-    if running {
-        restart_core(&state)?;
-    }
+    commit_config_change(&state, |data| data.set_active_profile(&id))?;
     refresh_tray(&app);
     Ok(())
 }
@@ -1543,48 +1894,28 @@ fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), 
 
 /// 修改混合端口：持久化 → 运行中则热重启 → 系统代理开启则跟随换端口。
 #[tauri::command]
-async fn set_mixed_port(app: AppHandle, state: State<'_, AppState>, port: u16) -> Result<(), String> {
+async fn set_mixed_port(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    port: u16,
+) -> Result<(), String> {
     if port < 1024 {
         return Err("端口不能小于 1024".into());
     }
-    let proxy_was_on = state.sysproxy.status().enabled;
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-    if proxy_was_on {
-        if tun_enabled {
-            state.sysproxy.disable_during_tun()?;
-        } else {
-            state.sysproxy.disable()?;
-        }
-    }
-    {
-        let mut store = state.store.lock().unwrap();
-        store.data_mut().engine.mixed_port = port;
-        store.save().map_err(|e| e.to_string())?;
-    }
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
-    }
-    if proxy_was_on {
-        if tun_enabled {
-            state.sysproxy.enable_during_tun(port)?;
-        } else {
-            state.sysproxy.enable(port)?;
-        }
-        let _ = app.emit("sysproxy://status", state.sysproxy.status());
-    }
+    commit_config_change(&state, |data| {
+        data.engine.mixed_port = port;
+        Ok(())
+    })?;
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
     Ok(())
 }
 
 #[tauri::command]
 async fn set_allow_lan(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
-    {
-        let mut store = state.store.lock().unwrap();
-        store.data_mut().engine.allow_lan = enabled;
-        store.save().map_err(|e| e.to_string())?;
-    }
-    if state.core().status() == CoreStatus::Running {
-        restart_core(&state)?;
-    }
+    commit_config_change(&state, |data| {
+        data.engine.allow_lan = enabled;
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1738,6 +2069,19 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
     std::sync::Arc::new(move |status| {
+        // The configuration transaction owns rollback while core_op is held.
+        // A synchronous safe-mode start here would wait for that same lock,
+        // while rollback waits for this callback to return.
+        if matches!(status, CoreStatus::Crashed(_)) {
+            if let Some(state) = handle.try_state::<AppState>() {
+                if state
+                    .config_transition
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return;
+                }
+            }
+        }
         let _ = handle.emit("core://status", status.clone());
         // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
@@ -1965,7 +2309,6 @@ fn spawn_logs_sweeper(app: &AppHandle) {
 
 /// Probe actual traffic through the default route. A node-delay benchmark can
 /// fail even while normal websites work, so it must not disable a healthy TUN.
-#[cfg(target_os = "macos")]
 fn probe_tun_network() -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
@@ -1981,9 +2324,40 @@ fn probe_tun_network() -> Result<(), String> {
     Err(last_error)
 }
 
+/// 健康检查重建立。与手动开关共用 core_op，进锁后再读 TUN 标志。
+fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::tun::reestablish_if_enabled(state)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
+        Ok(())
+    }
+}
+
+/// 连通性失败时关 TUN。持锁后再读标志，避免和用户的开关打架。
+fn disable_tun_if_enabled(state: &AppState) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::tun::disable_if_enabled(state)
+    }
+    #[cfg(windows)]
+    {
+        crate::tun_windows::disable_if_enabled(state)
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        let _ = state;
+        Ok(())
+    }
+}
+
 /// TUN 健康检查：每 5 秒检查真实网络连通性；连续 3 次失败时关闭 TUN
 /// 并通知界面，避免流量持续被送入失效的隧道。
-#[cfg(target_os = "macos")]
+/// macOS 额外检查捕获路由，漂移时走与开关同一把锁的重建立。
+#[cfg(any(target_os = "macos", windows))]
 fn spawn_tun_health_monitor(app: &AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SPAWNED: AtomicBool = AtomicBool::new(false);
@@ -2052,23 +2426,31 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                             reestablish_count = reestablish_count.saturating_add(1);
                             reestablish_cooldown_until = std::time::Instant::now()
                                 + std::time::Duration::from_secs(120);
-                            match crate::tun::toggle_tun(&state, false)
-                                .and_then(|()| crate::tun::toggle_tun(&state, true))
-                            {
+                            match reestablish_tun_if_enabled(&state) {
                                 Ok(()) => {
-                                    let _ = handle.emit("tun://status", true);
-                                    let _ = handle.emit(
-                                        "sysproxy://status",
-                                        state.sysproxy.status(),
-                                    );
-                                    refresh_tray(&handle);
-                                    if reestablish_count == 1 {
-                                        let mut notice = notifications::Notice::new(
-                                            notifications::Kind::Info,
-                                            "tun.reestablished",
-                                            "tun-health",
+                                    let still_on = state
+                                        .store
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .data()
+                                        .engine
+                                        .tun_enable;
+                                    // 用户在重建立拿到锁之前已经关掉，不要报「已重新建立」。
+                                    if still_on {
+                                        let _ = handle.emit("tun://status", true);
+                                        let _ = handle.emit(
+                                            "sysproxy://status",
+                                            state.sysproxy.status(),
                                         );
-                                        notifications::publish(&handle, notice);
+                                        refresh_tray(&handle);
+                                        if reestablish_count == 1 {
+                                            let notice = notifications::Notice::new(
+                                                notifications::Kind::Info,
+                                                "tun.reestablished",
+                                                "tun-health",
+                                            );
+                                            notifications::publish(&handle, notice);
+                                        }
                                     }
                                 }
                                 Err(error) => {
@@ -2118,7 +2500,7 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                 let still_enabled =
                                     state.store.lock().unwrap().data().engine.tun_enable;
                                 if still_enabled {
-                                    match crate::tun::toggle_tun(&state, false) {
+                                    match disable_tun_if_enabled(&state) {
                                         Ok(()) => {
                                             failures = 0;
                                             reported_disable_failure = false;
@@ -2212,6 +2594,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
     if state.core().status() != CoreStatus::Running {
         return;
     }
+    let generation = handle.state::<AppState>().node_menu.lock().unwrap_or_else(|e| e.into_inner()).generation();
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else {
@@ -2225,6 +2608,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
             Err(_) => return,
         };
         let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation { return; }
         // 主组：已有缓存沿用；否则按订阅声明顺序找第一个有成员的组
         if !tray.has_group() {
             let order = profile_group_order(&h);
@@ -2263,7 +2647,9 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
                         )
                     })
             });
-        state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).apply_group_data(
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation { return; }
+        tray.apply_group_data(
             root.now.clone(),
             root.nodes
                 .iter()
@@ -2271,6 +2657,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
                 .collect(),
             automatic,
         );
+        drop(tray);
         let data = tray_menu_data(&state);
         let menu_updated = keep_menu_open
             && tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
@@ -3096,6 +3483,7 @@ pub fn run() {
                 handoff: std::sync::atomic::AtomicBool::new(false),
                 update_handoff: std::sync::atomic::AtomicBool::new(false),
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
+                config_transition: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 core_op: Mutex::new(()),
@@ -3109,7 +3497,7 @@ pub fn run() {
                 node_menu: Mutex::new(tray_state::TrayState::default()),
             });
 
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             spawn_tun_health_monitor(app.handle());
 
             // 订阅自动更新调度器
@@ -3308,23 +3696,13 @@ pub fn run() {
                         if !handoff && !updating {
                             let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
                             if tun_enabled {
-                                // Once the privileged TUN core is gone, restore
-                                // the settings saved before TUN immediately.
+                                // 特权内核停掉之后，立刻按记住的记录还原系统代理。
                                 if state.core().stop() {
-                                    if state.sysproxy.status().enabled {
-                                        if let Err(error) = state.sysproxy.disable() {
-                                            eprintln!("exit system proxy recovery failed: {error}");
-                                        }
-                                    }
-                                    if let Err(error) = state.sysproxy.recover_tun_without_core() {
-                                        eprintln!("exit TUN proxy recovery failed: {error}");
-                                    }
+                                    recover_network_if_core_dead(&state);
                                 }
                             } else {
-                                if let Err(error) = state.sysproxy.disable() {
-                                    eprintln!("exit system proxy recovery failed: {error}");
-                                }
                                 state.core().stop();
+                                recover_network_if_core_dead(&state);
                             }
                         }
                     }
@@ -3337,6 +3715,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_save_restores_memory_and_preserves_previous_disk_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path()).unwrap();
+        store.data_mut().engine.mixed_port = 7897;
+        store.save().unwrap();
+        let before = store.data().clone();
+        store.data_mut().engine.mixed_port = 7898;
+        // Inject a deterministic I/O failure, also when tests run as root.
+        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let store = Mutex::new(store);
+        assert!(restore_store(&store, &before).is_err());
+        assert_eq!(store.lock().unwrap().data().engine.mixed_port, 7897);
+        assert_eq!(Store::open(directory.path()).unwrap().data().engine.mixed_port, 7897);
+    }
 
     #[test]
     fn profile_name_from_path_strips_extension() {
