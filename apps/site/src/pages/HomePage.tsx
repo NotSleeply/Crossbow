@@ -1,90 +1,30 @@
-import { useState } from "react";
-import heroApp from "../assets/hero-app.png";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useLatestRelease } from "../hooks/useLatestRelease";
 import { DownloadIcon } from "../components";
-import { CHECKSUMS_URL, DMG_URL, LATEST, MANIFEST_URL, RELEASE_DATE, REPO, RELEASES, VERSION, WINDOWS_URL } from "../site-meta";
-
-const NAV = [
-  { href: "#features", label: "特性" },
-  { href: "#start", label: "快速上手" },
-  { href: "#download", label: "下载" },
-  { href: "#faq", label: "FAQ" },
-];
+import { REPO, RELEASES } from "../site-meta";
+import Download from "../Download";
 
 function Hero() {
-  const rel = useLatestRelease();
-  const version = rel?.version ?? VERSION;
-  return (
-    <header id="top" style={{ padding: "96px 0 56px", textAlign: "center" }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, font: "12px var(--mono)", color: "var(--dim)", border: "1px solid var(--line-strong)", borderRadius: 99, padding: "5px 14px", marginBottom: 26 }}>
-        <span style={{ color: "var(--accent)" }}>{version}</span>
-        <span>开源 · GPL-3.0</span>
-        <span>macOS · Windows</span>
-      </div>
-      <h1 style={{ fontSize: 46, lineHeight: 1.18, fontWeight: 700, letterSpacing: "-.025em", maxWidth: 720, margin: "0 auto 20px" }}>
-        轻量、克制、可靠的
-        <br />
-        <span
-          style={{
-            background: "linear-gradient(120deg, #7aa2ff 10%, #b79bff 60%, #8bb8ff)",
-            WebkitBackgroundClip: "text",
-            backgroundClip: "text",
-            color: "transparent",
-          }}
-        >
-          开源代理客户端
-        </span>
-      </h1>
-      <p style={{ color: "var(--dim)", fontSize: 17, maxWidth: 560, margin: "0 auto 34px" }}>
-        Crossbow 为 macOS 和 Windows 提供 mihomo / sing-box 双内核与系统代理；macOS 还支持 TUN 模式。
-        订阅管理、节点测速和网络诊断集中在一个界面，菜单栏随时查看实时速率。
-      </p>
-      <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
-        <a
-          className="btn-primary"
-          href={LATEST}
-          target="_blank"
-          rel="noopener"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-            padding: "12px 24px", fontSize: 14.5, fontWeight: 600, color: "#06111f",
-            background: "linear-gradient(180deg, #85adff, #6d97ff)",
-            boxShadow: "0 4px 20px rgba(122,162,255,.3), inset 0 1px 0 rgba(255,255,255,.35)",
-          }}
-        >
-          <DownloadIcon />
-          下载 {version}
-        </a>
-        <a
-          href={REPO}
-          target="_blank"
-          rel="noopener"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-            padding: "12px 24px", fontSize: 14.5, fontWeight: 600,
-            background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--line-strong)",
-          }}
-        >
-          查看源码
-        </a>
-      </div>
-      <div style={{ marginTop: 14, font: "11.5px var(--mono)", color: "var(--faint)" }}>
-        免费开源 · 无追踪 · macOS Apple Silicon / Windows x64
-      </div>
-
-      <div
-        style={{
-          maxWidth: 980, margin: "56px auto 0", borderRadius: 14,
-          border: "1px solid var(--line-strong)",
-          boxShadow: "0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03)",
-          overflow: "hidden",
-        }}
-      >
-        <img src={heroApp} alt="Crossbow 主界面：仪表盘、实时速率曲线与配置档案" style={{ display: "block", width: "100%", height: "auto" }} />
-      </div>
-    </header>
-  );
+  const [paused, setPaused] = useState(false);
+  const [hidden, setHidden] = useState(document.hidden);
+  useEffect(() => {
+    const change = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", change);
+    return () => document.removeEventListener("visibilitychange", change);
+  }, []);
+  return <section className="hero shell" aria-labelledby="hero-title">
+    <div className="hero-intro"><h1 id="hero-title">让连接，清晰可见。</h1><p>macOS 与 Windows 的开源代理客户端。<br className="mobile-break" />管理订阅与节点，也看清每一步连接。</p></div>
+    <div className="flow-stage" role="img" aria-label="你的设备，经规则分流，连接目标网络。连接路径示意。">
+      <div className="flow-node"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="1.5"/><path d="M12 17v4m-5 0h10"/></svg><b>你的设备</b><span className="desktop-copy">macOS / Windows</span><span className="mobile-copy">桌面设备</span></div>
+      <div className="flow-track" />
+      <div className="flow-node"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18M7 2v6m10 1v6m-9 1v6"/></svg><b>规则分流</b><span>按需连接</span></div>
+      <div className="flow-track" />
+      <div className="flow-node"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 6.5c4 3 10 3 14 0M5 17.5c4-3 10-3 14 0"/></svg><b>目标网络</b><span>代理 / 直连</span></div>
+      <div className="flow-lane" aria-hidden="true"><span className="packet" style={{ animationPlayState: paused || hidden ? "paused" : "running" }} /></div>
+    </div>
+    <div className="hero-action"><Link className="primary-button" to="/download">下载 Crossbow <DownloadIcon /></Link><p>开源客户端，自备节点或配置。</p></div>
+    <button className="pause-button" aria-pressed={paused} onClick={() => setPaused(!paused)}><span aria-hidden="true">{paused ? "▷" : "Ⅱ"}</span>{paused ? "继续动效" : "暂停动效"}</button>
+  </section>;
 }
 
 const FEATURES = [
@@ -98,7 +38,7 @@ const FEATURES = [
     icon: <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />,
     icon2: <path d="M9 12l2 2 4-4" />,
     title: "系统代理与 TUN",
-    text: "系统代理适合日常使用；TUN 可接管更多应用流量。macOS 下两者可同时开启、独立控制，TUN 首次开启需要管理员授权。",
+    text: "系统代理适合日常使用；TUN 可接管更多应用流量。两者可同时开启、独立控制；TUN 需按平台完成管理员授权或服务安装。",
   },
   {
     icon: <path d="M3 12h4l2-6 4 12 2-6h6" />,
@@ -113,7 +53,7 @@ const FEATURES = [
   {
     icon: <path d="M13 2L5 13h6l-2 9 8-13h-6z" />,
     title: "轻量模式",
-    text: "关闭窗口 = 内核与代理保留、界面内存归零。重新打开自动接管，状态无缝恢复；托盘一键切换。",
+    text: "关闭窗口后保留内核与代理，释放界面内存。重新打开自动接管，状态无缝恢复；托盘一键切换。",
   },
   {
     icon: <path d="M2 12h4l2-5 3 10 3-7 2 2h6" />,
@@ -123,136 +63,26 @@ const FEATURES = [
 ];
 
 function Features() {
-  return (
-    <section id="features" style={{ maxWidth: 1080, margin: "0 auto", padding: "84px 24px" }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
-        <span className="micro" style={{ display: "block", marginBottom: 12 }}>Features</span>
-        <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>把复杂留给内核，把简单交给你</h2>
-        <p style={{ color: "var(--dim)", marginTop: 12, fontSize: 15 }}>每个特性都来自真实的日常使用反馈</p>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-        {FEATURES.map((f) => (
-          <div
-            key={f.title}
-            style={{
-              background: "linear-gradient(180deg, rgba(255,255,255,.018), transparent 40%), var(--surface)",
-              border: "1px solid var(--line)", borderRadius: 14, padding: "24px 22px",
-            }}
-          >
-            <div style={{ width: 38, height: 38, borderRadius: 10, marginBottom: 16, display: "grid", placeItems: "center", background: "var(--accent-soft)" }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                {f.icon}
-                {f.icon2}
-              </svg>
-            </div>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{f.title}</h3>
-            <p style={{ color: "var(--dim)", fontSize: 13.5 }}>{f.text}</p>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 14, borderRadius: 14, padding: "22px 26px",
-          display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
-          background: "linear-gradient(120deg, rgba(122,162,255,.08), rgba(183,155,255,.05)), var(--surface)",
-          border: "1px solid color-mix(in srgb, var(--accent) 25%, var(--line))",
-        }}
-      >
-        <div style={{ flex: "1 1 380px" }}>
-          <h3 style={{ fontSize: 15.5, fontWeight: 650, marginBottom: 6 }}>
-            新：双内核引擎 + 菜单栏实时速率
-          </h3>
-          <p style={{ color: "var(--dim)", fontSize: 13.5, lineHeight: 1.7 }}>
-            mihomo ↔ sing-box 一键切换（配置自动转换、规则集自更新）；菜单栏图标旁双行实时速率，宽度恒定不抖动。
-          </p>
-        </div>
-        <Link to="/features" style={{ color: "var(--accent)", fontSize: 13.5, fontWeight: 600, flex: "none" }}>
-          查看功能详解 →
-        </Link>
-      </div>
-    </section>
-  );
+  return <section id="features" className="shell content-section">
+    <div className="section-heading"><h2>把复杂留给内核，把简单交给你</h2><p>每个特性都来自真实的日常使用反馈</p></div>
+    <div className="feature-grid">{FEATURES.map(f => <article className="feature-card" key={f.title}>
+      <svg className="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{f.icon}{f.icon2}</svg>
+      <h3>{f.title}</h3><p>{f.text}</p>
+    </article>)}</div>
+    <div className="feature-callout"><div><h3>双内核引擎 + 菜单栏实时速率</h3><p>mihomo ↔ sing-box 一键切换，配置自动转换、规则集自动更新；macOS 菜单栏双行速率，恒宽展示。</p></div><Link className="text-link" to="/features">查看功能详解 →</Link></div>
+  </section>;
 }
-
 function Steps() {
-  return (
-    <section id="start" style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 84px" }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
-        <span className="micro" style={{ display: "block", marginBottom: 12 }}>Get Started</span>
-        <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>三步上手</h2>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "26px 22px" }}>
-          <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>01</div>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>下载并安装</h3>
-          <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序。安装包均来自 GitHub Releases。
-          </p>
-        </div>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "26px 22px" }}>
-          <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>02</div>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>导入订阅</h3>
-          <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            粘贴订阅链接回车，或直接把 .yaml 配置文件拖进窗口。设置自动更新间隔，流量与到期自动追踪。
-          </p>
-        </div>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "26px 22px" }}>
-          <div style={{ font: "600 13px var(--mono)", color: "var(--accent)", marginBottom: 14 }}>03</div>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>一键开启</h3>
-          <p style={{ color: "var(--dim)", fontSize: 13.5 }}>
-            选择节点，在首页开启系统代理；macOS 需要接管不读取系统代理的应用时，可到设置中开启 TUN。
-          </p>
-        </div>
-      </div>
-    </section>
-  );
+  return <section id="start" className="shell content-section">
+    <div className="section-heading"><h2>三步上手</h2></div>
+    <div className="steps-grid">
+      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">01</span><h3>下载并安装</h3><p>macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序。安装包均来自 GitHub Releases。</p></article>
+      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">02</span><h3>导入订阅</h3><p>粘贴订阅链接，或把 .yaml 配置文件拖进窗口。设置自动更新间隔，查看流量与到期信息。</p></article>
+      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">03</span><h3>一键开启</h3><p>选择节点，在概览开启系统代理。需要接管更多应用流量时，可按平台完成授权并开启 TUN。</p></article>
+    </div>
+    <Link className="text-link section-more" to="/guide">继续阅读进阶指南 →</Link>
+  </section>;
 }
-
-function Download() {
-  const rel = useLatestRelease();
-  const version = rel?.version ?? VERSION;
-  const date = rel?.date ?? RELEASE_DATE;
-  const checksumsUrl = rel ? rel.checksumsUrl : CHECKSUMS_URL;
-  const platforms = [
-    { name: "macOS", detail: "Apple Silicon · M 系列芯片", url: rel ? rel.dmgUrl : DMG_URL, label: "下载 DMG", note: "Developer ID 签名与公证；拖入应用程序后启动。" },
-    { name: "Windows", detail: "x64 · Windows 11 实机验收中", url: rel ? rel.windowsUrl : WINDOWS_URL, label: "下载 EXE", note: "尚无 Windows 代码签名；请核对官方来源及 SHA256SUMS。" },
-  ];
-  return (
-    <section id="download" style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 84px" }}>
-      <div style={{ textAlign: "center", marginBottom: 36 }}>
-        <span className="micro" style={{ display: "block", marginBottom: 12 }}>Download</span>
-        <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>下载 Crossbow</h2>
-        <p style={{ color: "var(--dim)", marginTop: 12, fontSize: 15 }}>{version} · {date} · 应用内支持检查更新与签名校验</p>
-      </div>
-      <div className="download-platforms">
-        {platforms.map((platform) => (
-          <div key={platform.name} className="download-platform">
-            <div className="micro">{platform.detail}</div>
-            <h3 style={{ fontSize: 22, margin: "10px 0" }}>Crossbow for {platform.name}</h3>
-            <p style={{ color: "var(--dim)", fontSize: 13, flex: 1 }}>{platform.note}</p>
-            <a className="download-button" href={platform.url ?? LATEST} target="_blank" rel="noopener">
-              <DownloadIcon /> {platform.url ? platform.label : "查看发布详情"}
-            </a>
-          </div>
-        ))}
-      </div>
-      <div style={{ textAlign: "center", marginTop: 22, fontSize: 13, color: "var(--dim)" }}>
-        <a href={LATEST} target="_blank" rel="noopener">更新说明</a>
-        {" · "}
-        {checksumsUrl && <><a href={checksumsUrl} target="_blank" rel="noopener">SHA256SUMS</a>{" · "}</>}
-        <a href={MANIFEST_URL} target="_blank" rel="noopener">更新清单</a>
-        {" · "}
-        <a href={RELEASES} target="_blank" rel="noopener">历史版本</a>
-      </div>
-      <p style={{ maxWidth: 780, margin: "24px auto 0", color: "var(--dim)", fontSize: 13, textAlign: "center" }}>
-        v0.10.1 聚焦 Windows 标题栏主题、后台闪窗、系统代理与日志刷新，并补齐交互反馈。
-        同时包含升级重启的内核交接与首页状态同步修复。Windows 的实机效果请按 <a href={`${REPO}/blob/main/docs/WINDOWS-TESTING.md`} target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>Windows 验收步骤</a>检查。
-      </p>
-    </section>
-  );
-}
-
 const FAQS = [
   {
     q: "安装或打开时遇到 macOS 安全提示？",
@@ -260,15 +90,15 @@ const FAQS = [
   },
   {
     q: "支持哪些协议？",
-    a: <>内核为 mihomo，支持 Shadowsocks / VMess / VLESS / Trojan / Hysteria2 / TUIC / WireGuard 等全部 mihomo 所支持的协议，兼容 Clash 订阅与配置格式。</>,
+    a: <>可使用 mihomo 或 sing-box，协议支持以所选内核为准。mihomo 支持 Shadowsocks / VMess / VLESS / Trojan / Hysteria2 / TUIC / WireGuard 等全部 mihomo 所支持的协议，兼容 Clash 订阅与配置格式。</>,
   },
   {
     q: "支持 TUN 模式吗？",
-    a: <>macOS 版可在设置中开启 TUN，首次开启需要管理员授权。可与本应用的系统代理同时开启、独立控制；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
+    a: <>macOS 与 Windows 可在设置中开启 TUN，首次需按平台完成管理员授权或服务安装。可与本应用的系统代理同时开启、独立控制；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
   },
   {
     q: "有 Windows / iOS 版本吗？",
-    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收，Windows TUN 目前尚未开放。iOS 目前为工程骨架。</>,
+    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收，Windows 支持通过服务模式运行 TUN。iOS 正在真机开发验证中，尚未公开分发。</>,
   },
   {
     q: "升级会丢配置吗？",
@@ -280,48 +110,8 @@ const FAQS = [
   },
 ];
 
-function Faq() {
-  const [open, setOpen] = useState(0);
-  return (
-    <section id="faq" style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 84px" }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
-        <span className="micro" style={{ display: "block", marginBottom: 12 }}>FAQ</span>
-        <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>常见问题</h2>
-      </div>
-      <div style={{ maxWidth: 720, margin: "0 auto" }}>
-        {FAQS.map((f, i) => (
-          <details
-            key={i}
-            open={open === i}
-            onToggle={() => setOpen(i)}
-            style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "0 20px", marginBottom: 10 }}
-          >
-            <summary
-              style={{
-                cursor: "pointer", listStyle: "none", padding: "16px 0",
-                fontSize: 14.5, fontWeight: 550,
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-              }}
-            >
-              {f.q}
-              <span style={{ color: "var(--faint)", fontSize: 16 }}>{open === i ? "−" : "+"}</span>
-            </summary>
-            <div style={{ color: "var(--dim)", fontSize: 13.5, paddingBottom: 18 }}>{f.a}</div>
-          </details>
-        ))}
-      </div>
-    </section>
-  );
-}
 
-export default function HomePage() {
-  return (
-    <>
-      <Hero />
-      <Features />
-      <Steps />
-      <Download />
-      <Faq />
-    </>
-  );
+function Faq() {
+  return <section id="faq" className="shell content-section faq-section"><div className="section-heading"><h2>常见问题</h2></div><div className="faq-list">{FAQS.map(f => <details key={f.q} name="faq"><summary>{f.q}<span aria-hidden="true">+</span></summary><div>{f.a}</div></details>)}</div></section>;
 }
+export default function HomePage() { return <><Hero /><Features /><Steps /><Download /><Faq /></>; }

@@ -1,8 +1,18 @@
-import { DownloadIcon, Logo } from "../components";
-import { LATEST, REPO, VERSION } from "../site-meta";
+import { Logo } from "../components";
+import { LATEST, REPO } from "../site-meta";
 import { Link } from "react-router-dom";
 
 const FEATURES = [
+  {
+    tag: "节点",
+    title: "节点选择与测速",
+    summary: "按地区、名称与延迟找到合适的节点，保留自动选择，也支持手动指定。",
+    detail: [
+      "按地区整理节点，结合名称搜索、可用过滤与延迟排序缩小范围。",
+      "支持单节点与整组延迟测试，区分测速中、成功和超时状态。",
+      "macOS 托盘中可切换节点并查看延迟，不必反复打开主窗口。",
+    ],
+  },
   {
     tag: "订阅",
     title: "订阅管理",
@@ -31,9 +41,9 @@ const FEATURES = [
     tag: "网络",
     title: "TUN 模式",
     summary:
-      "macOS 上创建虚拟网卡接管更多应用流量；可在设置中独立控制，并与本应用的系统代理同时开启。",
+      "通过虚拟网卡接管更多应用流量；可在设置中独立控制，并与本应用的系统代理同时开启。",
     detail: [
-      "首次开启需要 macOS 管理员授权；应用会保存授权后的内核副本，减少重复授权。",
+      "macOS 首次开启需管理员授权，Windows 需安装并使用后台服务；完成设置后可在界面开关 TUN。",
       "TUN 与本应用的系统代理可同时开启；其他代理或 VPN 的 TUN 应先关闭，避免路由冲突。",
       "若其他代理或 VPN 已占用隧道路由，先关闭对方的 TUN 模式；断网时可按仓库中的离线恢复说明操作。",
     ],
@@ -65,7 +75,7 @@ const FEATURES = [
     tag: "轻量",
     title: "轻量模式",
     summary:
-      "关闭窗口 = 内核与代理保留、界面内存归零。重新打开自动接管，状态无缝恢复；托盘一键切换。",
+      "关闭窗口后保留内核与代理，释放界面内存。重新打开自动接管，状态无缝恢复；托盘一键切换。",
     detail: [
       "轻量交接：GUI 进程只保留托盘与内核管理，webview 内存完全释放。",
       "内核以 detach 模式留给系统收养；重新打开应用自动收养并恢复全部状态。",
@@ -82,6 +92,7 @@ const FEATURES = [
       "首页实时速率曲线 + 累计流量；当前出口节点与延迟一目了然。",
       "连接页按进程聚合流量排行，可单独断开任意连接。",
       "日志页分级过滤，排查规则命中问题不用翻配置。",
+      "代理页可测试 YouTube、X、Google 与 GitHub 的连通性；测试结果用于排查当前代理链路。",
     ],
   },
   {
@@ -98,88 +109,14 @@ const FEATURES = [
   },
 ];
 
-function SectionHead({ micro, title, desc }: { micro: string; title: string; desc?: string }) {
-  return (
-    <div style={{ textAlign: "center", marginBottom: 56 }}>
-      <span className="micro" style={{ display: "block", marginBottom: 12 }}>{micro}</span>
-      <h2 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-.02em" }}>{title}</h2>
-      {desc && <p style={{ color: "var(--dim)", marginTop: 12, fontSize: 15, maxWidth: 640, margin: "12px auto 0" }}>{desc}</p>}
-    </div>
-  );
-}
-
 export default function FeaturesPage() {
-  return (
-    <div style={{ maxWidth: 1080, margin: "0 auto", padding: "64px 24px 84px" }}>
-      <SectionHead
-        micro="Features"
-        title="功能详解"
-        desc="每个功能都对着一个真实存在的问题：断网、坏配置、无法排查、内存占用。这里把它们一次讲透。"
-      />
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {FEATURES.map((f, i) => (
-          <section
-            key={f.title}
-            style={{
-              background: "linear-gradient(180deg, rgba(255,255,255,.015), transparent 45%), var(--surface)",
-              border: "1px solid var(--line)", borderRadius: 16, padding: "30px 32px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-              <span
-                style={{
-                  font: "600 11px var(--mono)", color: "var(--accent)",
-                  background: "var(--accent-soft)", borderRadius: 6, padding: "3px 9px",
-                }}
-              >
-                {String(i + 1).padStart(2, "0")} · {f.tag}
-              </span>
-              <h3 style={{ fontSize: 18, fontWeight: 650, letterSpacing: "-.01em" }}>{f.title}</h3>
-            </div>
-            <p style={{ color: "var(--text)", fontSize: 14, margin: "10px 0 16px", lineHeight: 1.7 }}>{f.summary}</p>
-            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 9 }}>
-              {f.detail.map((d) => (
-                <li key={d} style={{ display: "flex", gap: 10, color: "var(--dim)", fontSize: 13.5, lineHeight: 1.65 }}>
-                  <span style={{ color: "var(--accent)", flex: "none", paddingTop: 1 }}>▸</span>
-                  {d}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 56, textAlign: "center", padding: "36px 24px",
-          background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 16,
-        }}
-      >
-        <h3 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-.01em" }}>还有更多进阶玩法</h3>
-        <p style={{ color: "var(--dim)", fontSize: 14, margin: "10px auto 22px", maxWidth: 520, lineHeight: 1.7 }}>
-          JS 覆写教程、双引擎切换实操、深链接导入、安全模式机制——见进阶指南。
-        </p>
-        <Link
-          to="/guide"
-          className="btn-primary"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-            padding: "11px 22px", fontSize: 14, fontWeight: 600, color: "#06111f",
-            background: "linear-gradient(180deg, #85adff, #6d97ff)",
-          }}
-        >
-          <DownloadIcon />
-          查看进阶指南
-        </Link>
-      </div>
-
-      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12.5, color: "var(--faint)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        <Logo size={16} />
-        Crossbow {VERSION} · 开源 · GPL-3.0 ·{" "}
-        <a href={`${REPO}/issues`} target="_blank" rel="noopener" style={{ color: "var(--dim)" }}>功能建议欢迎提 Issue</a>
-        · 或直接
-        <a href={LATEST} target="_blank" rel="noopener" style={{ color: "var(--dim)" }}>下载体验</a>
-      </div>
-    </div>
-  );
+  return <div className="shell detail-page">
+    <header className="page-heading"><h1>功能详解</h1><p>从订阅与节点，到接管与观测。了解每一步连接由什么组成。</p></header>
+    <nav className="section-nav" aria-label="功能目录">{FEATURES.map((f,i) => <button key={f.tag} onClick={() => document.getElementById(`feature-${i+1}`)?.scrollIntoView({ block: "start" })}>{f.tag}</button>)}</nav>
+    <div className="detail-list">{FEATURES.map((f,i) => <section className="detail-section" id={`feature-${i+1}`} key={f.title}>
+      <div><h2>{f.title}</h2><p>{f.summary}</p></div><ul>{f.detail.map(d => <li key={d}>{d}</li>)}</ul>
+    </section>)}</div>
+    <div className="page-next"><div><h2>还有更多进阶玩法</h2><p>JS 覆写、双引擎切换、深链接导入，继续探索。</p></div><Link className="text-link" to="/guide">查看进阶指南 →</Link></div>
+    <div className="page-meta"><Logo size={20} /><a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">功能建议欢迎提 Issue ↗</a><a href={LATEST} target="_blank" rel="noopener noreferrer">下载体验 ↗</a></div>
+  </div>;
 }
