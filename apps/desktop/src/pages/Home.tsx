@@ -14,6 +14,7 @@ import { fmtBytes } from "../format";
 import { useT } from "../i18n";
 import { Icon } from "../components/Icon";
 import { UpdateBanner } from "../components/UpdateBanner";
+import { ConnectionFlow } from "../components/ConnectionFlow";
 
 const POINTS = 120;
 
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
+  const [lastTrafficAt, setLastTrafficAt] = useState(0);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
@@ -130,6 +132,7 @@ export default function HomePage() {
     refresh();
     const un1 = ipc.onCoreStatus((status) => {
       setCore(status);
+      if (status.state !== "Running") setLastTrafficAt(0);
       if (active)
         ipc
           .tunStatus()
@@ -143,6 +146,9 @@ export default function HomePage() {
     const un3 = ipc.onCoreMode(setMode);
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!active || !mounted.current) return;
+      if ((Number.isFinite(up) && up > 0) || (Number.isFinite(down) && down > 0)) {
+        setLastTrafficAt(Date.now());
+      }
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
       setTotals((t0) => ({ up: t0.up + up, down: t0.down + down }));
     });
@@ -260,7 +266,12 @@ export default function HomePage() {
                 {t("home.activeProfile")} {active?.name ?? t("home.none")}
               </p>
             </div>
-            <div className="cb-route-flow">
+            <ConnectionFlow
+              enabled={
+                core.state === "Running" && routingEnabled && !!outbound?.node
+              }
+              lastTrafficAt={lastTrafficAt}
+            >
               <div>
                 <Icon name="device" size={26} />
                 <b>{t("studio.thisDevice")}</b>
@@ -268,13 +279,21 @@ export default function HomePage() {
                   {navigator.userAgent.includes("Windows") ? "Windows" : "macOS"}
                 </small>
               </div>
-              <span className="cb-route-line" />
+              <span
+                className="cb-route-line"
+                data-route-segment
+                aria-hidden="true"
+              />
               <div>
                 <Icon name="sliders" size={26} />
                 <b>{t("studio.routing")}</b>
                 <small>{t(`mode.${mode}`)}</small>
               </div>
-              <span className="cb-route-line" />
+              <span
+                className="cb-route-line"
+                data-route-segment
+                aria-hidden="true"
+              />
               <div>
                 <Icon name="globe" size={26} />
                 <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
@@ -286,7 +305,7 @@ export default function HomePage() {
                     : coreText(t, core)}
                 </small>
               </div>
-            </div>
+            </ConnectionFlow>
             <div className="cb-home-actions">
               <button className="cb-btn primary" onClick={() => go("proxies")}>
                 <Icon name="bolt" />
