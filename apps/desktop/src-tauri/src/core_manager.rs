@@ -1722,6 +1722,45 @@ pub(crate) mod tests {
         panic!("expected Crashed, got {:?}", mgr.status());
     }
 
+    /// Network-free integration: real mihomo, private ports and temporary files.
+    #[test]
+    fn real_core_reload_preserves_pid_and_restores_rejected_config() {
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else { return; };
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = CoreManager::new(PathBuf::from(bin), dir.path().to_path_buf());
+        mgr.set_options(CoreOptions { ensure_geo_files: false, ..CoreOptions::default() });
+        let rt = RuntimeConfig { mixed_port: free_port().unwrap(), ..RuntimeConfig::default() };
+        let base = "proxies: []\nrules: ['MATCH,DIRECT']\n";
+        mgr.start(base, &rt).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while mgr.status() != CoreStatus::Running {
+            assert!(Instant::now() < deadline, "core not ready: {:?}", mgr.status());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let pid = mgr.pid();
+        let (port, secret) = mgr.controller().unwrap();
+        let controller = crate::mihomo_api::Controller { port, secret: secret.clone() };
+        let old = mgr.current_config().unwrap();
+        let new_config = old.replace("mode: rule", "mode: direct");
+        assert_ne!(old, new_config);
+        mgr.write_config_file(&new_config).unwrap();
+        controller.reload_config(&mgr.config_path()).unwrap();
+        mgr.replace_cached_config(new_config.clone());
+        assert_eq!(mgr.pid(), pid);
+        assert_eq!(mgr.controller(), Some((port, secret)));
+        assert_eq!(mgr.current_config(), Some(new_config.clone()));
+        mgr.write_config_file("proxies: [invalid-proxy-entry]").unwrap();
+        assert!(controller.reload_config(&mgr.config_path()).is_err());
+        assert_eq!(mgr.current_config(), Some(new_config));
+        mgr.write_config_file(&old).unwrap();
+        controller.reload_config(&mgr.config_path()).unwrap();
+        mgr.replace_cached_config(old.clone());
+        assert_eq!(mgr.pid(), pid);
+        assert_eq!(mgr.current_config(), Some(old));
+        assert!(mgr.stop());
+    }
+
     /// 真实内核冒烟：CROSSBOW_CORE_BIN 指向 mihomo 时才运行。
     /// 验证 启动 → Running → 混合端口可代理 → 停止 → Stopped。
     #[test]

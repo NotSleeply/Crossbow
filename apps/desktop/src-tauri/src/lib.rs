@@ -55,6 +55,7 @@ pub struct AppState {
     update_handoff: std::sync::atomic::AtomicBool,
     /// 安全模式：坏覆写导致内核启动失败后，跳过覆写链启动一次。
     safe_mode: std::sync::atomic::AtomicBool,
+    config_transition: std::sync::atomic::AtomicBool,
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
@@ -375,38 +376,56 @@ fn commit_config_change(
     state: &AppState,
     mutate: impl FnOnce(&mut crossbow_core::StoreSchema) -> Result<(), String>,
 ) -> Result<(), String> {
+    commit_config_change_inner(state, mutate, false)
+}
+
+fn commit_config_change_inner(
+    state: &AppState,
+    mutate: impl FnOnce(&mut crossbow_core::StoreSchema) -> Result<(), String>,
+    exit_safe_mode: bool,
+) -> Result<(), String> {
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-    let before = {
-        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data().clone()
-    };
+    let _recovery = config_transition::RecoveryOwner::enter(&state.config_transition);
+    let before = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let previous_safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+    let proxy = state.sysproxy.status();
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         if let Err(error) = mutate(store.data_mut()) {
             *store.data_mut() = before;
             return Err(error);
         }
+        if store.data().engine.tun_enable != before.engine.tun_enable {
+            *store.data_mut() = before;
+            return Err("TUN 开关不走配置切换".into());
+        }
     }
-    let after = {
-        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data().clone()
-    };
-    if after.engine.tun_enable != before.engine.tun_enable {
-        restore_schema(state, before)?;
-        return Err("TUN 开关不走配置切换".into());
+    if exit_safe_mode {
+        state
+            .safe_mode
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
-    let old_running = state.core().current_config();
+    let after = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let old_config = state.core().current_config();
     let status = state.core().status();
     let running = matches!(status, CoreStatus::Running | CoreStatus::Starting);
-    let controller = state.core().controller();
     let live = config_transition::LiveCore {
         running,
-        // Starting 时控制器可能还没有，不能热重载。
         mihomo: before.engine.engine == crossbow_core::Engine::Mihomo
-            && status == CoreStatus::Running
-            && controller.is_some(),
-        controller: controller.is_some(),
-        cached_config: old_running.is_some(),
+            && status == CoreStatus::Running,
+        controller: state.core().controller().is_some(),
+        cached_config: old_config.is_some(),
+        service_managed: cfg!(windows) && before.engine.tun_enable,
     };
     let plan = if config_transition::needs_new_process(
         before.engine.engine,
@@ -422,102 +441,207 @@ fn commit_config_change(
     } else {
         config_transition::plan_content(live)
     };
-    state.core().log_decision(&format!("config change: {plan:?}"));
-    match plan {
-        config_transition::Plan::PersistOnly => persist_schema(state),
-        config_transition::Plan::HotReload => {
-            let old = old_running.ok_or("没有可回滚的运行配置")?;
-            match hot_reload_running(state, &old) {
-                Ok(()) => {
-                    if let Err(error) = persist_schema(state) {
-                        // 内核已经吃进新配置，但磁盘没写上。退回旧配置，让两边一致。
-                        let _ = state.core().write_config_file(&old);
-                        if let Some((port, secret)) = state.core().controller() {
-                            let _ = mihomo_api::Controller { port, secret }
-                                .reload_config(&state.core().config_path());
-                        }
-                        state.core().replace_cached_config(old);
-                        restore_schema(state, before)?;
-                        return Err(error);
-                    }
-                    Ok(())
-                }
-                Err(reload_error) => {
-                    // 重载失败改走重启。内存里仍是新配置，旧进程已回到旧文件。
-                    state.core().log_decision(&format!(
-                        "hot reload failed, restarting: {reload_error}"
-                    ));
-                    restart_committed(state, &before).map_err(|restart_error| {
-                        format!("热重载失败：{reload_error}；重启也失败：{restart_error}")
-                    })
+    state
+        .core()
+        .log_decision(&format!("config change: {plan:?}"));
+    let mut transaction = ConfigChange {
+        state,
+        before,
+        previous_safe,
+        proxy,
+        old_config,
+        plan,
+        touched_core: false,
+        restarted: false,
+        stopped: false,
+    };
+    let result = config_transition::execute(&mut transaction);
+    // Rollback may have changed the actual proxy state, even when it failed.
+    let _ = state.app.emit("sysproxy://status", state.sysproxy.status());
+    if result.is_ok() && running {
+        // A successful reload does not produce a CoreManager Running callback.
+        // Invalidate the old group's cache before fetching the new group order.
+        state
+            .node_menu
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .invalidate_config();
+        #[cfg(target_os = "macos")]
+        refresh_tray_nodes(&state.app, false);
+    }
+    let _ = state.app.emit("core://status", state.core().status());
+    sync_tray_traffic(&state.app);
+    update_logs_persistence(&state.app);
+    refresh_tray(&state.app);
+    result
+}
+
+struct ConfigChange<'a> {
+    state: &'a AppState,
+    before: crossbow_core::StoreSchema,
+    previous_safe: bool,
+    proxy: SysProxyStatus,
+    old_config: Option<String>,
+    plan: config_transition::Plan,
+    touched_core: bool,
+    restarted: bool,
+    stopped: bool,
+}
+
+impl ConfigChange<'_> {
+    fn restart(&mut self) -> Result<(), String> {
+        self.restarted = true;
+        if !self.state.core().stop() {
+            return Err("旧内核未退出，已中止切换".into());
+        }
+        self.stopped = true;
+        self.touched_core = true;
+        start_core_locked(self.state).and_then(|()| wait_core_running(self.state))
+    }
+
+    fn restore_runtime(&mut self) -> Result<(), String> {
+        if self.restarted && !self.stopped {
+            return Err("无法确认旧内核已停止，保留现场供重试".into());
+        }
+        if !self.touched_core {
+            return Ok(());
+        }
+        let mut reload_error = None;
+        if !self.restarted {
+            if let Some(old) = &self.old_config {
+                match reload_final_config(self.state, old) {
+                    Ok(()) => return Ok(()),
+                    Err(error) => reload_error = Some(error),
                 }
             }
         }
-        config_transition::Plan::Restart => restart_committed(state, &before),
+        // Stop failed candidates and their restart watchers before restoring.
+        self.restart().map_err(|error| match reload_error {
+            Some(reload) => format!("旧配置重载失败：{reload}；重启失败：{error}"),
+            None => error,
+        })
     }
 }
 
-fn hot_reload_running(state: &AppState, old_config: &str) -> Result<(), String> {
-    let rendered = render_current(state, !state.safe_mode.load(std::sync::atomic::Ordering::SeqCst))?;
+impl config_transition::Transaction for ConfigChange<'_> {
+    fn apply(&mut self) -> Result<(), String> {
+        if self.plan == config_transition::Plan::PersistOnly {
+            return Ok(());
+        }
+        // Render/validate before stopping a healthy core. A broken override must
+        // not interrupt the current network merely to discover it cannot render.
+        let rendered = render_current(
+            self.state,
+            !self
+                .state
+                .safe_mode
+                .load(std::sync::atomic::Ordering::SeqCst),
+        )?;
+        let controller = self.state.core().controller();
+        let (port, secret) = controller.unwrap_or((0, String::new()));
+        let final_config =
+            crossbow_core::apply_runtime(&rendered.config, &runtime_for(self.state, port, secret))?;
+        if self.plan == config_transition::Plan::HotReload {
+            self.touched_core = true;
+            if let Err(error) = reload_final_config(self.state, &final_config) {
+                self.state
+                    .core()
+                    .log_decision(&format!("hot reload failed, restarting: {error}"));
+                self.restart()
+                    .map_err(|restart| format!("热重载失败：{error}；重启失败：{restart}"))?;
+            }
+        } else {
+            self.restart()?;
+        }
+        // Proxy retargeting is part of the transaction, before persistence.
+        if self.proxy.enabled {
+            let store = self.state.store.lock().unwrap_or_else(|e| e.into_inner());
+            let port = store.data().engine.mixed_port;
+            let tun = store.data().engine.tun_enable;
+            drop(store);
+            restore_config_proxy(
+                self.state,
+                SysProxyStatus {
+                    enabled: true,
+                    port,
+                },
+                tun,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn persist(&mut self) -> Result<(), String> {
+        persist_schema(self.state)
+    }
+
+    fn rollback(&mut self) -> Result<(), String> {
+        self.state
+            .safe_mode
+            .store(self.previous_safe, std::sync::atomic::Ordering::SeqCst);
+        let mut errors = Vec::new();
+        // Disk failure must not prevent restoring the old runtime/network.
+        if let Err(error) = restore_store(&self.state.store, &self.before) {
+            errors.push(format!("旧状态保存失败：{error}"));
+        }
+        let runtime_ok = match self.restore_runtime() {
+            Ok(()) => true,
+            Err(error) => {
+                errors.push(format!("旧内核恢复失败：{error}"));
+                false
+            }
+        };
+        if runtime_ok {
+            if let Err(error) =
+                restore_config_proxy(self.state, self.proxy, self.before.engine.tun_enable)
+            {
+                errors.push(format!("系统代理恢复失败：{error}"));
+            }
+        } else if self.stopped && self.state.core().stop() {
+            // Only restore third-party TUN proxy settings once our routes are gone.
+            if let Err(error) = recover_config_network(self.state) {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("；"))
+        }
+    }
+}
+
+fn reload_final_config(state: &AppState, config: &str) -> Result<(), String> {
     let (port, secret) = state
         .core()
         .controller()
         .ok_or("控制器不可用，无法热重载")?;
-    let rt = runtime_for(state, port, secret.clone());
-    let final_config = crossbow_core::apply_runtime(&rendered.config, &rt)?;
     let core = state.core();
-    core.write_config_file(&final_config)?;
-    let controller = mihomo_api::Controller { port, secret };
-    if let Err(error) = controller.reload_config(&core.config_path()) {
-        let restore_file = core.write_config_file(old_config);
-        let restore_reload = controller.reload_config(&core.config_path());
-        let mut detail = error;
-        if let Err(file_error) = restore_file {
-            detail = format!("{detail}；写回旧配置失败：{file_error}");
-        }
-        if let Err(reload_old) = restore_reload {
-            detail = format!("{detail}；重载旧配置失败：{reload_old}");
-        }
-        return Err(detail);
-    }
-    core.replace_cached_config(final_config);
+    core.write_config_file(config)?;
+    mihomo_api::Controller { port, secret }.reload_config(&core.config_path())?;
+    core.replace_cached_config(config.to_string());
     Ok(())
 }
 
-/// 停掉现核，按内存里的新配置拉起。失败则退回 `before` 并尽量拉起旧核。
-fn restart_committed(state: &AppState, before: &crossbow_core::StoreSchema) -> Result<(), String> {
-    let was_running = matches!(
-        state.core().status(),
-        CoreStatus::Running | CoreStatus::Starting
-    );
-    if was_running && !state.core().stop() {
-        restore_schema(state, before.clone())?;
-        return Err("旧内核未退出，配置未改变".into());
+fn restore_config_proxy(
+    state: &AppState,
+    expected: SysProxyStatus,
+    tun: bool,
+) -> Result<(), String> {
+    let actual = state.sysproxy.status();
+    if actual.enabled == expected.enabled && (!expected.enabled || actual.port == expected.port) {
+        return Ok(());
     }
-    match start_core_locked(state).and_then(|()| wait_core_running(state)) {
-        Ok(()) => persist_schema(state),
-        Err(start_error) => {
-            if let Err(restore_error) = restore_schema(state, before.clone()) {
-                recover_network_if_core_dead(state);
-                return Err(format!(
-                    "切换失败：{start_error}；退回旧配置也失败：{restore_error}"
-                ));
-            }
-            let recovery = if was_running {
-                start_core_locked(state)
-                    .and_then(|()| wait_core_running(state))
-                    .err()
-            } else {
-                None
-            };
-            if let Some(recovery_error) = recovery {
-                recover_network_if_core_dead(state);
-                return Err(format!(
-                    "切换失败：{start_error}；恢复旧内核失败：{recovery_error}"
-                ));
-            }
-            Err(format!("切换失败，已恢复之前的运行状态：{start_error}"))
+    if expected.enabled {
+        if tun {
+            state.sysproxy.enable_during_tun(expected.port)
+        } else {
+            state.sysproxy.enable(expected.port)
         }
+    } else if tun {
+        state.sysproxy.disable_during_tun()
+    } else {
+        state.sysproxy.disable()
     }
 }
 
@@ -545,32 +669,39 @@ fn persist_schema(state: &AppState) -> Result<(), String> {
     store.save().map_err(|e| e.to_string())
 }
 
-fn restore_schema(state: &AppState, before: crossbow_core::StoreSchema) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    *store.data_mut() = before;
+/// Restore in-memory state before attempting I/O; a failed save must not
+/// leave the rejected candidate visible to the next operation.
+fn restore_store(store: &Mutex<Store>, before: &crossbow_core::StoreSchema) -> Result<(), String> {
+    let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+    *store.data_mut() = before.clone();
     store.save().map_err(|e| e.to_string())
 }
 
 /// 内核没回来时，按退出路径把系统代理还回去，避免代理指向一个死端口。
 fn recover_network_if_core_dead(state: &AppState) {
-    let tun_enabled = state
+    if let Err(error) = recover_config_network(state) {
+        eprintln!("network recovery failed: {error}");
+    }
+}
+
+fn recover_config_network(state: &AppState) -> Result<(), String> {
+    let tun = state
         .store
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .data()
         .engine
         .tun_enable;
-    if tun_enabled {
-        if state.sysproxy.status().enabled {
-            if let Err(error) = state.sysproxy.disable() {
-                eprintln!("system proxy recovery failed: {error}");
-            }
-        }
-        if let Err(error) = state.sysproxy.recover_tun_without_core() {
-            eprintln!("TUN proxy recovery failed: {error}");
-        }
-    } else if let Err(error) = state.sysproxy.disable() {
-        eprintln!("system proxy recovery failed: {error}");
+    let proxy = state.sysproxy.disable();
+    let tun_proxy = if tun {
+        state.sysproxy.recover_tun_without_core()
+    } else {
+        Ok(())
+    };
+    match (proxy, tun_proxy) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(a), Err(b)) => Err(format!("系统代理恢复失败：{a}；TUN 代理恢复失败：{b}")),
+        (Err(error), _) | (_, Err(error)) => Err(error),
     }
 }
 
@@ -868,17 +999,7 @@ async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
 /// 校验通过后应用覆写：复位安全模式，运行中则热重启。
 #[tauri::command]
 async fn apply_overrides(state: State<'_, AppState>) -> Result<(), String> {
-    let was_safe = state
-        .safe_mode
-        .swap(false, std::sync::atomic::Ordering::SeqCst);
-    // 覆写已经在存储里。空修改只为了按当前存储重新渲染并热重载。
-    if let Err(error) = commit_config_change(&state, |_| Ok(())) {
-        state
-            .safe_mode
-            .store(was_safe, std::sync::atomic::Ordering::SeqCst);
-        return Err(error);
-    }
-    Ok(())
+    commit_config_change_inner(&state, |_| Ok(()), true)
 }
 
 #[tauri::command]
@@ -1773,25 +1894,19 @@ fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), 
 
 /// 修改混合端口：持久化 → 运行中则热重启 → 系统代理开启则跟随换端口。
 #[tauri::command]
-async fn set_mixed_port(app: AppHandle, state: State<'_, AppState>, port: u16) -> Result<(), String> {
+async fn set_mixed_port(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    port: u16,
+) -> Result<(), String> {
     if port < 1024 {
         return Err("端口不能小于 1024".into());
     }
-    let proxy_was_on = state.sysproxy.status().enabled;
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-    // 端口变了必须重启。失败时 commit 会把端口和内核退回去，系统代理仍指向旧端口。
     commit_config_change(&state, |data| {
         data.engine.mixed_port = port;
         Ok(())
     })?;
-    if proxy_was_on {
-        if tun_enabled {
-            state.sysproxy.enable_during_tun(port)?;
-        } else {
-            state.sysproxy.enable(port)?;
-        }
-        let _ = app.emit("sysproxy://status", state.sysproxy.status());
-    }
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
     Ok(())
 }
 
@@ -1954,6 +2069,19 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
     std::sync::Arc::new(move |status| {
+        // The configuration transaction owns rollback while core_op is held.
+        // A synchronous safe-mode start here would wait for that same lock,
+        // while rollback waits for this callback to return.
+        if matches!(status, CoreStatus::Crashed(_)) {
+            if let Some(state) = handle.try_state::<AppState>() {
+                if state
+                    .config_transition
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return;
+                }
+            }
+        }
         let _ = handle.emit("core://status", status.clone());
         // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
@@ -2466,6 +2594,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
     if state.core().status() != CoreStatus::Running {
         return;
     }
+    let generation = handle.state::<AppState>().node_menu.lock().unwrap_or_else(|e| e.into_inner()).generation();
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else {
@@ -2479,6 +2608,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
             Err(_) => return,
         };
         let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation { return; }
         // 主组：已有缓存沿用；否则按订阅声明顺序找第一个有成员的组
         if !tray.has_group() {
             let order = profile_group_order(&h);
@@ -2517,7 +2647,9 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
                         )
                     })
             });
-        state.node_menu.lock().unwrap_or_else(|e| e.into_inner()).apply_group_data(
+        let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation { return; }
+        tray.apply_group_data(
             root.now.clone(),
             root.nodes
                 .iter()
@@ -2525,6 +2657,7 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
                 .collect(),
             automatic,
         );
+        drop(tray);
         let data = tray_menu_data(&state);
         let menu_updated = keep_menu_open
             && tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
@@ -3350,6 +3483,7 @@ pub fn run() {
                 handoff: std::sync::atomic::AtomicBool::new(false),
                 update_handoff: std::sync::atomic::AtomicBool::new(false),
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
+                config_transition: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 core_op: Mutex::new(()),
@@ -3581,6 +3715,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_save_restores_memory_and_preserves_previous_disk_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path()).unwrap();
+        store.data_mut().engine.mixed_port = 7897;
+        store.save().unwrap();
+        let before = store.data().clone();
+        store.data_mut().engine.mixed_port = 7898;
+        // Inject a deterministic I/O failure, also when tests run as root.
+        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let store = Mutex::new(store);
+        assert!(restore_store(&store, &before).is_err());
+        assert_eq!(store.lock().unwrap().data().engine.mixed_port, 7897);
+        assert_eq!(Store::open(directory.path()).unwrap().data().engine.mixed_port, 7897);
+    }
 
     #[test]
     fn profile_name_from_path_strips_extension() {

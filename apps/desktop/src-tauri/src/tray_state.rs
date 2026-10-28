@@ -73,6 +73,16 @@ pub struct TrayMenuData {
 }
 
 impl TrayState {
+    /// Forget a previous configuration without allowing old delay callbacks
+    /// to publish into the new one (including after a subsequent begin_test).
+    pub fn invalidate_config(&mut self) {
+        let generation = self.generation.wrapping_add(1);
+        *self = Self {
+            generation,
+            ..Self::default()
+        };
+    }
+
     /// 主组已确定。
     pub fn has_group(&self) -> bool {
         !self.group.is_empty()
@@ -397,6 +407,20 @@ mod tests {
             .into_iter()
             .find(|row| row.name == name)
             .unwrap()
+    }
+
+    #[test]
+    fn new_config_discards_old_group_and_invalidates_inflight_tests() {
+        let mut state = fixture();
+        assert!(state.begin_test());
+        let old = state.generation();
+        state.invalidate_config();
+        assert!(!state.has_group());
+        assert!(state.snapshot("Nodes", "Current").rows.is_empty());
+        assert!(!state.expire_test(old));
+        assert!(state.begin_test());
+        assert_ne!(old, state.generation());
+        assert!(!state.set_test_targets(old, &["old-node".into()]));
     }
 
     #[test]
