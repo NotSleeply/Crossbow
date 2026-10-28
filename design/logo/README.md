@@ -1,18 +1,25 @@
-# Crossbow Logo 资源（v3 渐变）
+# Crossbow 品牌资产
 
-完整十字弓 Glyph（45° 构图：弩身 / 弓臂 / 弓弦 / 箭）· 2026-10-07 由 Codex 重绘。
+当前主标志：**B1「弧路」原版**，用户于 2026-10-28 确认。不是 V2 的 B1-01 细化版。Issue #178。
 
-## 主资产
-| 文件 | 用途 |
-|---|---|
-| `app-icon-gradient-v3-1024.png` / `-512.png` | App 图标母版（圆角深底 + 渐变） |
-| `app-icon-gradient-v3/icon-*.png` | 32/64/128/256/512 导出 |
-| `glyph-gradient-v3-864.png` | 渐变 Glyph · 透明底（官网 Logo） |
-| `tray-template-white-512.png` / `tray-template-black-512.png` | 菜单栏模板形状（512 母版） |
-| `tray-macos/tray-{black,white}-*.png` | 16/18/22/32/36/44/66 导出 |
-| `favicon/` | 官网 favicon 全家桶（ico + 16/32/48/192/256 + apple-touch） |
+## 当前资产
 
-## 消费点映射
-- **桌面应用图标**：`apps/desktop/src-tauri/icons/`（32/128/128@2x/icns/ico）— 由 1024 母版重生成
-- **菜单栏托盘**：`apps/desktop/src-tauri/icons/tray-icon.png`（黑色 44px，`icon_as_template(true)` 系统自适应）
-- **官网**：`apps/site/public/`（favicon 全家桶）+ `apps/site/src/assets/logo-glyph.png`（导航/页脚 Logo）
+`current/mark.svg` 是唯一矢量母版，纯色、透明背景。`current/` 保存明暗、黑白、应用图标、托盘和 favicon；manifest 记录生成结果与 SHA256。
+
+| 场景 | 正式消费点 |
+| --- | --- |
+| 桌面安装包 / Dock / Windows 应用 | `apps/desktop/src-tauri/icons/`：PNG、ICNS、ICO |
+| macOS 托盘 | `icons/tray-icon.png`：44px 黑色透明模板，系统决定明暗 |
+| Windows 托盘 | `icons/32x32.png`：靛蓝标记配浅色底，在深浅任务栏都可辨认 |
+| 桌面导航 | `apps/desktop/src/assets/logo-glyph.png`，CSS alpha mask 跟随应用主题色 |
+| 官网导航 / 页脚 | `apps/site/src/assets/logo-glyph.png` |
+| 官网 favicon / Apple touch | `apps/site/public/`，SVG favicon 跟随系统明暗 |
+| iOS AppIcon / 页面标志 | `apps/ios/Crossbow/Resources/Assets.xcassets/`：不透明 1024 AppIcon 与明暗 logo imageset |
+
+配色：浅色靛蓝 `#455ab5`，深色淡紫 `#b7b4ed`，石墨 `#242b37`，图标浅底 `#f7f8fb`。图形不依赖渐变。iOS 图标为完整不透明方形，由系统裁切；macOS/Windows 图标保留圆角外形。
+
+## 重新生成
+
+在仓库根目录运行 `node scripts/generate-brand-icons.cjs`，然后 `node scripts/verify-brand-icons.cjs`。需要工作环境提供 `sharp`，并安装桌面 Tauri CLI；可用 `CROSSBOW_SHARP_MODULE` 指定已有 sharp 模块的绝对路径。脚本通过 Tauri 官方工具生成 ICO/ICNS，不手写容器。生成过程只更新明确列出的品牌资源，不改动签名、凭据或网络设置。
+
+历史渐变 v3 文件仍保留在本目录根部及旧子目录，供追溯；正式代码已改用 B1，不再从这些历史资源生成图标。V1/V2 提案和确认稿位于 `docs/designs/2026-10-28-logo/`。

@@ -226,7 +226,14 @@ export default function App() {
           onClick={() => go("home")}
           aria-label="Crossbow"
         >
-          <img src={logoGlyph} alt="" draggable={false} />
+          <span
+            className="cb-logo-glyph"
+            aria-hidden="true"
+            style={{
+              maskImage: `url(${logoGlyph})`,
+              WebkitMaskImage: `url(${logoGlyph})`,
+            }}
+          />
           <b>Crossbow</b>
         </button>
         <nav className="cb-primary-nav" aria-label={t("studio.navigation")}>
