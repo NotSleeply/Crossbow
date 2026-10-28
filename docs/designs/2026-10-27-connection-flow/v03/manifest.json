@@ -1,0 +1,20 @@
+{
+  "title": "Crossbow 概览连接路径动效",
+  "version": "v03",
+  "date": "2026-10-28",
+  "status": "proposed",
+  "issue": 160,
+  "source_commit": "8d6da7168c6b093da0223f0c676c517b42b6d015",
+  "reference_attachment": "codex-clipboard-77addaa4-e13f-4292-8a8c-1d14479698a0.png",
+  "reference_sha256": "f4b8a3f3b69f8bf25beea0542edc6353593e3c29266b752e4316dbba236140fd",
+  "scope": "Design prototype only; no production UI changes",
+  "files": [
+    "index.html",
+    "SPEC.md",
+    "preview-light.jpg",
+    "preview-dark.jpg",
+    "manifest.json"
+  ],
+  "supersedes": "v02",
+  "reference_request": "单条传输动画结束后，间隔 2–3 秒再开始下一次；本版取 2.56 秒。"
+}

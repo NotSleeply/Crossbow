@@ -55,3 +55,10 @@ issue 状态以 GitHub 为准，本文件不重复维护 issue 列表。
 - 同一异步操作共用 operationId；独立操作使用不同标识。后端已发结果的操作不要在前端重复发。
 - 禁止 catch 后继续更新开关或提示成功。失败后保留后端真实状态，并提供脱敏详情。
 - 页面不得新增私有 toast/flash/ErrorBar 或普通提示 MessageDialog；启动前致命错误和系统授权交互保留原生兜底。
+
+## 设计稿留存约定
+
+- 用户要求每次设计稿都留存文件，不能只在聊天或临时预览服务中展示。
+- 按 `docs/designs/YYYY-MM-DD-topic/vNN/` 归档可编辑源稿、设计说明、实际预览和 manifest；动效同时保留可播放原型。
+- 新版本不覆盖旧稿，更新 `docs/designs/README.md` 索引，注明提案/确认/实现状态和关联 issue/PR。
+- 具体文件规范见 [设计稿档案](docs/designs/README.md)。保留脱敏示例，不归档凭据。
