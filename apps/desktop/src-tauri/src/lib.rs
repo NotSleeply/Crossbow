@@ -1997,6 +1997,9 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
     std::thread::spawn(move || {
         let mut failures = 0u8;
         let mut drift_strikes = 0u8;
+        let mut reestablish_count = 0u8;
+        let mut reestablish_cooldown_until = std::time::Instant::now();
+        let mut reported_giveup = false;
         let mut reported_disable_failure = false;
         loop {
             let cycle_started = std::time::Instant::now();
@@ -2005,21 +2008,79 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                 let core_status = state.core().status();
                 if !tun_enabled || core_status == CoreStatus::Starting {
                     failures = 0;
+                    drift_strikes = 0;
+                    reestablish_count = 0;
+                    reported_giveup = false;
                     reported_disable_failure = false;
                 } else {
-                    // 接管漂移（#154）：路由/系统 DNS 被 macOS 还原后，连通性
-                    // 探测可能假绿（gstatic 存在国内可达地址），显式检查接管
-                    // 本体；连续 2 次漂移即关开重建立，失败计入现有失败计数。
+                    // 接管漂移（#154）：捕获路由丢失后，连通性探测可能假绿
+                    // （gstatic 存在国内可达地址），显式检查接管本体。漂移
+                    // 持续即关开重建立（2 分钟冷却、连续 3 次后停止自动恢复
+                    // 并一次性通知），重建立周期跳过连通性探测。
+                    let mut skip_probe = false;
+                    let cooling = std::time::Instant::now() < reestablish_cooldown_until;
                     #[cfg(target_os = "macos")]
-                    let drifted = crate::tun::takeover_drift();
+                    let drifted = !cooling && crate::tun::takeover_drift();
                     #[cfg(not(target_os = "macos"))]
                     let drifted = false;
-                    if drifted {
-                        drift_strikes = drift_strikes.saturating_add(1);
-                    } else {
-                        drift_strikes = 0;
+                    if !cooling {
+                        if drifted {
+                            drift_strikes = drift_strikes.saturating_add(1);
+                        } else {
+                            drift_strikes = 0;
+                            reestablish_count = 0;
+                            reported_giveup = false;
+                        }
                     }
-                    let reestablishing = drifted && drift_strikes >= 2;
+                    if drifted && drift_strikes >= 2 {
+                        if reestablish_count >= 3 {
+                            if !reported_giveup {
+                                reported_giveup = true;
+                                skip_probe = true;
+                                let mut notice = notifications::Notice::new(
+                                    notifications::Kind::Warning,
+                                    "tun.takeoverGiveUp",
+                                    "tun-health",
+                                );
+                                notice.duration = Some(0);
+                                notice.actions = vec![notifications::Action::Diagnostics];
+                                notifications::publish(&handle, notice);
+                            }
+                        } else {
+                            eprintln!("tun takeover drift persists, re-establishing TUN");
+                            drift_strikes = 0;
+                            reestablish_count = reestablish_count.saturating_add(1);
+                            reestablish_cooldown_until = std::time::Instant::now()
+                                + std::time::Duration::from_secs(120);
+                            match crate::tun::toggle_tun(&state, false)
+                                .and_then(|()| crate::tun::toggle_tun(&state, true))
+                            {
+                                Ok(()) => {
+                                    let _ = handle.emit("tun://status", true);
+                                    let _ = handle.emit(
+                                        "sysproxy://status",
+                                        state.sysproxy.status(),
+                                    );
+                                    refresh_tray(&handle);
+                                    if reestablish_count == 1 {
+                                        let mut notice = notifications::Notice::new(
+                                            notifications::Kind::Info,
+                                            "tun.reestablished",
+                                            "tun-health",
+                                        );
+                                        notifications::publish(&handle, notice);
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!(
+                                        "tun takeover re-establish failed: {error}"
+                                    );
+                                    failures = failures.saturating_add(1);
+                                }
+                            }
+                            skip_probe = true;
+                        }
+                    }
 
                     let probe = if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
@@ -2031,29 +2092,8 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                 eprintln!("tun system proxy cleanup failed: {error}");
                             }
                         }
-                        if reestablishing {
-                            // 重建立周期跳过连通性探测：关开本身即恢复动作
-                            eprintln!("tun takeover drift persists, re-establishing TUN");
-                            drift_strikes = 0;
-                            match crate::tun::toggle_tun(&state, false)
-                                .and_then(|()| crate::tun::toggle_tun(&state, true))
-                            {
-                                Ok(()) => {
-                                    let _ = handle.emit("tun://status", true);
-                                    let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-                                    refresh_tray(&handle);
-                                    let mut notice = notifications::Notice::new(
-                                        notifications::Kind::Info,
-                                        "tun.reestablished",
-                                        "tun-health",
-                                    );
-                                    notifications::publish(&handle, notice);
-                                }
-                                Err(error) => {
-                                    eprintln!("tun takeover re-establish failed: {error}");
-                                    failures = failures.saturating_add(1);
-                                }
-                            }
+                        if skip_probe {
+                            // 重建立/放弃周期跳过连通性探测
                             Ok(())
                         } else {
                             probe_tun_network()

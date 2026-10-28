@@ -49,13 +49,14 @@ fn native_v6_default(text: &str) -> bool {
     })
 }
 
-/// TUN 接管漂移检测（#154）：TUN 声称开启时，捕获路由与系统 DNS 接管
-/// 任意缺失即视为漂移——内核重启恰逢接口变化时 macOS 会还原两者，此后
-/// 所有系统解析走路由器 DNS 被污染，且没有自愈（2026-10-27 实测 Codex
-/// 反复断连）。任一探测失败按「未漂移」处理（fail-open 保持现行为）。
+/// TUN 接管漂移检测（#154）：捕获路由在位是唯一不变量。系统 DNS 停在
+/// 路由器/公共 DNS 是健康稳态——dns-hijack any:53 会在捕获路由把 :53
+/// 查询带进 TUN 时劫持返回 fake-ip，DNS 指向哪与接管无关（把 DNS 纳入
+/// 检查曾造成永久误判漂移、TUN 每 15 秒重建立一次，#163）。
+/// netstat 失败按「在位」处理（fail-open 保持现行为）。
 #[cfg(target_os = "macos")]
 pub fn takeover_drift() -> bool {
-    !capture_route_present() || !system_dns_captures()
+    !capture_route_present()
 }
 
 /// v4 捕获路由在位：default 或分片默认路由经 TUN 接口
@@ -77,18 +78,6 @@ fn capture_route_present() -> bool {
             _ => false,
         }
     })
-}
-
-/// 系统 DNS 是否由 TUN 接管（dns-mode native 指向 198.18.0.0/30 网段）
-#[cfg(target_os = "macos")]
-fn system_dns_captures() -> bool {
-    let Ok(output) = std::process::Command::new("scutil")
-        .arg("--dns")
-        .output()
-    else {
-        return true;
-    };
-    String::from_utf8_lossy(&output.stdout).contains("198.18.0.")
 }
 
 /// 把 TUN 内核放到版本化的用户数据目录，避免更新 `.app` 时覆盖掉
