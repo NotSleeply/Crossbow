@@ -15,6 +15,8 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-29 | 概览右侧多尺寸适配 | v01 | 右侧方向已认可 / 未应用正式代码 | [原型](2026-10-29-overview-sidebar/v01/index.html) · [规格](2026-10-29-overview-sidebar/v01/SPEC.md) · [预览](2026-10-29-overview-sidebar/v01/previews/1120x734.jpg) | #189 |
+| 2026-10-29 | 概览整体布局：状态、连接路径与趋势 | v02 | 提案，待评审 | [原型](2026-10-29-overview-sidebar/v02/index.html) · [规格](2026-10-29-overview-sidebar/v02/SPEC.md) · [预览](2026-10-29-overview-sidebar/v02/previews/1120x734.jpg) | #189 |
 | 2026-10-28 | Logo 三方向六提案 | v01 | B1 已确认 | [规格](2026-10-28-logo/v01/SPEC.md) · [预览](2026-10-28-logo/v01/previews/contact-sheet.png) | #178 |
 | 2026-10-28 | B1 六种深化 | v02 | 留存，未采用 | [规格](2026-10-28-logo/v02/SPEC.md) · [预览](2026-10-28-logo/v02/previews/contact-sheet.png) | #178 |
 | 2026-10-28 | B1 原版正式品牌资产 | v03 | 已确认 / 已实现 | [规格](2026-10-28-logo/v03/SPEC.md) · [预览](2026-10-28-logo/v03/previews/brand-sheet.png) | #178 |

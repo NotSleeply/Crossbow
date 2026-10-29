@@ -1,0 +1,46 @@
+[
+  {
+    "documentOverflow": false,
+    "metricOverflow": false,
+    "railAvailable": 632,
+    "railContent": 567,
+    "railWidth": 368,
+    "viewport": [
+      1308,
+      844
+    ]
+  },
+  {
+    "documentOverflow": false,
+    "metricOverflow": false,
+    "railAvailable": 522,
+    "railContent": 486,
+    "railWidth": 325,
+    "viewport": [
+      1120,
+      734
+    ]
+  },
+  {
+    "documentOverflow": false,
+    "metricOverflow": false,
+    "railAvailable": 493,
+    "railContent": 486,
+    "railWidth": 300,
+    "viewport": [
+      926,
+      705
+    ]
+  },
+  {
+    "documentOverflow": false,
+    "metricOverflow": false,
+    "railAvailable": 400,
+    "railContent": 349,
+    "railWidth": 300,
+    "viewport": [
+      880,
+      560
+    ]
+  }
+]

@@ -1,0 +1,68 @@
+{
+  "normal": [
+    {
+      "documentOverflow": false,
+      "layoutBottom": 797,
+      "mainAvailable": 632,
+      "mainBottom": 797,
+      "metricOverflow": false,
+      "railAvailable": 632,
+      "railContent": 567,
+      "viewport": [
+        1308,
+        844
+      ]
+    },
+    {
+      "documentOverflow": false,
+      "layoutBottom": 687,
+      "mainAvailable": 522,
+      "mainBottom": 687,
+      "metricOverflow": false,
+      "railAvailable": 522,
+      "railContent": 486,
+      "viewport": [
+        1120,
+        734
+      ]
+    },
+    {
+      "documentOverflow": false,
+      "layoutBottom": 658,
+      "mainAvailable": 493,
+      "mainBottom": 658,
+      "metricOverflow": false,
+      "railAvailable": 493,
+      "railContent": 486,
+      "viewport": [
+        926,
+        705
+      ]
+    },
+    {
+      "documentOverflow": false,
+      "layoutBottom": 521,
+      "mainAvailable": 400,
+      "mainBottom": 521,
+      "metricOverflow": false,
+      "railAvailable": 400,
+      "railContent": 349,
+      "viewport": [
+        880,
+        560
+      ]
+    }
+  ],
+  "minimumWithUpdateAndStress": {
+    "available": 354,
+    "documentOverflow": false,
+    "layoutBottom": 521,
+    "mainBottom": 521,
+    "metricOverflow": false,
+    "railContent": 349,
+    "viewport": [
+      880,
+      560
+    ]
+  }
+}
