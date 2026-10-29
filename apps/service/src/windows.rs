@@ -2,7 +2,6 @@ use std::ffi::{c_void, OsStr, OsString};
 use std::io::Read;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::MetadataExt;
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
@@ -403,9 +402,8 @@ impl Broker {
                     let config = runtime.join("runtime.yaml");
                     if config.exists() { no_reparse(&config)?; }
                     std::fs::write(&config, yaml).map_err(|e|e.to_string())?;
-                    let child = std::process::Command::new(&allowed).arg("-d").arg(&runtime).arg("-f").arg(config)
-                        .current_dir(&runtime).env_remove("SAFE_PATHS").env_remove("SKIP_SAFE_PATH_CHECK")
-                        .creation_flags(CREATE_NO_WINDOW).stdout(log).stderr(stderr).spawn().map_err(|e|e.to_string())?;
+                    let child = crate::core_process::command(&allowed, &runtime, &config)?
+                        .stdout(log).stderr(stderr).spawn().map_err(|e|e.to_string())?;
                     let pid = child.id(); self.child = Some(Managed { child, owner });
                     Ok(serde_json::json!({"ok":true,"pid":pid}))
                 }

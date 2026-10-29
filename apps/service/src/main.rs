@@ -4,6 +4,8 @@
 #[cfg(any(windows, test))]
 mod policy;
 #[cfg(windows)]
+mod core_process;
+#[cfg(windows)]
 mod windows;
 
 #[cfg(windows)]
