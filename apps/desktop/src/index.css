@@ -112,28 +112,26 @@ button:not(:disabled):hover {
   box-shadow: none;
 }
 
-/* 首页更新入口：紧凑信息条，与通知浮层使用不同的常驻层级。 */
+/* A quiet update strip: one 32px row, without a nested icon tile or badge. */
 .cb-update-banner {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 46px;
-  padding: 9px 12px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 1px solid var(--cb-line);
-  border-radius: 10px;
+  border-radius: 7px;
   background: var(--cb-surface);
   color: var(--cb-text);
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 120ms,
-    background-color 120ms;
+  transition: border-color 120ms, background-color 120ms;
 }
 .cb-update-banner:hover {
   border-color: var(--cb-accent-line);
-  background: color-mix(in srgb, var(--cb-accent) 4%, var(--cb-surface));
+  background: var(--cb-surface-2);
 }
 .cb-update-banner:focus-visible {
   outline: 2px solid var(--cb-accent);
@@ -143,37 +141,39 @@ button:not(:disabled):hover {
   display: grid;
   place-items: center;
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--cb-accent-soft);
+  width: 16px;
+  height: 16px;
   color: var(--cb-accent);
 }
 .cb-update-content {
   display: flex;
   flex: 1;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 8px;
   min-width: 0;
-  line-height: 1.5;
+  overflow: hidden;
 }
 .cb-update-title {
+  flex: none;
   font-size: 12px;
   font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
 }
 .cb-update-version {
-  border-radius: 4px;
-  padding: 1px 6px;
-  background: var(--cb-accent-soft);
-  color: var(--cb-accent);
-  font-size: 10px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.cb-update-percent {
+  min-width: 0;
   color: var(--cb-text-dim);
   font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-update-percent {
+  flex: none;
+  color: var(--cb-text-dim);
+  font-size: 11px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
 .cb-update-action {
@@ -183,11 +183,10 @@ button:not(:disabled):hover {
   gap: 5px;
   color: var(--cb-accent);
   font-size: 11px;
+  line-height: 16px;
   font-weight: 500;
 }
-.cb-update-action > span {
-  display: flex;
-}
+.cb-update-action > span { display: flex; }
 .cb-progress-ring {
   display: inline-flex;
   flex: none;
@@ -1527,10 +1526,6 @@ summary:focus-visible {
   .cb-chart-head > div:first-child {
     display: block;
   }
-}
-@media (max-height: 650px) {
-  .cb-home-page > .cb-update-banner { min-height: 34px; padding: 5px 10px; }
-  .cb-home-page .cb-update-icon { width: 22px; height: 22px; }
 }
 @container home-layout (max-height: 479px) {
   .cb-home-main {
