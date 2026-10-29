@@ -127,6 +127,9 @@
 .cb-notification.progress {
   align-items: center;
   gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  margin-inline: auto;
 }
 .cb-notification-heading {
   display: flex;

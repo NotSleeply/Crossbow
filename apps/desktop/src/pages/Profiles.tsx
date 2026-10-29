@@ -182,7 +182,7 @@ export default function ProfilesPage({
             <h2>{t("studio.sources")}</h2>
             <FitItems
               items={profiles}
-              rowHeight={58}
+              rowHeight={64}
               label={t("studio.sources")}
               render={(profile) => (
                 <button
