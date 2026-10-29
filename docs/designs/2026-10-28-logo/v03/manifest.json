@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-28",
+  "version": "v03",
+  "status": "approved-implemented",
+  "issue": 178,
+  "baseline": "32970cc",
+  "selectedMaster": "v01/assets/b1.svg",
+  "input": "用户要求适配当前界面主题重做 Logo，最终确认第一轮 B1 弧路",
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "67201d1a644a5d6c9ff8057090390385d05b19bd45a42baef8f63cae9a1ecfb9"
+    },
+    {
+      "path": "brand-sheet.svg",
+      "sha256": "8f138ddf4c6ccba67d62669d1fc45d024a280ea0d45f7b1e3837a44521e53701"
+    },
+    {
+      "path": "generate-preview.cjs",
+      "sha256": "167afea65a23dacb66cdcdd6ea9ba8cada9d2b6a1626def17cf8951613673280"
+    },
+    {
+      "path": "previews/brand-sheet.png",
+      "sha256": "22127b1f6360fe96aee6258340eb58fa7e9cc6b7b3047cc8a46e847fb9dfc0e7"
+    },
+    {
+      "path": "previews/site-logo.jpg",
+      "sha256": "ecadbb608c1ea9d750a6322a5d3803df5eaf5828ef1314cb386e425f78288b9b"
+    }
+  ]
+}

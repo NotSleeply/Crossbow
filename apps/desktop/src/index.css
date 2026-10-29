@@ -615,7 +615,7 @@ summary:focus-visible {
   letter-spacing: -0.5px;
   flex: none;
 }
-.cb-wordmark img {
+.cb-wordmark .cb-logo-glyph {
   width: 28px;
   height: 28px;
 }
@@ -2782,4 +2782,17 @@ textarea:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* B1 silhouette follows the approved theme accent; no image filters or duplicate marks. */
+.cb-logo-glyph {
+  display: block;
+  flex: none;
+  background: var(--cb-accent);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
 }

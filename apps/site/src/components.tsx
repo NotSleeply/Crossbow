@@ -1,6 +1,6 @@
 import logoGlyph from "./assets/logo-glyph.png";
 
-/** 官网 Logo：v3 渐变十字弓 glyph（透明底 PNG，与 App 图标同源）。 */
+/** 官网 Logo：用户确认的 B1 弧路，与应用及托盘共享矢量母版。 */
 export function Logo({ size = 24 }: { size?: number }) {
   return (
     <img

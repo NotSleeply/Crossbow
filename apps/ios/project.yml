@@ -30,6 +30,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.richard.crossbow.ios
         PRODUCT_MODULE_NAME: CrossbowApp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: PacketTunnel
         embed: true
