@@ -156,6 +156,15 @@ export default function HomePage() {
       if (active && mounted.current) setConnCount(s.rows.length);
     });
 
+    // 速率历史预填（#181）：后端环形缓冲由托盘通道每秒喂入，与页面
+    // 存亡无关——切页回来不再从空白重画
+    void ipc
+      .trafficHistory()
+      .then((history) => {
+        if (active && mounted.current && history.length > 0) setRates(history.slice(-POINTS));
+      })
+      .catch(() => {});
+
     // Install event listeners before starting the streams so that the first
     // websocket frames after a TUN/core restart cannot race past the webview.
     const subscribe = Promise.all([un1, un2, un3, un4, un5, untun]).then(() => {

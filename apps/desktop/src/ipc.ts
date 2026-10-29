@@ -276,6 +276,7 @@ export const ipc = {
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
   coreVersion: () => invoke<string>("core_version"),
+  trafficHistory: () => invoke<{ up: number; down: number }[]>("traffic_history"),
   proxiesSnapshot: () => invoke<GroupView[]>("proxies_snapshot"),
   selectProxy: (group: string, name: string) =>
     invoke<void>("select_proxy", { group, name }),
