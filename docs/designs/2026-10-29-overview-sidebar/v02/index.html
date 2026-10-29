@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crossbow · 概览多尺寸设计</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#e5e8ef;color:#242b37;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header{padding:18px 24px;background:white;border-bottom:1px solid #cdd2df;display:flex;align-items:center;gap:22px;flex-wrap:wrap}h1{font-size:16px;margin:0}header p{margin:4px 0 0;color:#596777;font-size:12px}nav{display:flex;gap:6px;flex-wrap:wrap}button{font:inherit;cursor:pointer;border:1px solid #cdd2df;border-radius:7px;padding:8px 12px;background:white;color:inherit}button[aria-pressed=true]{background:#293345;color:white;border-color:#293345}button:hover{border-color:#455ab5}button:focus-visible,a:focus-visible{outline:2px solid #455ab5;outline-offset:3px}.options{display:flex;gap:12px;align-items:center;font-size:12px}.options label{display:flex;gap:4px;align-items:center;cursor:pointer}main{padding:20px 24px}.caption{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 12px;color:#596777;font-size:12px}.caption a{color:#455ab5}.stage{margin:auto;position:relative}iframe{display:block;border:1px solid #cdd2df;border-radius:12px;transform-origin:top left;background:#eef0f5}.notes{max-width:1100px;margin:20px auto;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}.notes b{font-size:13px}.notes p{color:#596777;line-height:1.7;font-size:12px;margin-top:6px}@media(max-width:700px){header,main{padding:16px}.notes{grid-template-columns:1fr;gap:0}}
+</style>
+<header>
+<div>
+<h1>概览整体 · 响应式设计提案 V2</h1>
+<p>v02 · 模拟数据 · 不连接内核，不修改网络设置</p>
+</div>
+<nav aria-label="窗口尺寸">
+<button data-size="1308,844" aria-pressed="true">大窗 1308 × 844</button>
+<button data-size="1120,734" aria-pressed="false">中窗 1120 × 734</button>
+<button data-size="926,705" aria-pressed="false">小窗 926 × 705</button>
+<button data-size="880,560" aria-pressed="false">最小 880 × 560</button>
+</nav>
+<div class="options">
+<label>
+<input id="banner" type="checkbox">更新提示</label>
+<label>
+<input id="stress" type="checkbox">长名称 / 大数值</label>
+<label>
+<input id="dark" type="checkbox">深色</label>
+</div>
+</header>
+<main>
+<div class="caption">
+<span id="caption">
+</span>
+<a id="full" target="_blank" href="screen.html">单独打开，按实际窗口缩放 ↗</a>
+</div>
+<div class="stage">
+<iframe title="Crossbow 概览响应式原型" src="screen.html">
+</iframe>
+</div>
+<section class="notes">
+<div>
+<b>01　左侧有一条明确的阅读顺序</b>
+<p>先确认连接状态，再看设备 → 规则 → 出口的路径，接着执行选择节点、查看连接，最后观察流量变化。</p>
+</div>
+<div>
+<b>02　连接线与三个图标对齐</b>
+<p>三个节点等分空间，图标、名称、说明各自成行。连接线贯穿图标中心，长节点名省略，不挤压路径。</p>
+</div>
+<div>
+<b>03　右侧保持 V1 方案</b>
+<p>自然卡片高度、两列速率与三列累计指标保持不变。整体仍适配最小 880×560，可切换压力场景查看。</p>
+</div>
+</section>
+</main>
+<script>
+let size=[1308,844];const frame=document.querySelector('iframe'),stage=document.querySelector('.stage');function update(){const q=new URLSearchParams();for(const id of ['banner','stress','dark'])if(document.getElementById(id).checked)q.set(id,'1');const url='screen.html?'+q;frame.src=url;document.getElementById('full').href=url;fit()}function fit(){const scale=Math.min(1,(document.documentElement.clientWidth-48)/size[0]);frame.style.width=size[0]+'px';frame.style.height=size[1]+'px';frame.style.transform=`scale(${scale})`;stage.style.width=size[0]*scale+'px';stage.style.height=size[1]*scale+'px';document.getElementById('caption').textContent=`窗口内容区 ${size[0]} × ${size[1]} CSS px · 预览缩放 ${Math.round(scale*100)}%`;}document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{size=b.dataset.size.split(',').map(Number);document.querySelectorAll('[data-size]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));fit()});document.querySelectorAll('input').forEach(x=>x.onchange=update);addEventListener('resize',fit);fit();
+</script>
+</html>

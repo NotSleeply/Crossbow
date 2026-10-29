@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-29",
+  "version": "v04",
+  "status": "implemented",
+  "issue": 189,
+  "pr": 190,
+  "baseline": "c4725510f11e6e8e126a3de2d7d287c7db2fefac",
+  "request": "更新提示降低高度并精简样式",
+  "sourceZipSha256": "8f08dac3c68cffff8edd1c1b64e99be7c35af92a1779edf5b44629bdb73e963e",
+  "files": [
+    "SPEC.md",
+    "index.html",
+    "main.tsx",
+    "previews/1120x734-ready.jpg",
+    "previews/880x560-ready.jpg",
+    "previews/state-checks.json",
+    "previews/states-dark-en.jpg",
+    "previews/states-light.jpg",
+    "source.zip",
+    "vite.config.mts"
+  ]
+}

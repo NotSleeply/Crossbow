@@ -18,7 +18,7 @@ import { ConnectionFlow } from "../components/ConnectionFlow";
 
 const POINTS = 120;
 
-/** 首页（v2）：状态卡 + KPI + 平滑速率曲线 + 配置档案。 */
+/** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
 export default function HomePage() {
   const t = useT();
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -146,7 +146,10 @@ export default function HomePage() {
     const un3 = ipc.onCoreMode(setMode);
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!active || !mounted.current) return;
-      if ((Number.isFinite(up) && up > 0) || (Number.isFinite(down) && down > 0)) {
+      if (
+        (Number.isFinite(up) && up > 0) ||
+        (Number.isFinite(down) && down > 0)
+      ) {
         setLastTrafficAt(Date.now());
       }
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
@@ -161,7 +164,8 @@ export default function HomePage() {
     void ipc
       .trafficHistory()
       .then((history) => {
-        if (active && mounted.current && history.length > 0) setRates(history.slice(-POINTS));
+        if (active && mounted.current && history.length > 0)
+          setRates(history.slice(-POINTS));
       })
       .catch(() => {});
 
@@ -254,6 +258,18 @@ export default function HomePage() {
       ? t("home.sysproxyOn")
       : t("home.sysproxyOff");
 
+  const statusHint = !activeId
+    ? t("studio.noSource")
+    : !running && routingEnabled
+      ? t("studio.coreUnavailable")
+      : tun.enabled && proxy.enabled
+        ? t("studio.bothHint")
+        : tun.enabled
+          ? t("studio.tunHint")
+          : proxy.enabled
+            ? t("studio.proxyHint")
+            : t("studio.enableHint");
+
   const go = (page: string) =>
     window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
   return (
@@ -262,18 +278,25 @@ export default function HomePage() {
       {update && <UpdateBanner update={update} onOpen={() => go("settings")} />}
       <div className="cb-home-layout">
         <section className="cb-home-main">
-          <div className="cb-home-overview">
-            <div className="cb-home-lead">
+          <div className="cb-home-lead">
+            <div className="cb-home-status">
               <div className="cb-status-line">
                 <i
                   className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
                 />
                 {coreText(t, core)}
               </div>
-              <h2>{statusTitle}</h2>
-              <p>
-                {t("home.activeProfile")} {active?.name ?? t("home.none")}
-              </p>
+              <span className="cb-home-mode">{t(`mode.${mode}`)}</span>
+            </div>
+            <h2>{statusTitle}</h2>
+            <p>{statusHint}</p>
+          </div>
+          <section className="cb-home-path" aria-label={t("studio.path")}>
+            <div className="cb-path-heading">
+              <h3>{t("studio.path")}</h3>
+              <span title={outbound?.chain.join(" → ")}>
+                {outbound?.chain[0] ?? t(`mode.${mode}`)}
+              </span>
             </div>
             <ConnectionFlow
               enabled={
@@ -282,10 +305,14 @@ export default function HomePage() {
               lastTrafficAt={lastTrafficAt}
             >
               <div>
-                <Icon name="device" size={26} />
+                <span className="cb-route-mark">
+                  <Icon name="device" size={32} />
+                </span>
                 <b>{t("studio.thisDevice")}</b>
                 <small>
-                  {navigator.userAgent.includes("Windows") ? "Windows" : "macOS"}
+                  {navigator.userAgent.includes("Windows")
+                    ? "Windows"
+                    : "macOS"}
                 </small>
               </div>
               <span
@@ -294,8 +321,18 @@ export default function HomePage() {
                 aria-hidden="true"
               />
               <div>
-                <Icon name="sliders" size={26} />
-                <b>{t("studio.routing")}</b>
+                <span className="cb-route-mark">
+                  <Icon name="sliders" size={32} />
+                </span>
+                <b>
+                  {t(
+                    mode === "direct"
+                      ? "studio.directRouting"
+                      : mode === "global"
+                        ? "studio.globalRouting"
+                        : "studio.routing",
+                  )}
+                </b>
                 <small>{t(`mode.${mode}`)}</small>
               </div>
               <span
@@ -304,7 +341,9 @@ export default function HomePage() {
                 aria-hidden="true"
               />
               <div>
-                <Icon name="globe" size={26} />
+                <span className="cb-route-mark">
+                  <Icon name="globe" size={32} />
+                </span>
                 <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
                 <small>
                   {outbound?.delay_ms != null
@@ -315,123 +354,174 @@ export default function HomePage() {
                 </small>
               </div>
             </ConnectionFlow>
-            <div className="cb-home-actions">
-              <button className="cb-btn primary" onClick={() => go("proxies")}>
-                <Icon name="bolt" />
-                {t("studio.chooseNode")}
-              </button>
-              <button className="cb-btn" onClick={() => go("connections")}>
-                <Icon name="cube" />
-                {t("studio.viewConnections")}
-              </button>
-            </div>
-          </div>
-          <div className="cb-chart-only">
-            <Sparkline rates={rates} />
-            <div className="cb-chart-foot">
-              <span>{t("studio.lastMinute")}</span>
-              <span>{t("studio.now")}</span>
-            </div>
-          </div>
-        </section>
-        <aside className="cb-home-side">
-          <section className="cb-takeover-panel">
-            <h3>{t("studio.takeover")}</h3>
-            <div className="cb-takeover-row" title={t("studio.proxyHint")}>
-              <div>
-                <b>{t("studio.proxy")}</b>
-                <p>{t("studio.proxyHint")}</p>
-              </div>
-              <button
-                className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
-                role="switch"
-                aria-label={t("studio.proxy")}
-                aria-checked={proxy.enabled}
-                onClick={toggleProxy}
-                disabled={busy || !activeId}
-              />
-            </div>
-            <div className="cb-takeover-row" title={t("studio.tunHint")}>
-              <div>
-                <b>{t("settings.tun")}</b>
-                <p>{t("studio.tunHint")}</p>
-              </div>
-              <button
-                className={`cb-toggle ${tun.enabled ? "on" : ""}`}
-                role="switch"
-                aria-label={t("settings.tun")}
-                aria-checked={tun.enabled}
-                onClick={toggleTun}
-                disabled={busy || !activeId}
-              />
-            </div>
-            <div className="cb-mode-control">
-              <p>{t("studio.mode")}</p>
-              <div className="cb-seg">
-                {CORE_MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    className={mode === m.id ? "on" : ""}
-                    aria-pressed={mode === m.id}
-                    onClick={() =>
-                      notify.run(
-                        "core-mode",
-                        notificationText("core.mode"),
-                        () => ipc.setCoreMode(m.id),
-                      )
-                    }
-                  >
-                    {t(`mode.${m.id}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p className="cb-control-note">{t("studio.independent")}</p>
           </section>
-          <button className="cb-source-strip" onClick={() => go("profiles")}>
-            <Icon name="document" size={26} />
-            <div>
-              <b>{active?.name ?? t("home.none")}</b>
-              <p>
-                {t("studio.currentSource")} ·{" "}
-                {active?.kind === "remote"
-                  ? t("profiles.remote")
-                  : t("profiles.local")}
-              </p>
-            </div>
-            <Icon name="chevron" size={17} />
-          </button>
-          <section className="cb-rate-card">
+          <div className="cb-home-actions">
+            <button className="cb-btn primary" onClick={() => go("proxies")}>
+              <Icon name="bolt" />
+              {t("studio.chooseNode")}
+            </button>
+            <button className="cb-btn" onClick={() => go("connections")}>
+              <Icon name="cube" />
+              {t("studio.viewConnections")}
+            </button>
+          </div>
+          <section className="cb-chart-only" aria-label={t("studio.trend")}>
             <div className="cb-chart-head">
               <div>
-                <h3>{t("home.rate")}</h3>
-                <p>{t("studio.lastMinute")} · KB/s</p>
+                <h3>{t("studio.trend")}</h3>
+                <span>{t("studio.lastMinute")} · KB/s</span>
               </div>
-              <div className="cb-rate-pair">
+              <div className="cb-chart-legend">
                 <span>
-                  ↓ <b>{fmtBytes(latest?.down ?? 0)}</b>/s
+                  <i className="down" />
+                  {t("studio.download")}
                 </span>
                 <span>
-                  ↑ <b>{fmtBytes(latest?.up ?? 0)}</b>/s
+                  <i className="up" />
+                  {t("studio.upload")}
                 </span>
               </div>
             </div>
-            <div className="cb-session-strip">
-              <span>
-                {t("studio.totalDown")} <b>{fmtBytes(totals.down)}</b>
-              </span>
-              <span>
-                {t("studio.totalUp")} <b>{fmtBytes(totals.up)}</b>
-              </span>
-              <span>
-                {t("home.connections")} <b>{connCount ?? "—"}</b>
-              </span>
+            <Sparkline rates={rates} />
+            <div className="cb-chart-foot">
+              <span>{t("studio.secondsAgo", { seconds: 120 })}</span>
+              <span>{t("studio.secondsAgo", { seconds: 60 })}</span>
+              <span>{t("studio.now")}</span>
             </div>
           </section>
-          {!activeId && (
-            <p className="cb-control-note">{t("studio.noSource")}</p>
-          )}
-        </aside>
+        </section>
+        <div className="cb-home-side-slot">
+          <aside className="cb-home-side">
+            <section className="cb-takeover-panel">
+              <div className="cb-home-card-title">
+                <h3>{t("studio.takeover")}</h3>
+                <details
+                  className="cb-home-help"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape")
+                      event.currentTarget.open = false;
+                  }}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget))
+                      event.currentTarget.open = false;
+                  }}
+                >
+                  <summary aria-label={t("studio.takeoverHelp")}>?</summary>
+                  <div>
+                    <p>{t("studio.proxyHint")}</p>
+                    <p>{t("studio.tunHint")}</p>
+                    <p>{t("studio.independent")}</p>
+                  </div>
+                </details>
+              </div>
+              <div className="cb-takeover-row" title={t("studio.proxyHint")}>
+                <div>
+                  <b>{t("studio.proxy")}</b>
+                  <p>{t("studio.proxyHint")}</p>
+                </div>
+                <button
+                  className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
+                  role="switch"
+                  aria-label={t("studio.proxy")}
+                  aria-checked={proxy.enabled}
+                  onClick={toggleProxy}
+                  disabled={busy || !activeId}
+                />
+              </div>
+              <div className="cb-takeover-row" title={t("studio.tunHint")}>
+                <div>
+                  <b>{t("settings.tun")}</b>
+                  <p>{t("studio.tunHint")}</p>
+                </div>
+                <button
+                  className={`cb-toggle ${tun.enabled ? "on" : ""}`}
+                  role="switch"
+                  aria-label={t("settings.tun")}
+                  aria-checked={tun.enabled}
+                  onClick={toggleTun}
+                  disabled={busy || !activeId}
+                />
+              </div>
+              <div className="cb-mode-control">
+                <p>{t("studio.mode")}</p>
+                <div
+                  className="cb-seg"
+                  role="group"
+                  aria-label={t("studio.mode")}
+                >
+                  {CORE_MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      className={mode === m.id ? "on" : ""}
+                      aria-pressed={mode === m.id}
+                      onClick={() =>
+                        notify.run(
+                          "core-mode",
+                          notificationText("core.mode"),
+                          () => ipc.setCoreMode(m.id),
+                        )
+                      }
+                    >
+                      {t(`mode.${m.id}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+            <button
+              className="cb-source-strip"
+              title={active?.name ?? t("studio.noSource")}
+              onClick={() => go("profiles")}
+            >
+              <Icon name="document" size={26} />
+              <div>
+                <b>{active?.name ?? t("home.none")}</b>
+                <p>
+                  {t("studio.currentSource")} ·{" "}
+                  {active?.kind === "remote"
+                    ? t("profiles.remote")
+                    : t("profiles.local")}
+                </p>
+              </div>
+              <Icon name="chevron" size={17} />
+            </button>
+            <section className="cb-rate-card" aria-label={t("home.rate")}>
+              <div className="cb-home-card-title">
+                <h3>{t("home.rate")}</h3>
+                <span className="cb-rate-state">
+                  <i
+                    className={`cb-dot ${core.state === "Running" ? "ok" : "idle"}`}
+                  />
+                  {coreText(t, core)}
+                </span>
+              </div>
+              <div className="cb-rate-pair">
+                <div>
+                  <span>↓ {t("studio.download")}</span>
+                  <RateValue bytes={latest?.down ?? 0} />
+                </div>
+                <div>
+                  <span>↑ {t("studio.upload")}</span>
+                  <RateValue bytes={latest?.up ?? 0} />
+                </div>
+              </div>
+              <div className="cb-session-strip">
+                <div>
+                  <span>{t("studio.totalDown")}</span>
+                  <b>{fmtBytes(totals.down)}</b>
+                </div>
+                <div>
+                  <span>{t("studio.totalUp")}</span>
+                  <b>{fmtBytes(totals.up)}</b>
+                </div>
+                <div>
+                  <span>{t("home.connections")}</span>
+                  <b>{connCount?.toLocaleString() ?? "—"}</b>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
       </div>
     </div>
   );
@@ -457,11 +547,23 @@ export function PageHead({
   );
 }
 
-/** 平滑贝塞尔双线 sparkline（对齐设计稿 v2）。 */
+function RateValue({ bytes }: { bytes: number }) {
+  const [value, unit] = fmtBytes(bytes).split(" ");
+  return (
+    <p>
+      <b>{value}</b>
+      <small>{unit}/s</small>
+    </p>
+  );
+}
+
+/** 120 秒同一时间轴；短历史留空，不拉伸已有样本。 */
 function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   const W = 640;
   const H = 120;
-  const max = Math.max(1, ...rates.map((r) => Math.max(r.up, r.down)));
+  const peak = Math.max(1024, ...rates.map((r) => Math.max(r.up, r.down)));
+  const stepKB = 10 ** Math.floor(Math.log10(peak / 1024));
+  const max = Math.ceil(peak / 1024 / stepKB) * stepKB * 1024;
   const smooth = (key: "up" | "down") => {
     if (rates.length < 2) return "";
     const step = W / (POINTS - 1);
@@ -481,36 +583,50 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   };
   const upLine = smooth("up");
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      className="cb-traffic-plot"
-    >
-      <g style={{ stroke: "var(--cb-line)" }}>
-        <line x1="0" y1="30" x2={W} y2="30" />
-        <line x1="0" y1="60" x2={W} y2="60" />
-        <line x1="0" y1="90" x2={W} y2="90" />
-      </g>
-      {upLine && (
-        <>
+    <div className="cb-chart-drawing">
+      <div className="cb-chart-axis" aria-hidden="true">
+        {[1, 2 / 3, 1 / 3, 0].map((ratio) => (
+          <span key={ratio}>
+            {new Intl.NumberFormat("en", {
+              notation: "compact",
+              maximumSignificantDigits: 2,
+            }).format((max * ratio) / 1024)}
+          </span>
+        ))}
+      </div>
+      <svg
+        aria-hidden="true"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="cb-traffic-plot"
+      >
+        <g style={{ stroke: "var(--cb-line)" }}>
+          <line x1="0" y1="6" x2={W} y2="6" />
+          <line x1="0" y1="42.7" x2={W} y2="42.7" />
+          <line x1="0" y1="79.3" x2={W} y2="79.3" />
+          <line x1="0" y1="116" x2={W} y2="116" />
+        </g>
+        {upLine && (
+          <>
+            <path
+              d={upLine}
+              fill="none"
+              style={{ stroke: "var(--cb-up)" }}
+              strokeWidth="1.6"
+            />
+          </>
+        )}
+        {smooth("down") && (
           <path
-            d={upLine}
+            d={smooth("down")}
             fill="none"
-            style={{ stroke: "var(--cb-up)" }}
-            strokeWidth="1.6"
+            style={{ stroke: "var(--cb-down)" }}
+            strokeWidth="1.4"
+            opacity=".9"
           />
-        </>
-      )}
-      {smooth("down") && (
-        <path
-          d={smooth("down")}
-          fill="none"
-          style={{ stroke: "var(--cb-down)" }}
-          strokeWidth="1.4"
-          opacity=".9"
-        />
-      )}
-    </svg>
+        )}
+      </svg>
+    </div>
   );
 }
 

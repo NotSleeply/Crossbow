@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-29",
+  "version": "v02",
+  "status": "proposal-awaiting-review",
+  "issue": 189,
+  "baseline": "bf1f3bc76c8073554c19e091b35c932d85693c14",
+  "inputs": "用户提供的三种窗口截图；右侧V1认可后要求继续设计左侧",
+  "files": [
+    "SPEC.md",
+    "assets/mark.svg",
+    "index.html",
+    "preview.js",
+    "previews/1120x734.jpg",
+    "previews/1308x844.jpg",
+    "previews/880x560-update-stress.jpg",
+    "previews/880x560.jpg",
+    "previews/926x705-dark.jpg",
+    "previews/926x705.jpg",
+    "previews/layout-checks.json",
+    "screen.html",
+    "style.css"
+  ]
+}

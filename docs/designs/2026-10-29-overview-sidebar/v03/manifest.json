@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-29",
+  "version": "v03",
+  "status": "implemented-awaiting-pr-review",
+  "issue": 189,
+  "baseline": "bf1f3bc76c8073554c19e091b35c932d85693c14",
+  "inputs": [
+    "approved V2",
+    "reduce flow end margins",
+    "bounded per-card growth before external whitespace"
+  ],
+  "productionSources": [
+    "apps/desktop/src/pages/Home.tsx",
+    "apps/desktop/src/index.css",
+    "apps/desktop/src/i18n.ts"
+  ],
+  "sourceZipSha256": "e602ceffe186e4a8bba5d5908a4c5136252ee590b738fd680f3371ca0810a6ba",
+  "files": [
+    "SPEC.md",
+    "index.html",
+    "main.tsx",
+    "mock-tauri.ts",
+    "previews/1120x734-update.jpg",
+    "previews/1308x844-update.jpg",
+    "previews/1440x1000-update.jpg",
+    "previews/880x560-update.jpg",
+    "previews/926x705-update.jpg",
+    "previews/layout-checks.json",
+    "previews/minimum-empty.jpg",
+    "previews/minimum-english-stress.jpg",
+    "previews/minimum-windows.jpg",
+    "previews/small-dark.jpg",
+    "source.zip",
+    "vite.config.mts"
+  ]
+}

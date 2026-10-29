@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crossbow · 概览整体布局 V2</title>
+<link rel="stylesheet" href="style.css">
+<body>
+<div class="app">
+<header class="topbar">
+<a class="brand" href="#">
+<img src="assets/mark.svg" alt="">
+<b>Crossbow</b>
+</a>
+<nav aria-label="主导航">
+<button class="selected">概览</button>
+<button>节点</button>
+<button>监测</button>
+<button>配置</button>
+<button>设置</button>
+</nav>
+<div class="top-actions">
+<button class="diagnosis">
+<span data-icon="pulse">
+</span>诊断</button>
+<button class="bell" aria-label="通知">
+<span data-icon="bell">
+</span>
+</button>
+</div>
+</header>
+<main class="workspace">
+<div class="page-head">
+<div>
+<h1>连接工作台</h1>
+<p>当前连接、接管方式与流量，在这里确认。</p>
+</div>
+<span class="proposal">整体布局 V2 · 模拟数据</span>
+</div>
+<div class="update" hidden>新版本已就绪 <span>可在设置中查看更新</span>
+<button aria-label="关闭更新提示">×</button>
+</div>
+<div class="layout">
+<section class="main-column">
+<div class="lead">
+<div class="lead-status">
+<span class="running">
+<i>
+</i>
+<span id="running">运行中</span>
+</span>
+<span class="core-note">mihomo</span>
+</div>
+<h2 id="status">TUN 与系统代理运行中</h2>
+<p id="lead-detail">两种接管方式已开启，连接由 Crossbow 管理。</p>
+</div>
+<section class="path-section" aria-label="连接路径">
+<div class="path-heading">
+<h3>连接路径</h3>
+<span>自动选择</span>
+</div>
+<div class="flow">
+<div class="endpoint">
+<span class="node-mark">
+<span data-icon="monitor">
+</span>
+</span>
+<b>这台电脑</b>
+<small>macOS</small>
+</div>
+<div class="track">
+</div>
+<div class="endpoint">
+<span class="node-mark">
+<span data-icon="sliders">
+</span>
+</span>
+<b>规则分流</b>
+<small id="route-copy">规则模式</small>
+</div>
+<div class="track">
+</div>
+<div class="endpoint outbound">
+<span class="node-mark">
+<span data-icon="globe">
+</span>
+</span>
+<b title="日本 · 东京 Hy2">日本 · 东京 Hy2</b>
+<small>84 ms</small>
+</div>
+</div>
+</section>
+<div class="actions">
+<button class="primary">
+<span data-icon="bolt">
+</span>选择节点</button>
+<button>
+<span data-icon="cube">
+</span>查看连接</button>
+</div>
+<div class="trend">
+<div class="chart-head">
+<div>
+<b>流量趋势</b>
+<span class="chart-range">最近 120 秒 · KB/s</span>
+</div>
+<div class="legend">
+<span>
+<i class="down-dot">
+</i>下载</span>
+<span>
+<i class="up-dot">
+</i>上传</span>
+</div>
+</div>
+<svg viewBox="0 0 640 130" preserveAspectRatio="none" role="img" aria-label="模拟最近120秒下载与上传流量">
+<g class="grid">
+<path d="M0 10H640M0 46H640M0 82H640M0 118H640"/>
+</g>
+<g class="axis">
+<text x="0" y="8">60</text>
+<text x="0" y="44">40</text>
+<text x="0" y="80">20</text>
+<text x="0" y="116">0</text>
+</g>
+<path id="down-line" class="download-line"/>
+<path id="up-line" class="upload-line"/>
+</svg>
+<div class="chart-foot">
+<span>120 秒前</span>
+<span>60 秒前</span>
+<span>现在</span>
+</div>
+</div>
+</section>
+<div class="rail-slot">
+<aside class="rail">
+<section class="controls card">
+<div class="card-title">
+<h3>接管方式</h3>
+<button class="help" aria-label="接管方式说明" aria-expanded="false">?</button>
+</div>
+<div class="control-row">
+<div>
+<b>系统代理</b>
+<p>让使用系统代理的应用经此连接</p>
+</div>
+<button class="toggle on" role="switch" aria-checked="true" aria-label="系统代理">
+</button>
+</div>
+<div class="control-row">
+<div>
+<b>TUN 模式</b>
+<p>通过虚拟网卡接管系统流量</p>
+</div>
+<button class="toggle on" role="switch" aria-checked="true" aria-label="TUN 模式">
+</button>
+</div>
+<div class="mode">
+<p>路由模式</p>
+<div class="segments" aria-label="路由模式">
+<button aria-pressed="false">直连</button>
+<button aria-pressed="true">规则</button>
+<button aria-pressed="false">全局</button>
+</div>
+</div>
+<div class="help-panel" hidden>系统代理：让读取系统代理的应用经此连接。<br>TUN：通过虚拟网卡接管系统流量。<br>两种方式可同时开启，也可分别关闭。</div>
+</section>
+<button class="source card" title="当前配置">
+<span data-icon="document">
+</span>
+<div>
+<b data-profile>
+</b>
+<p>当前配置 · 本地</p>
+</div>
+<span data-icon="chevron">
+</span>
+</button>
+<section class="rates card">
+<div class="card-title">
+<h3>实时速率</h3>
+<span class="live">
+<i>
+</i>实时</span>
+</div>
+<div class="rate-grid">
+<div>
+<span>↓ 下载</span>
+<p>
+<b id="down">
+</b>
+<small id="down-unit">
+</small>
+</p>
+</div>
+<div>
+<span>↑ 上传</span>
+<p>
+<b id="up">
+</b>
+<small id="up-unit">
+</small>
+</p>
+</div>
+</div>
+<div class="session-grid">
+<div>
+<span>本次下载</span>
+<b id="total-down">
+</b>
+</div>
+<div>
+<span>本次上传</span>
+<b id="total-up">
+</b>
+</div>
+<div>
+<span>活动连接</span>
+<b id="connections">
+</b>
+</div>
+</div>
+</section>
+</aside>
+</div>
+</div>
+</main>
+<footer>
+<span>
+<i>
+</i>运行中 · mihomo v1.19.32</span>
+<span>设计预览 · 非真实连接</span>
+</footer>
+</div>
+<dialog>
+<h2>交互预览</h2>
+<p>这是布局设计稿，操作不会影响实际网络。</p>
+<button autofocus>返回预览</button>
+</dialog>
+<script src="preview.js">
+</script>
+</body>
+</html>
