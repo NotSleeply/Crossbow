@@ -75,6 +75,9 @@ pub struct AppState {
     app: AppHandle,
     /// 更新设置（#28：自动检查/自动下载）。
     update: Mutex<crossbow_core::model::UpdateSettings>,
+    /// 速率历史环形缓冲（#181）：托盘通道每秒喂入，与页面存亡无关；
+    /// 首页挂载时一次取回预填「最近 120 秒」图表。
+    traffic_history: Mutex<std::collections::VecDeque<TrafficSample>>,
 }
 
 /// macOS Tahoe 会按 NSWindow 外观绘制浅色外沿。同步窗口外观到应用主题，
@@ -172,10 +175,46 @@ fn profile_group_order(handle: &AppHandle) -> Vec<String> {
 /// Native liveness check also recognizes exited Windows processes with retained handles.
 fn pid_alive(pid: u32) -> bool { core_manager::pid_is_alive(pid) }
 
+/// 单秒速率采样（字节/秒）。
+#[derive(serde::Serialize, Clone, Copy)]
+pub struct TrafficSample {
+    pub up: u64,
+    pub down: u64,
+}
+
+/// 速率历史环形缓冲容量 = 前端图表窗口（最近 120 秒）。
+const TRAFFIC_HISTORY_LEN: usize = 120;
+
 impl AppState {
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
     pub fn core(&self) -> CoreManager {
         self.core_slot.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 追加一秒采样，超出窗口即淘汰最旧（#181）
+    pub fn traffic_history_push(&self, up: u64, down: u64) {
+        let mut ring = self.traffic_history.lock().unwrap_or_else(|e| e.into_inner());
+        ring.push_back(TrafficSample { up, down });
+        while ring.len() > TRAFFIC_HISTORY_LEN {
+            ring.pop_front();
+        }
+    }
+
+    /// 快照（旧 → 新）。内核停止时清空，图表诚实回到空态。
+    pub fn traffic_history_snapshot(&self) -> Vec<TrafficSample> {
+        self.traffic_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    pub fn traffic_history_clear(&self) {
+        self.traffic_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -1991,6 +2030,25 @@ fn handle_crossbow_url(app: &AppHandle, raw: &str) {
     });
 }
 
+/// 首页速率图预填（#181）：返回最近 120 秒采样（旧 → 新）
+#[derive(serde::Serialize)]
+struct TrafficHistoryEntry {
+    up: u64,
+    down: u64,
+}
+
+#[tauri::command]
+fn traffic_history(state: State<AppState>) -> Vec<TrafficHistoryEntry> {
+    state
+        .traffic_history_snapshot()
+        .into_iter()
+        .map(|sample| TrafficHistoryEntry {
+            up: sample.up,
+            down: sample.down,
+        })
+        .collect()
+}
+
 #[tauri::command]
 fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
     state.sysproxy.status()
@@ -2163,6 +2221,11 @@ fn sync_tray_traffic(handle: &AppHandle) {
             let _ = state
                 .ws
                 .subscribe_traffic_tray(port, &secret, move |up, down| {
+                    // 速率历史环形缓冲（#181）：托盘通道常驻每秒必推，与页面
+                    // 存亡无关，切页期间也持续采样
+                    if let Some(state) = h.try_state::<AppState>() {
+                        state.traffic_history_push(up, down);
+                    }
                     // macOS：富文本双行速率（借道底层 NSStatusItem）；其余平台无操作
                     #[cfg(target_os = "macos")]
                     tray_speed::set_speed(&h, up, down);
@@ -2174,6 +2237,7 @@ fn sync_tray_traffic(handle: &AppHandle) {
         }
     }
     state.ws.unsubscribe_tray_traffic();
+    state.traffic_history_clear();
     #[cfg(target_os = "macos")]
     tray_speed::clear(handle);
 }
@@ -3476,6 +3540,7 @@ pub fn run() {
                 app: app.handle().clone(),
                 update: Mutex::new(update_settings_init),
                 node_menu: Mutex::new(tray_state::TrayState::default()),
+                traffic_history: Mutex::new(std::collections::VecDeque::new()),
             });
 
             #[cfg(any(target_os = "macos", windows))]
@@ -3594,6 +3659,7 @@ pub fn run() {
             set_core_mode,
             subscribe_traffic,
             unsubscribe_traffic,
+            traffic_history,
             subscribe_connections,
             unsubscribe_connections,
             subscribe_logs,
