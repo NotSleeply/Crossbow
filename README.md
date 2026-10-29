@@ -4,7 +4,7 @@ Crossbow 是面向 macOS 和 Windows 的开源代理客户端，使用 Tauri 2�
 mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
 并在托盘 / 菜单栏显示实时速率。
 
-**当前版本：** [v0.10.1](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.10.1)。
+**当前版本：** [v0.11.3](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.11.3)。
 提供 macOS Apple Silicon DMG 和 Windows x64 安装包；iOS 目前为工程骨架。
 Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
 
@@ -12,8 +12,8 @@ Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请�
 
 | 平台 | 安装包 | 说明 |
 |---|---|---|
-| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.10.1/Crossbow_0.10.1_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
-| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.10.1/Crossbow_0.10.1_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
+| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.3/Crossbow_0.11.3_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
+| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.3/Crossbow_0.11.3_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
 
 下载与更新内容以 [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest) 为准；
 应用内可在「设置 → 软件更新」检查更新，下载后请按界面提示完成安装。
@@ -24,8 +24,8 @@ Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请�
 3. 本应用的 TUN 与系统代理可同时开启、独立控制；TUN 首次开启需要管理员授权。
    请先关闭其他代理或 VPN 的 TUN，避免路由冲突。
 
-v0.10.1 修复 Windows 原生标题栏主题、后台命令闪窗、系统代理配置与刷新，以及低频日志延迟显示，
-并补齐交互光标与焦点反馈；同时包含升级重启时旧内核交接及首页状态同步修复。
+v0.11.3 重设计通知中心，支持未读与待处理筛选、清除已完成和撤销；主题、语言等可直接感知的成功操作不再重复通知，真实失败仍保留。
+同时优化概览的多尺寸布局、更新信息条与日志筛选工具栏，统一节点国旗资源，并修复 Windows 标题栏按钮显示。
 Windows GUI 与真实网络仍需实机验收，步骤见
 [Windows 测试说明](docs/WINDOWS-TESTING.md)。显式代理能访问而浏览器不能访问时，请检查浏览器是否使用系统代理。
 
