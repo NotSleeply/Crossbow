@@ -26,3 +26,5 @@
 | 2026-10-27 | 概览连接路径数据传输动效 | v01 | 提案 | [原型](2026-10-27-connection-flow/v01/index.html) · [规格](2026-10-27-connection-flow/v01/SPEC.md) | #160 |
 | 2026-10-28 | 概览连接路径单条快速传输 | v02 | 提案 | [原型](2026-10-27-connection-flow/v02/index.html) · [规格](2026-10-27-connection-flow/v02/SPEC.md) | #160 |
 | 2026-10-28 | 概览连接路径单条传输 / 间隔 2.56 秒 | v03 | 提案 | [原型](2026-10-27-connection-flow/v03/index.html) · [规格](2026-10-27-connection-flow/v03/SPEC.md) | #160 |
+
+| 2026-10-29 | 日志筛选工具栏 | v01 | 已实现 / 待确认 | [规格](2026-10-29-log-toolbar/v01/SPEC.md) · [浅色预览](2026-10-29-log-toolbar/v01/previews/light.png) · [深色预览](2026-10-29-log-toolbar/v01/previews/dark.png) | #193 |

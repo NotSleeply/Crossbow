@@ -2,6 +2,7 @@ import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
+import "./Logs.css";
 
 const MAX_LINES = 2000;
 const RENDER_TAIL = 500;
@@ -261,36 +262,41 @@ export default function LogsPage() {
 
   return (
     <div className="cb-logs-page">
-      <div className="cb-log-toolbar flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      <div className="cb-log-toolbar">
+        <h1 className="cb-log-title">
           {t("logs.title")}
         </h1>
+        <div className="cb-log-levels">
         {LEVELS.map((lv) => (
-          <label
+          <button
             key={lv}
-            className="flex items-center gap-1 text-xs"
-            style={{ color: "var(--cb-text-dim)" }}
+            type="button"
+            className="cb-log-level"
+            aria-pressed={enabled[lv]}
+            onClick={() => setEnabled((prev) => ({ ...prev, [lv]: !prev[lv] }))}
+            style={{ "--log-level-color": lv === "info" ? "var(--cb-accent)" : LEVEL_COLOR[lv] } as React.CSSProperties}
           >
-            <input
-              type="checkbox"
-              checked={enabled[lv]}
-              onChange={(e) =>
-                setEnabled({ ...enabled, [lv]: e.target.checked })
-              }
-            />
+            <span className="cb-log-level-dot" aria-hidden="true" />
             {lv}
-          </label>
+          </button>
         ))}
-        <div className="flex-1" />
+        </div>
+        <div className="cb-log-actions">
+        <label className="cb-log-search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder={t("logs.keyword")}
-          className="cb-input cb-selectable w-56"
+          aria-label={t("logs.keyword")}
+          className="cb-selectable"
         />
-        <button onClick={() => setLines([])} className="cb-btn">
+        </label>
+        <button type="button" onClick={() => { setLines([]); pendingRef.current.clear(); }} className="cb-log-clear" disabled={lines.length === 0}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg>
           {t("logs.clear")}
         </button>
+        </div>
       </div>
 
       <div

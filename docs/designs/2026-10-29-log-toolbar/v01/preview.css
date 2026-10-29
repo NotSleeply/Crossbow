@@ -1,0 +1,10 @@
+body { background: var(--cb-chrome); padding: 0 24px; }
+.mock-nav { display: flex; align-items: center; gap: 34px; height: 90px; color: var(--cb-text-dim); font-size: 15px; }
+.mock-nav strong { font-size: 25px; color: var(--cb-text); margin-right: 18px; letter-spacing: -1px; }
+.mock-nav b { color: var(--cb-text); }
+.mock-panel { display: flex; flex-direction: column; height: calc(100vh - 124px); padding: 0 26px 20px; background: var(--cb-bg); border: 1px solid var(--cb-line); border-radius: 20px; }
+.mock-tabs { display: flex; align-items: center; gap: 30px; height: 50px; min-height: 50px; margin-bottom: 20px; border-bottom: 1px solid var(--cb-line); font-size: 14px; color: var(--cb-text-dim); }
+.mock-tabs b { display: flex; align-items: center; height: 100%; border-bottom: 2px solid var(--cb-accent); color: var(--cb-text); }
+.cb-logs-page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+footer { color: var(--cb-faint); text-align: right; font-size: 11px; padding: 6px; }
+@media(max-width:600px) { body { padding: 0 12px; } .mock-nav { gap: 16px; height: 68px; font-size: 13px; } .mock-nav strong { font-size: 20px; margin-right: 0; } .mock-nav span:nth-last-child(-n+2) { display:none; } .mock-panel { padding: 0 14px 14px; height: calc(100vh - 100px); } }

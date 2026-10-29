@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-29",
+  "version": "v01",
+  "status": "implemented-pending-review",
+  "issue": 193,
+  "baseline": "bf1f3bc76c8073554c19e091b35c932d85693c14",
+  "input": "User screenshot: crowded native level checkboxes beside log heading",
+  "files": {
+    "index.html": "43f6e65f40685dd54f0c53de3eaa84d3ce048b17a28bfd369a73f9cde3f484aa",
+    "preview.tsx": "3a2adc3b117858cc93836bd29ae042decc6bb3e6a045b2bbd45d3d95570ad9e9",
+    "preview.css": "49aacb71276fe5c98dfd01867354c13ac64711a13fbee0f8a5aed77f0894ebdf",
+    "SPEC.md": "0b6218fba79e254839474ca057d1af85f7f5ea69cd0324ca2f7a1a1ef009a3d3",
+    "source/Logs.css": "f3f5abfba783e727c9fab71964b58b8407fd2afb7f2a14ef35aa20cda8242197",
+    "source/Logs.tsx": "b151d7aa2944c9bdef92e46a59fa11b9df2f51b8531bdca20d0f8a2b37dfcb7c",
+    "previews/dark.png": "02c905343588f0dd62fc537992c983ebbea44df3fd23ea6fc83ac39feed3243d",
+    "previews/narrow.png": "295743568c30dd2f5d65416b4d842239456df406f1f09f500ad025c8507d8ece",
+    "previews/compact.png": "f0eec16d122dd2fd397f71b47d00f1fb911ecab3427253ddcbae5dee20ce2f5f",
+    "previews/light.png": "7c8c40561589cfbae26b5d08e7dfec33cbc0793b68d1dec3dd94af0be614f8a1",
+    "previews/toolbar-light.png": "875fa48f22cb577db9973dc316870ffcb0422956bf24e900b6ac1724fcceda70"
+  }
+}
