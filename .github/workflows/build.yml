@@ -108,6 +108,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Node flag display tests
+        run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs
+
       - name: Desktop backend tests
         run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
