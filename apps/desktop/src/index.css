@@ -1420,6 +1420,7 @@ summary:focus-visible {
 }
 .cb-diag-results {
   border-top: 1px solid var(--cb-line);
+  margin-top: 12px;
 }
 .cb-diag-results > section {
   border: 0;
@@ -1432,7 +1433,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 0 24px;
+  padding: 10px 0 24px;
 }
 .cb-diag-summary > span {
   width: 56px;
