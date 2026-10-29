@@ -1,0 +1,145 @@
+{
+  "updateBannerSizes": [
+    {
+      "available": 573,
+      "cards": [
+        264,
+        76,
+        209
+      ],
+      "group": 573,
+      "layoutBottom": 799,
+      "mainBottom": 799,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        1308,
+        844
+      ]
+    },
+    {
+      "available": 485,
+      "cards": [
+        227,
+        63,
+        172
+      ],
+      "group": 485,
+      "layoutBottom": 695,
+      "mainBottom": 695,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        1120,
+        734
+      ]
+    },
+    {
+      "available": 457,
+      "cards": [
+        192,
+        76,
+        173
+      ],
+      "group": 457,
+      "layoutBottom": 666,
+      "mainBottom": 666,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        926,
+        705
+      ]
+    },
+    {
+      "available": 350,
+      "cards": [
+        156,
+        44,
+        137
+      ],
+      "group": 350,
+      "layoutBottom": 521,
+      "mainBottom": 521,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        880,
+        560
+      ]
+    },
+    {
+      "available": 718,
+      "cards": [
+        296,
+        76,
+        224
+      ],
+      "group": 628,
+      "layoutBottom": 952,
+      "mainBottom": 952,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        1440,
+        1000
+      ]
+    }
+  ],
+  "states": [
+    {
+      "name": "minimum-english-stress",
+      "horizontalOverflow": false,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        880,
+        560
+      ]
+    },
+    {
+      "name": "small-dark",
+      "horizontalOverflow": false,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        926,
+        705
+      ]
+    },
+    {
+      "name": "minimum-empty",
+      "horizontalOverflow": false,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        880,
+        560
+      ]
+    },
+    {
+      "name": "minimum-windows",
+      "horizontalOverflow": false,
+      "metricOverflow": [],
+      "pageScroll": false,
+      "railOverflow": false,
+      "viewport": [
+        880,
+        560
+      ]
+    }
+  ],
+  "interactions": [
+    "help click and Escape",
+    "proxy toggle updates status",
+    "mode change updates routing label"
+  ]
+}
