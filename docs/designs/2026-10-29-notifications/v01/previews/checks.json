@@ -1,0 +1,93 @@
+{
+  "interactions": [
+    {
+      "case": "mark-all-read",
+      "pending": "2",
+      "rows": 4,
+      "unreadDots": 0
+    },
+    {
+      "case": "clear-completed-keeps-issues",
+      "pending": "2",
+      "rows": 2,
+      "undoVisible": true
+    },
+    {
+      "case": "undo",
+      "rows": 4
+    },
+    {
+      "case": "repeat-merged",
+      "repeat": "订阅更新失败×4",
+      "rows": 4
+    },
+    {
+      "case": "recover-in-place",
+      "pending": "1",
+      "recovered": "TUN 连接已恢复",
+      "rows": 4
+    },
+    {
+      "case": "attention-filter",
+      "rows": 1
+    },
+    {
+      "case": "theme-silent",
+      "dark": true,
+      "rows": 4,
+      "toasts": 0
+    },
+    {
+      "case": "escape-restores-focus",
+      "bellFocused": true,
+      "closed": true
+    },
+    {
+      "case": "close-progress-does-not-cancel-or-resurrect",
+      "taskRows": 1,
+      "taskTitle": "更新已下载，可安装",
+      "toasts": 0
+    },
+    {
+      "case": "empty-small",
+      "viewport": [
+        390,
+        720
+      ],
+      "rows": 0,
+      "open": true
+    }
+  ],
+  "layout": [
+    {
+      "listScroll": true,
+      "panel": {
+        "bottom": 548,
+        "left": 448,
+        "right": 856,
+        "top": 63,
+        "width": 408
+      },
+      "viewport": [
+        880,
+        560
+      ],
+      "withinViewport": true
+    },
+    {
+      "listScroll": false,
+      "panel": {
+        "bottom": 591.5,
+        "left": 16,
+        "right": 374,
+        "top": 58,
+        "width": 358
+      },
+      "viewport": [
+        390,
+        720
+      ],
+      "withinViewport": true
+    }
+  ]
+}
