@@ -1,0 +1,20 @@
+{
+  "selectC": {
+    "dark": "assets/c-mark.svg",
+    "dock": "assets/c-app-icon.svg",
+    "label": "C · 浓郁靛蓝 #3448D8",
+    "selected": "true"
+  },
+  "desktop": {
+    "height": 1000,
+    "loaded": true,
+    "overflow": false,
+    "selection": "B · 鲜明靛蓝 #3F52CF",
+    "width": 1120
+  },
+  "narrow": {
+    "columns": "110.664px 110.664px 110.664px",
+    "overflow": false,
+    "width": 390
+  }
+}
