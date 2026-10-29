@@ -959,6 +959,7 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
 #[tauri::command]
 async fn update_profile(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Profile, String> {
     let profile = refresh_profile_blocking(&state, &id)?;
+    notifications::resolve(&app, &format!("profile-auto-update-{id}"));
     refresh_tray(&app);
     Ok(profile)
 }
@@ -1263,9 +1264,10 @@ async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Re
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = app;
         let _ = enable;
-        Err("TUN 模式即将支持".into())
+        let result = Err("TUN 模式即将支持".into());
+        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        result
     }
 }
 
@@ -2552,6 +2554,9 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
 
                     match probe {
                         Ok(_) => {
+                            if !skip_probe && !drifted {
+                                notifications::resolve(&handle, "tun-health");
+                            }
                             failures = 0;
                             reported_disable_failure = false;
                         }
@@ -3628,6 +3633,10 @@ pub fn run() {
             notifications::notification_snapshot,
             notifications::notification_dismiss,
             notifications::notification_pause,
+            notifications::notification_mark_read,
+            notifications::notification_resolve,
+            notifications::notification_clear_completed,
+            notifications::notification_restore_completed,
             notifications::notification_action,
             notifications::notification_ack_navigation,
             notifications::notification_resize,

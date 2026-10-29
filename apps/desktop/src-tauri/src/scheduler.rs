@@ -100,6 +100,7 @@ fn tick(app: &AppHandle, retry: &mut RetryState) {
         match result {
             Ok(_) => {
                 retry.fails.remove(&id);
+                crate::notifications::resolve(app, &format!("profile-auto-update-{id}"));
             }
             Err(e) => {
                 let entry = retry.fails.entry(id.clone()).or_insert((0, 0));

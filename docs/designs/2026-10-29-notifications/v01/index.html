@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Crossbow · 通知中心设计 V1</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="#"
+        ><img src="assets/mark.svg" alt="" /><strong>Crossbow</strong></a
+      >
+      <nav aria-label="主导航">
+        <button>概览</button><button>节点</button><button>监测</button
+        ><button>配置</button><button class="active">设置</button>
+      </nav>
+      <div class="header-tools">
+        <span class="demo-tag">设计提案 · 模拟数据</span
+        ><button
+          class="bell icon-button"
+          aria-label="最近通知"
+          aria-expanded="true"
+          aria-controls="notification-center"
+        >
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 9h18c0-2-3-3-3-9M10 21h4"
+            /></svg
+          ><i hidden></i>
+        </button>
+      </div>
+    </header>
+    <main class="paper">
+      <aside class="settings-nav">
+        <p>偏好设置</p>
+        <button>网络与内核</button><button class="selected">外观</button
+        ><button>日志</button><button>应用与更新</button>
+      </aside>
+      <section class="settings">
+        <h1>设置</h1>
+        <h2>外观</h2>
+        <div class="setting-row">
+          <div>
+            <b>主题</b>
+            <p>外观会立即应用</p>
+          </div>
+          <div class="segmented" aria-label="主题">
+            <button data-theme="light" aria-pressed="true">浅色</button
+            ><button data-theme="dark" aria-pressed="false">深色</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <b>语言 / Language</b>
+            <p>页面语言直接切换，不发送成功通知</p>
+          </div>
+          <select id="language" aria-label="语言">
+            <option value="zh">简体中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div class="test-controls">
+          <div class="test-heading">
+            <h2>交互预览</h2>
+            <span>所有操作仅作用于设计稿</span>
+          </div>
+          <p>
+            切换外观后，通知数量保持不变。试试下面几个事件，查看合并、恢复和清理规则。
+          </p>
+          <div class="scenario-buttons">
+            <button id="repeat">模拟重复故障</button
+            ><button id="recover">模拟网络恢复</button
+            ><button id="download">模拟后台下载</button
+            ><button id="empty">查看空状态</button
+            ><button id="reset">恢复样例</button>
+          </div>
+          <p id="feedback" role="status">
+            当前样例包含待处理问题与重要任务记录。
+          </p>
+        </div>
+        <div class="policy-preview">
+          <h2>什么值得打扰你</h2>
+          <dl>
+            <div>
+              <dt>界面已说明结果</dt>
+              <dd>外观、语言、节点切换成功：静默</dd>
+            </div>
+            <div>
+              <dt>有明确的后续动作</dt>
+              <dd>导入失败、更新就绪：按场景提醒</dd>
+            </div>
+            <div>
+              <dt>网络发生重要变化</dt>
+              <dd>TUN 自动关闭、内核异常：主动提醒</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </main>
+    <footer class="app-footer">
+      <span><i></i>运行中 · mihomo v1.19.32</span><span>通知设计 V1</span>
+    </footer>
+    <section
+      id="notification-center"
+      class="notification-center"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="center-title"
+    >
+      <header class="center-header">
+        <div>
+          <h2 id="center-title">最近通知</h2>
+          <p id="center-subtitle"></p>
+        </div>
+        <button class="icon-button close-center" aria-label="关闭最近通知">
+          <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </header>
+      <div class="center-toolbar">
+        <div class="tabs" role="tablist" aria-label="通知筛选">
+          <button
+            role="tab"
+            id="all-tab"
+            aria-controls="notice-list"
+            aria-selected="true"
+            data-filter="all"
+          >
+            全部</button
+          ><button
+            role="tab"
+            id="attention-tab"
+            aria-controls="notice-list"
+            aria-selected="false"
+            data-filter="attention"
+          >
+            待处理 <span id="attention-count"></span>
+          </button>
+        </div>
+        <button class="text-button" id="read-all">全部已读</button>
+      </div>
+      <div
+        id="notice-list"
+        class="notice-list"
+        role="tabpanel"
+        aria-labelledby="all-tab"
+        tabindex="0"
+      ></div>
+      <footer class="center-footer">
+        <span id="retention">本次会话 · 最多 50 条</span
+        ><button id="clear-completed" class="text-button">清除已完成</button>
+      </footer>
+      <div id="undo-strip" class="undo-strip" hidden>
+        <span></span><button class="text-button">撤销</button>
+      </div>
+    </section>
+    <div class="toast-host" aria-live="polite" aria-atomic="true"></div>
+    <script src="prototype.js"></script>
+  </body>
+</html>

@@ -22,6 +22,7 @@ export default function OverridePanel({
   const [nameDraft, setNameDraft] = useState("");
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const active = profiles.find((p) => p.id === activeId);
 
   const refresh = useCallback(async () => {
@@ -35,7 +36,6 @@ export default function OverridePanel({
   const create = async (kind: OverrideKind) => {
     if (!newName.trim()) return;
     setCreating(true);
-    notify.start("override-create", t("ov.title"));
     try {
       const def = await ipc.createOverride(newName.trim(), kind);
       setNewName("");
@@ -43,7 +43,7 @@ export default function OverridePanel({
       setEditingId(def.id);
       setDraft(def.content);
       onChanged();
-      notify.success(t("ov.title"), "override-create");
+      void notify.resolve("override-create");
     } catch (e) {
       notify.error(e, "override-create");
     } finally {
@@ -57,19 +57,22 @@ export default function OverridePanel({
    *                     → 成功：清除错误并热重启应用
    */
   const save = async (id: string, content: string) => {
-    notify.start("override-save", t("ov.title"));
+    if (savingId) return;
+    setSavingId(id);
     try {
       await ipc.updateOverride(id, content);
       await ipc.validateOverrides();
       await ipc.applyOverrides();
       setEditingId(null);
-      notify.success(t("ov.title"), "override-save");
+      void notify.resolve(`override-save-${id}`);
       await refresh();
       onChanged();
     } catch (e) {
-      notify.error(e, "override-save");
+      notify.error(e, `override-save-${id}`);
       await refresh(); // 拉取 last_error 展示 ⚠
       onChanged();
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -79,9 +82,9 @@ export default function OverridePanel({
     try {
       await ipc.updateOverride(id, undefined, name.trim());
       await refresh();
-      notify.success(t("profiles.rename"), "override-rename");
+      void notify.resolve(`override-rename-${id}`);
     } catch (e) {
-      notify.error(e, "override-rename");
+      notify.error(e, `override-rename-${id}`);
     }
   };
 
@@ -89,11 +92,11 @@ export default function OverridePanel({
     try {
       await ipc.removeOverride(id);
       setEditingId(null);
-      notify.success(t("ov.title"), "override-remove");
+      void notify.resolve(`override-remove-${id}`);
       await refresh();
       onChanged();
     } catch (e) {
-      notify.error(e, "override-remove");
+      notify.error(e, `override-remove-${id}`);
     }
   };
 
@@ -102,9 +105,9 @@ export default function OverridePanel({
     try {
       await ipc.toggleOverrideBinding(activeId, oid, bound);
       onChanged();
-      notify.success(t("ov.title"), "override-bind");
+      void notify.resolve(`override-bind-${activeId}-${oid}`);
     } catch (e) {
-      notify.error(e, "override-bind");
+      notify.error(e, `override-bind-${activeId}-${oid}`);
     }
   };
 
@@ -213,10 +216,15 @@ export default function OverridePanel({
                         .then(async () => {
                           await refresh();
                           onChanged();
-                          notify.success(t("ov.enabled"), "override-enabled");
+                          void notify.resolve(
+                            `override-enabled-${selected.id}`,
+                          );
                         })
                         .catch((error) =>
-                          notify.error(error, "override-enabled"),
+                          notify.error(
+                            error,
+                            `override-enabled-${selected.id}`,
+                          ),
                         )
                     }
                   />
@@ -269,6 +277,8 @@ export default function OverridePanel({
                 </button>
                 <button
                   className="cb-btn primary"
+                  disabled={savingId !== null}
+                  aria-busy={savingId === selected.id}
                   onClick={() =>
                     save(
                       selected.id,
@@ -276,7 +286,7 @@ export default function OverridePanel({
                     )
                   }
                 >
-                  {t("ov.save")}
+                  {savingId === selected.id ? "…" : t("ov.save")}
                 </button>
               </div>
             </div>

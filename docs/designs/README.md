@@ -15,6 +15,8 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-29 | 通知中心与操作反馈降噪：正式实现 | v02 | 已实现，待 PR 评审 | [规格/运行](2026-10-29-notifications/v02/SPEC.md) · [源快照](2026-10-29-notifications/v02/source.zip) · [预览](2026-10-29-notifications/v02/previews/center-light.jpg) · [验证](2026-10-29-notifications/v02/previews/checks.json) | #196 |
+| 2026-10-29 | 通知中心与分级降噪策略 | v01 | 已确认，正式实现见 v02 | [原型](2026-10-29-notifications/v01/index.html) · [规格](2026-10-29-notifications/v01/SPEC.md) · [策略矩阵](2026-10-29-notifications/v01/POLICY.md) · [预览](2026-10-29-notifications/v01/previews/center-light.jpg) | #196 |
 | 2026-10-29 | 更新提示信息条：统一32px高度 | v04 | 已实现，待 PR 合并 | [规格](2026-10-29-overview-sidebar/v04/SPEC.md) · [源快照](2026-10-29-overview-sidebar/v04/source.zip) · [预览](2026-10-29-overview-sidebar/v04/previews/1120x734-ready.jpg) | #189 / #190 |
 | 2026-10-29 | 概览 V2 正式实现：连接路径收边与卡片高度上限 | v03 | 已实现，待 PR 合并 | [规格/复现方式](2026-10-29-overview-sidebar/v03/SPEC.md) · [源文件快照](2026-10-29-overview-sidebar/v03/source.zip) · [预览](2026-10-29-overview-sidebar/v03/previews/1120x734-update.jpg) | #189 |
 | 2026-10-29 | 概览右侧多尺寸适配 | v01 | 右侧方向已认可 / 未应用正式代码 | [原型](2026-10-29-overview-sidebar/v01/index.html) · [规格](2026-10-29-overview-sidebar/v01/SPEC.md) · [预览](2026-10-29-overview-sidebar/v01/previews/1120x734.jpg) | #189 |

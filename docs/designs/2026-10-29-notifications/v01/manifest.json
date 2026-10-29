@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-29",
+  "version": "v01",
+  "status": "approved-for-implementation",
+  "issue": 196,
+  "baseline": "a1cd0e88f519f0991e670f0829fc43e82b437539",
+  "inputs": "用户要求基于main重做通知中心并减少可直接感知的成功通知；原型已获确认",
+  "files": [
+    "POLICY.md",
+    "SPEC.md",
+    "assets/mark.svg",
+    "index.html",
+    "previews/background-task.jpg",
+    "previews/center-390x720.jpg",
+    "previews/center-880x560.jpg",
+    "previews/center-dark.jpg",
+    "previews/center-light.jpg",
+    "previews/checks.json",
+    "previews/empty-small.jpg",
+    "prototype.js",
+    "style.css"
+  ]
+}

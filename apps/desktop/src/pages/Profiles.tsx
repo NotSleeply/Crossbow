@@ -106,7 +106,12 @@ export default function ProfilesPage({
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
     try {
-      await notify.run(`profile-${key}`, t("profiles.title"), fn);
+      await notify.run(`profile-${key}`, t("profiles.title"), fn, undefined, {
+        feedback: /^(update|activate|remove|interval|rename)-/.test(key)
+          ? "error-only"
+          : "task",
+        titleKey: "profiles.title",
+      });
       await refresh();
     } finally {
       setBusy(null);

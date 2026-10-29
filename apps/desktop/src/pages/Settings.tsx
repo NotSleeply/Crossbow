@@ -46,6 +46,7 @@ export default function SettingsPage({
   const [logsRetention, setLogsRetention] = useState(7);
   const [autoCheck, setAutoCheck] = useState(true);
   const [autoDownload, setAutoDownload] = useState(false);
+  const [updateChecked, setUpdateChecked] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const updateCheckInFlight = useRef(false);
@@ -144,7 +145,18 @@ export default function SettingsPage({
     if (saving.current.has(key)) return;
     saving.current.add(key);
     try {
-      const result = await notify.run(`setting-${key}`, title, task, success);
+      const result = await notify.run(`setting-${key}`, title, task, success, {
+        feedback: "error-only",
+        titleKey:
+          (
+            {
+              logs: "settings.logsSave",
+              retention: "settings.logsRetention",
+              "auto-check": "settings.autoCheck",
+              "auto-download": "settings.autoDownload",
+            } as Record<string, string>
+          )[key] ?? `settings.${key}`,
+      });
       if (result.ok) commit();
       else await load();
     } finally {
@@ -156,7 +168,7 @@ export default function SettingsPage({
     if (updateCheckInFlight.current) return;
     updateCheckInFlight.current = true;
     setUpdateChecking(true);
-    notify.start("update-check", t("settings.updateChecking"));
+
     try {
       const version = await ipc.updateCheckNow();
       const state = await ipc.updateStateGet();
@@ -166,12 +178,8 @@ export default function SettingsPage({
             ? { version, notes: null, downloaded: false, progress: null }
             : null),
       );
-      notify.success(
-        version
-          ? t("settings.newVersion", { v: version })
-          : t("settings.upToDate"),
-        "update-check",
-      );
+      setUpdateChecked(true);
+      void notify.resolve("update-check");
     } catch (error) {
       notify.error(
         String(error) === "UPDATE_CHECK_TIMEOUT"
@@ -369,12 +377,8 @@ export default function SettingsPage({
                   try {
                     await ipc.setTun(v);
                     setTun(await ipc.tunStatus());
-                  } catch (e) {
-                    notify.error(
-                      e,
-                      "tun-switch",
-                      t(v ? "settings.tunFailed" : "settings.tunOffFailed"),
-                    );
+                  } catch {
+                    // setTun publishes its result in the backend.
                   } finally {
                     await load();
                     setTunBusy(false);
@@ -600,7 +604,9 @@ export default function SettingsPage({
                           100,
                       )}%`
                     : t("settings.newVersion", { v: updateState.version })
-                : undefined
+                : updateChecked
+                  ? t("settings.upToDate")
+                  : undefined
             }
           >
             <div className="flex max-w-[240px] flex-col items-end gap-1.5">

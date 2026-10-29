@@ -1979,36 +1979,6 @@ summary:focus-visible {
   width: auto;
   font-size: 12px;
 }
-.cb-notification-history-panel {
-  left: auto !important;
-  right: 20px;
-  top: 88px;
-  bottom: auto !important;
-  background: var(--cb-floating) !important;
-}
-.cb-notification {
-  background: var(--cb-floating) !important;
-  padding: 16px !important;
-  box-shadow: none;
-}
-.cb-notification-viewport {
-  top: 100px !important;
-}
-.cb-notification-viewport.standalone {
-  top: 0 !important;
-}
-.cb-notification-title {
-  font-size: 14px !important;
-  line-height: 22px !important;
-  font-weight: 550 !important;
-}
-.cb-notification.history {
-  box-shadow: none !important;
-}
-.cb-notification .cb-notification-close {
-  width: 28px !important;
-  height: 28px !important;
-}
 .cb-paper .text-\[10px\],
 .cb-paper .text-\[10\.5px\],
 .cb-paper .text-\[11px\],
