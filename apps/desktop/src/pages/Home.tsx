@@ -1,3 +1,5 @@
+import NodeName from "../components/NodeName";
+import { nodeNameText } from "../components/nodeFlags";
 import { notify, notificationText } from "../notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -294,8 +296,8 @@ export default function HomePage() {
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
               <h3>{t("studio.path")}</h3>
-              <span title={outbound?.chain.join(" → ")}>
-                {outbound?.chain[0] ?? t(`mode.${mode}`)}
+              <span title={outbound?.chain.map(nodeNameText).join(" → ")}>
+                <NodeName name={outbound?.chain[0] ?? t(`mode.${mode}`)} />
               </span>
             </div>
             <ConnectionFlow
@@ -344,7 +346,7 @@ export default function HomePage() {
                 <span className="cb-route-mark">
                   <Icon name="globe" size={32} />
                 </span>
-                <b title={outbound?.node}>{outbound?.node ?? "—"}</b>
+                <b title={outbound?.node ? nodeNameText(outbound.node) : undefined}><NodeName name={outbound?.node ?? "—"} /></b>
                 <small>
                   {outbound?.delay_ms != null
                     ? outbound.delay_ms > 0

@@ -1,3 +1,4 @@
+import NodeName from "../components/NodeName";
 import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
@@ -418,7 +419,7 @@ export default function LogsPage() {
                             }
                       }
                     >
-                      {parsed.outbound}
+                      <NodeName name={parsed.outbound} />
                     </span>
                   </span>
                 </div>

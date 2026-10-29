@@ -1,3 +1,5 @@
+import NodeName from "../components/NodeName";
+import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type GroupView, type NodeView } from "../ipc";
@@ -269,7 +271,7 @@ export default function ProxiesPage() {
                   }
                   onClick={() => setGroupName(group.name)}
                 >
-                  <span>{group.name}</span>
+                  <span><NodeName name={group.name} /></span>
                   <small>{group.kind}</small>
                 </button>
               ))}
@@ -381,14 +383,14 @@ function GroupCard({
   return (
     <section className="cb-node-group">
       <div className="mb-2.5 flex items-baseline gap-2.5">
-        <b className="text-[13px] font-semibold">{group.name}</b>
+        <b className="text-[13px] font-semibold"><NodeName name={group.name} /></b>
         <span className="cb-micro">{group.kind}</span>
         <span
           className="cb-group-current cb-mono ml-auto text-[11px]"
-          title={group.now ?? undefined}
+          title={group.now ? nodeNameText(group.now) : undefined}
           style={{ color: "var(--cb-accent)" }}
         >
-          {t("proxies.now")} → {group.now ?? "—"}
+          {t("proxies.now")} → <NodeName name={group.now ?? "—"} />
         </span>
         <button
           className={`cb-btn flex items-center gap-1.5 ${testing ? "opacity-60" : ""}`}
@@ -419,7 +421,7 @@ function GroupCard({
                 color: "var(--cb-text-dim)",
               }}
             >
-              {n.name}
+              <NodeName name={n.name} />
               {n.alive && (n.delay_ms ?? 0) > 0 ? ` · ${n.delay_ms}ms` : ""}
             </span>
           ))}
@@ -490,7 +492,7 @@ function GroupCard({
         minWidth={185}
         maxColumns={3}
         rowHeight={60}
-        label={group.name}
+        label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
           const cls = delayClass(n.delay_ms);
@@ -529,8 +531,8 @@ function GroupCard({
               )}
               <button
                 className="cb-node-test absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-md border border-[var(--cb-line)] bg-[var(--cb-surface)] text-[10px] opacity-0 transition-opacity hover:text-[var(--cb-accent)] group-hover:opacity-100 group-focus-within:opacity-100"
-                title={`${t("proxies.testNode")} ${n.name}`}
-                aria-label={`${t("proxies.testNode")} ${n.name}`}
+                title={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
+                aria-label={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onTestNode(n.name);
@@ -555,9 +557,9 @@ function GroupCard({
               </button>
               <div
                 className="pointer-events-none truncate pr-5 text-[13px] font-medium"
-                title={n.name}
+                title={nodeNameText(n.name)}
               >
-                {n.name}
+                <NodeName name={n.name} />
               </div>
               <div className="cb-node-bottom pointer-events-none mt-1.5 flex items-center gap-1.5">
                 <span className="cb-node-kind">{n.kind}</span>

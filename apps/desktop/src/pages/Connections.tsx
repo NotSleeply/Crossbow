@@ -1,3 +1,5 @@
+import NodeName from "../components/NodeName";
+import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import VirtualList from "../components/VirtualList";
@@ -216,8 +218,8 @@ function Row({ row, onClose }: { row: ConnRow; onClose: () => void }) {
       <span className="truncate" title={row.rule}>
         {row.rule}
       </span>
-      <span className="truncate" title={row.chains}>
-        {row.chains}
+      <span className="truncate" title={nodeNameText(row.chains)}>
+        <NodeName name={row.chains} />
       </span>
       <span className="flex items-center gap-1.5 truncate">
         <ProcessAvatar name={row.process} size={14} />
