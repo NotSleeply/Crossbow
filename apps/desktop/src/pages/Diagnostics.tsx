@@ -83,7 +83,6 @@ export default function DiagnosticsPage() {
             </span>
             <div>
               <h2>{allOk ? t("diag.allOk") : t("diag.title")}</h2>
-              <p>{t("diag.hint")}</p>
             </div>
           </div>
           {results.map((r) => (
