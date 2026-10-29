@@ -1936,9 +1936,11 @@ summary:focus-visible {
 .cb-log-scroll > .cb-log-grid {
   min-width: 850px;
 }
+/* 用 padding 而非 margin：相邻兄弟的 margin 会折叠（取 max），页头已有
+   28px 下边距会吞掉追加的间距——#194 首轮修复「看起来没变化」即此因 */
 .cb-diag-results {
   border-top: 1px solid var(--cb-line);
-  margin-top: 12px;
+  padding-top: 24px;
 }
 .cb-diag-results > section {
   border: 0;
