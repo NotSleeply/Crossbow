@@ -2680,14 +2680,14 @@ fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
         };
         #[cfg(target_os = "macos")]
         if missing > 0 {
-            run_tray_delay_test(&h, false);
+            run_tray_delay_test(&h);
         }
     });
 }
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
 #[cfg(target_os = "macos")]
-fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
+fn run_tray_delay_test(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else {
         return;
     };
@@ -2699,8 +2699,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
         tray.generation()
     };
     update_tray_node_menu(handle, true);
-    let operation = format!("tray-latency-{generation}");
-    if notify_user { notifications::publish(handle, notifications::Notice::new(notifications::Kind::Progress, "tray.latency", &operation)); }
 
     // 并发池测速：每个节点独立请求，完成一个就立即原地刷新菜单——
     // 不再等全组返回（组延迟接口是一次请求测全部，节点多时末尾节点
@@ -2727,11 +2725,10 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
                 }
             }
         }
-        if let Err(error) = &client {
+        if client.is_err() {
             let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
             if tray.generation() == generation { tray.end_test(); }
             drop(tray);
-            if notify_user { notifications::result(&h, &operation, "tray.latency", Err(error.clone())); }
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
             return;
@@ -2745,7 +2742,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
             drop(tray);
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
-            if notify_user { notifications::result(&h, &operation, "tray.latency", Ok(())); }
             return;
         }
 
@@ -2758,7 +2754,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
 
         // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
         let watchdog_handle = h.clone();
-        let watchdog_operation = operation.clone();
         let watchdog_secs = 20 + (total as u64).div_ceil(10) * 6;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(watchdog_secs));
@@ -2770,7 +2765,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
                 return; // 已完成或新一轮测速已接管
             }
             drop(tray);
-            if notify_user { notifications::result(&watchdog_handle, &watchdog_operation, "tray.latencyTimeout", Err("Latency test exceeded its deadline".into())); }
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&watchdog_handle, &data.title, &data.rows, data.testing);
         });
@@ -2821,7 +2815,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
 
         // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
         let mut done = 0usize;
-        let mut failures = 0usize;
         for (node, result) in rx {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
@@ -2831,18 +2824,11 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
                 if tray.generation() != generation {
                     return; // 新一轮测速已接管，放弃本轮剩余结果
                 }
-                if result.as_ref().map(|delay| *delay == 0).unwrap_or(true) { failures += 1; }
                 tray.apply_single_result(&node, result);
             }
             let data = tray_menu_data(&state);
             tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
             done += 1;
-            if notify_user {
-                let mut notice = notifications::Notice::new(notifications::Kind::Progress, "tray.latency", &operation);
-                notice.progress = Some(done as f64 / total as f64 * 100.0);
-                notice.description = format!("{done}/{total}");
-                notifications::publish(&h, notice);
-            }
             if done >= total {
                 break;
             }
@@ -2857,11 +2843,6 @@ fn run_tray_delay_test(handle: &AppHandle, notify_user: bool) {
         }
         tray.end_test();
         drop(tray);
-        if notify_user {
-            let mut notice = notifications::Notice::new(if failures > 0 { notifications::Kind::Warning } else { notifications::Kind::Success }, "tray.latency", &operation);
-            notice.description = format!("{}/{total} OK", total - failures);
-            notifications::publish(&h, notice);
-        }
         let data = tray_menu_data(&state);
         tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
     });
@@ -3305,7 +3286,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "tray-delay-test" => {
             #[cfg(target_os = "macos")]
-            run_tray_delay_test(app, true);
+            run_tray_delay_test(app);
             Ok(())
         }
         other => {
