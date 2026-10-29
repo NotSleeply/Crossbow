@@ -603,7 +603,8 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 40px;
-  padding: 0 24px;
+  /* 左 8px = cb-frame 沟槽：logo 与下方内容卡左边框垂直对齐（#191） */
+  padding: 0 24px 0 8px;
   min-width: 0;
 }
 .cb-wordmark {
