@@ -1,0 +1,67 @@
+{
+  "read": {
+    "pending": "2 待处理",
+    "rows": 4,
+    "unread": 0
+  },
+  "clear": {
+    "footer": "已清除 2 条已完成记录撤销",
+    "rows": 2
+  },
+  "undoRows": 4,
+  "silentSettings": {
+    "dark": true,
+    "rows": 4,
+    "toasts": 0
+  },
+  "small": {
+    "internalScroll": true,
+    "panel": {
+      "bottom": 548,
+      "right": 856,
+      "x": 448,
+      "y": 58
+    },
+    "viewport": [
+      880,
+      560
+    ]
+  },
+  "narrow": {
+    "overflow": false,
+    "panel": {
+      "bottom": 644,
+      "right": 374,
+      "x": 16,
+      "y": 54
+    },
+    "viewport": [
+      390,
+      720
+    ]
+  },
+  "taskAfterDismiss": {
+    "progress": 0,
+    "rows": 5,
+    "toasts": 0
+  },
+  "failure": {
+    "floating": "Theme"
+  },
+  "recovery": {
+    "merged": [
+      "×4"
+    ],
+    "pending": "1 待处理 · 2 未读",
+    "recovered": true,
+    "rows": 4
+  },
+  "filter": {
+    "clearDisabled": true,
+    "rows": 1
+  },
+  "escape": {
+    "bellFocused": true,
+    "open": false
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-29",
+  "version": "v02",
+  "status": "implemented-pending-pr-review",
+  "issue": 196,
+  "baseline": "a1cd0e88f519f0991e670f0829fc43e82b437539",
+  "implementationCommit": "eddfc1599f54c45c980a778cab82b82e28b81ffb",
+  "inputs": "用户确认通知中心V1，授权接入正式代码并提交PR；沿用Crossbow主题与B1标志",
+  "sourceHashes": {
+    "apps/desktop/src-tauri/src/lib.rs": "ee26cd7a6d60c227241e820c2e8e3fe33e5b1a1d1e05c37c171ba0e0e8e741e3",
+    "apps/desktop/src-tauri/src/notifications.rs": "2249943a8843e1bbd527839d65e08d6bed7450434b6aea59baf0cedf8231a44b",
+    "apps/desktop/src-tauri/src/scheduler.rs": "2cf35b74534b886c038484a3249e99abd4a32e8a718dccdf460c545dcc1dee35",
+    "apps/desktop/src/index.css": "8cbc87977a2a8326c608dbb6d12fbfce92f5d8f2db228d2bd67c608d3091f98f",
+    "apps/desktop/src/notifications/NotificationProvider.tsx": "d0598704973b22f4af4ff55df59a34e368089a927ab620c9701aed3ff3d756af",
+    "apps/desktop/src/notifications/notifications.css": "c5a8a6ff9e375015f0d329386d22c2530ca92062c96abd66e0c9762df2139716",
+    "apps/desktop/src/notifications/service.ts": "a3b0a68ee6d7d5d03dcf8456688b600eb1de2bd1d1af7c5082f5bc20763cd640",
+    "apps/desktop/src/pages/Diagnostics.tsx": "3477eb8e24bc75a6739b029df19e1bffcf3c9cb67a676ebf94ff407b2f24f997",
+    "apps/desktop/src/pages/Home.tsx": "de3fdcb6d5b5c1d85676737bca173b0eab8fbea71d8485aebbcb7355f8586188",
+    "apps/desktop/src/pages/OverridePanel.tsx": "c025aff773f9bfc7387a16850e7044d43bd0cb9c85b81306758e77c44f8080b4",
+    "apps/desktop/src/pages/Profiles.tsx": "dad5cccb3ff7bf081ef3fa5f241b1597501c6b7c4890ca67618b148f1d279b3a",
+    "apps/desktop/src/pages/Settings.tsx": "256e23c4910608e3d88c0cb26a9d3c70619c1fdbc1c97dc7b9b5916288881df6",
+    "docs/NOTIFICATIONS.md": "3b531704111b04253132ba6397402d172710f7f21318bf80a65c163678336fdd"
+  },
+  "files": [
+    "SPEC.md",
+    "index.html",
+    "main.tsx",
+    "mock-tauri.ts",
+    "previews/center-390x720-details.jpg",
+    "previews/center-880x560.jpg",
+    "previews/center-dark-en.jpg",
+    "previews/center-light.jpg",
+    "previews/checks.json",
+    "previews/empty.jpg",
+    "previews/floating-progress.jpg",
+    "previews/settings-failure.jpg",
+    "source.zip",
+    "vite.config.mts"
+  ]
+}
