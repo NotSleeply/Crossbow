@@ -62,6 +62,8 @@ pub struct Notice {
     #[serde(default)]
     pub title: String,
     #[serde(default)]
+    pub title_key: String,
+    #[serde(default)]
     pub description: String,
     #[serde(default)]
     pub details: String,
@@ -80,6 +82,12 @@ pub struct Notice {
     #[serde(default)]
     pub created_at: u64,
     #[serde(default)]
+    pub updated_at: u64,
+    #[serde(default)]
+    pub read_at: Option<u64>,
+    #[serde(default)]
+    pub resolved_at: Option<u64>,
+    #[serde(default)]
     pub count: u32,
     #[serde(default)]
     pub dismissed: bool,
@@ -87,14 +95,20 @@ pub struct Notice {
     remaining: Option<u64>,
     #[serde(skip)]
     paused: bool,
+    #[serde(skip)]
+    retrying: bool,
 }
 impl Notice {
+    fn is_pending(&self) -> bool {
+        matches!(self.kind, Kind::Error | Kind::Warning) && self.resolved_at.is_none()
+    }
     pub fn new(kind: Kind, code: &str, source: &str) -> Self {
         Self {
             id: String::new(),
             kind,
             code: code.into(),
             title: String::new(),
+            title_key: String::new(),
             description: String::new(),
             details: String::new(),
             source: source.into(),
@@ -104,10 +118,14 @@ impl Notice {
             actions: vec![],
             progress: None,
             created_at: 0,
+            updated_at: 0,
+            read_at: None,
+            resolved_at: None,
             count: 0,
             dismissed: false,
             remaining: None,
             paused: false,
+            retrying: false,
         }
     }
 }
@@ -127,6 +145,7 @@ struct Queue {
     target: String,
     delivered_revision: u64,
     navigate_to: Option<String>,
+    cleared: Option<(Vec<Notice>, Instant)>,
 }
 impl Queue {
     fn push(&mut self, mut notice: Notice) -> String {
@@ -137,6 +156,7 @@ impl Queue {
         notice.id = notice.id.chars().take(160).collect();
         notice.operation_id = notice.operation_id.chars().take(160).collect();
         notice.dedupe_key = notice.dedupe_key.chars().take(160).collect();
+        notice.title_key = notice.title_key.chars().take(160).collect();
         notice.progress = notice
             .progress
             .filter(|p| p.is_finite())
@@ -146,6 +166,26 @@ impl Queue {
                 || (!notice.operation_id.is_empty() && n.operation_id == notice.operation_id)
                 || (!notice.dedupe_key.is_empty() && n.dedupe_key == notice.dedupe_key)
         });
+        // These controls already expose busy/result state in the page or tray.
+        // Keep failures, but do not create routine success/history noise.
+        let quiet = matches!(
+            notice.code.as_str(),
+            "tray.proxy" | "tray.tun" | "core.mode" | "tray.profile"
+        );
+        if quiet && notice.kind == Kind::Progress {
+            if let Some(index) = existing {
+                self.entries[index].retrying = true;
+            }
+            return existing
+                .map(|i| self.entries[i].id.clone())
+                .unwrap_or_default();
+        }
+        if quiet && notice.kind == Kind::Success {
+            self.resolve(&notice.operation_id);
+            return existing
+                .map(|i| self.entries[i].id.clone())
+                .unwrap_or_default();
+        }
         notice.remaining = notice
             .duration
             .or_else(|| notice.kind.duration())
@@ -153,14 +193,20 @@ impl Queue {
         notice.duration = notice.remaining;
         notice.dismissed = false;
         notice.created_at = now;
+        notice.updated_at = now;
+        notice.read_at = None;
+        notice.resolved_at = None;
         notice.count = 1;
         if let Some(index) = existing {
             let old = &self.entries[index];
+            // Background repeats may contain changing diagnostic details. Merge
+            // by stable operation/code, but make an explicit retry visible again.
             let repeated = old.kind == notice.kind
                 && old.code == notice.code
                 && old.title == notice.title
-                && old.details == notice.details
-                && old.description == notice.description;
+                && old.title_key == notice.title_key
+                && old.resolved_at.is_none();
+            let same_attempt = old.operation_id == notice.operation_id && !old.retrying;
             notice.id = old.id.clone();
             notice.created_at = old.created_at;
             notice.count = if repeated && notice.kind != Kind::Progress {
@@ -169,12 +215,22 @@ impl Queue {
                 1
             };
             notice.paused = old.paused;
-            // Progress refreshes and identical faults must not resurrect a
-            // dismissed card. A newly failed operation still becomes visible.
             notice.dismissed = old.dismissed
+                && same_attempt
                 && (repeated || (old.kind == Kind::Progress && notice.kind != Kind::Error));
-            if repeated {
+            if (repeated && same_attempt)
+                || (old.kind == Kind::Progress && notice.kind == Kind::Progress)
+            {
+                notice.read_at = old.read_at;
+            }
+            if repeated && same_attempt {
                 notice.remaining = old.remaining;
+            }
+            if old.is_pending() && notice.kind == Kind::Success {
+                notice.resolved_at = Some(now);
+                if notice.details.is_empty() {
+                    notice.details = old.details.clone();
+                }
             }
             self.entries.remove(index);
         }
@@ -192,16 +248,91 @@ impl Queue {
                 .unwrap();
             self.entries[index].dismissed = true;
         }
-        // Retaining recent history must never discard an unresolved error.
+        self.trim_history();
+        self.revision += 1;
+        id
+    }
+    fn trim_history(&mut self) {
+        // Prefer removing finished records. If every slot is unresolved, keep
+        // the latest 50; session history is deliberately bounded, not an audit log.
         while self.entries.len() > MAX_HISTORY {
-            if let Some(index) = self.entries.iter().rposition(|entry| entry.dismissed) {
-                self.entries.remove(index);
-            } else {
-                break;
+            let index = self
+                .entries
+                .iter()
+                .rposition(|n| !n.is_pending() && n.kind != Kind::Progress)
+                .unwrap_or(self.entries.len() - 1);
+            self.entries.remove(index);
+        }
+    }
+    fn mark_read(&mut self, id: Option<&str>) {
+        let now = now_ms();
+        for entry in &mut self.entries {
+            if id.is_none_or(|id| entry.id == id) {
+                entry.read_at = Some(now);
             }
         }
         self.revision += 1;
-        id
+    }
+    fn resolve(&mut self, source: &str) {
+        for entry in &mut self.entries {
+            if (entry.operation_id == source
+                || entry.source == source
+                || entry.dedupe_key == source)
+                && entry.is_pending()
+            {
+                entry.resolved_at = Some(now_ms());
+                entry.updated_at = now_ms();
+                entry.dismissed = true;
+                entry.read_at = Some(now_ms());
+                entry.retrying = false;
+            }
+        }
+        self.revision += 1;
+    }
+    fn clear_completed(&mut self) -> usize {
+        let mut removed = vec![];
+        self.entries.retain(|n| {
+            if !n.is_pending() && n.kind != Kind::Progress {
+                removed.push(n.clone());
+                false
+            } else {
+                true
+            }
+        });
+        let count = removed.len();
+        if count > 0 {
+            self.cleared = Some((removed, Instant::now()));
+            self.revision += 1;
+        }
+        count
+    }
+    fn restore_completed(&mut self) -> usize {
+        let Some((removed, at)) = self.cleared.take() else {
+            return 0;
+        };
+        if at.elapsed() > Duration::from_secs(10) {
+            return 0;
+        }
+        let mut count = 0;
+        for mut notice in removed {
+            // Never replace a newer attempt/results that arrived after clearing.
+            if self.entries.iter().any(|n| {
+                n.id == notice.id
+                    || (!notice.operation_id.is_empty() && n.operation_id == notice.operation_id)
+                    || (!notice.dedupe_key.is_empty() && n.dedupe_key == notice.dedupe_key)
+            }) {
+                continue;
+            }
+            notice.dismissed = true; // Undo restores history, not old floating cards.
+            self.entries.push_back(notice);
+            count += 1;
+        }
+        self.entries
+            .make_contiguous()
+            .sort_by_key(|n| std::cmp::Reverse(n.updated_at));
+        self.trim_history();
+        self.revision += 1;
+        count
     }
     fn active(&self) -> Vec<Notice> {
         let mut active: Vec<_> = self
@@ -211,7 +342,7 @@ impl Queue {
             .cloned()
             .collect();
         active.sort_by_key(|n| n.kind.priority());
-        active.truncate(3);
+        active.truncate(2);
         active
     }
     fn snapshot(&self) -> Snapshot {
@@ -290,6 +421,18 @@ pub fn publish(app: &AppHandle, notice: Notice) {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(notice);
+    }
+}
+/// Quiet recovery updates the original record without creating another toast.
+pub fn resolve(app: &AppHandle, source: &str) {
+    if let Some(service) = app.try_state::<Notifications>() {
+        let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+        if queue.entries.iter().any(|n| {
+            n.is_pending()
+                && (n.source == source || n.operation_id == source || n.dedupe_key == source)
+        }) {
+            queue.resolve(source);
+        }
     }
 }
 pub fn result(app: &AppHandle, source: &str, code: &str, result: Result<(), String>) {
@@ -531,6 +674,47 @@ pub fn notification_dismiss(service: State<Notifications>, id: String) {
     queue.revision += 1;
 }
 #[tauri::command]
+pub fn notification_mark_read(service: State<Notifications>, id: Option<String>) {
+    service
+        .queue
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .mark_read(id.as_deref());
+}
+#[tauri::command]
+pub fn notification_resolve(service: State<Notifications>, source: String) {
+    service
+        .queue
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .resolve(&source);
+}
+#[tauri::command]
+pub fn notification_clear_completed(window: WebviewWindow, service: State<Notifications>) -> usize {
+    if window.label() != "main" {
+        return 0;
+    }
+    service
+        .queue
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear_completed()
+}
+#[tauri::command]
+pub fn notification_restore_completed(
+    window: WebviewWindow,
+    service: State<Notifications>,
+) -> usize {
+    if window.label() != "main" {
+        return 0;
+    }
+    service
+        .queue
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .restore_completed()
+}
+#[tauri::command]
 pub fn notification_pause(
     window: WebviewWindow,
     service: State<Notifications>,
@@ -610,7 +794,7 @@ pub fn resolve_core_failure(app: &AppHandle) {
         .unwrap_or_else(|e| e.into_inner())
         .entries
         .iter()
-        .any(|n| n.operation_id == "core-failure" && n.kind == Kind::Error);
+        .any(|n| n.operation_id == "core-failure" && n.is_pending());
     if unresolved {
         publish(
             app,
@@ -734,7 +918,107 @@ mod tests {
         }
         assert!(queue.entries.len() <= MAX_HISTORY);
         assert!(queue.entries.iter().filter(|n| !n.dismissed).count() <= MAX_PENDING);
-        assert_eq!(queue.active().len(), 3);
+        assert_eq!(queue.active().len(), 2);
         assert_eq!(queue.active()[0].id, id);
+    }
+    #[test]
+    fn reading_and_dismissing_do_not_resolve_a_problem() {
+        let mut q = visible_queue();
+        let id = q.push(Notice::new(Kind::Error, "failed", "settings-theme"));
+        q.entries[0].dismissed = true;
+        q.mark_read(None);
+        assert!(q.entries[0].read_at.is_some());
+        assert!(q.entries[0].is_pending());
+        assert_eq!(q.clear_completed(), 0);
+        q.resolve("settings-theme");
+        assert!(!q.entries[0].is_pending());
+        assert_eq!(q.entries[0].id, id);
+        assert!(q.active().is_empty());
+    }
+    #[test]
+    fn clearing_protects_pending_and_running_tasks_and_undo_does_not_replay() {
+        let mut q = visible_queue();
+        q.push(Notice::new(Kind::Error, "failed", "tun"));
+        q.push(Notice::new(Kind::Warning, "warning", "subscription"));
+        q.push(Notice::new(Kind::Progress, "download", "download"));
+        q.push(Notice::new(Kind::Success, "done", "import"));
+        assert_eq!(q.clear_completed(), 1);
+        assert_eq!(q.entries.len(), 3);
+        assert_eq!(q.restore_completed(), 1);
+        assert!(
+            q.entries
+                .iter()
+                .find(|n| n.source == "import")
+                .unwrap()
+                .dismissed
+        );
+        assert_eq!(q.restore_completed(), 0);
+        q.clear_completed();
+        q.push(Notice::new(Kind::Error, "failed", "import"));
+        assert_eq!(q.restore_completed(), 0); // A newer failure wins over undo.
+        assert!(q
+            .entries
+            .iter()
+            .find(|n| n.source == "import")
+            .unwrap()
+            .is_pending());
+        q.push(Notice::new(Kind::Success, "done", "save"));
+        q.clear_completed();
+        q.cleared.as_mut().unwrap().1 = Instant::now() - Duration::from_secs(11);
+        assert_eq!(q.restore_completed(), 0);
+    }
+    #[test]
+    fn background_repeats_merge_but_explicit_retry_can_reappear() {
+        let mut q = visible_queue();
+        let mut n = Notice::new(Kind::Error, "failed", "save");
+        n.dedupe_key = "save".into();
+        let id = q.push(n.clone());
+        q.mark_read(None);
+        q.entries[0].dismissed = true;
+        n.details = "another transient port".into();
+        q.push(n.clone());
+        assert_eq!(q.entries.len(), 1);
+        assert_eq!(q.entries[0].count, 2);
+        assert!(q.entries[0].read_at.is_some());
+        assert!(q.active().is_empty());
+        n.operation_id = "save-attempt-2".into();
+        q.push(n);
+        assert_eq!(q.active()[0].id, id);
+        assert!(q.entries[0].read_at.is_none());
+        assert_eq!(q.entries[0].count, 3);
+    }
+    #[test]
+    fn visible_controls_are_quiet_on_success_but_keep_and_resolve_failures() {
+        let mut q = visible_queue();
+        for code in ["tray.proxy", "tray.tun", "core.mode", "tray.profile"] {
+            q.push(Notice::new(Kind::Progress, code, code));
+            q.push(Notice::new(Kind::Success, code, code));
+        }
+        assert!(q.entries.is_empty());
+        q.push(Notice::new(Kind::Error, "tray.tun", "tun-switch"));
+        q.entries[0].dismissed = true;
+        q.push(Notice::new(Kind::Progress, "tray.tun", "tun-switch"));
+        q.push(Notice::new(Kind::Error, "tray.tun", "tun-switch"));
+        assert!(!q.active().is_empty());
+        q.push(Notice::new(Kind::Success, "tray.tun", "tun-switch"));
+        assert_eq!(q.entries.len(), 1);
+        assert!(q.entries[0].resolved_at.is_some());
+        assert!(q.active().is_empty());
+    }
+    #[test]
+    fn even_unresolved_history_is_bounded_and_task_results_preserve_details() {
+        let mut q = visible_queue();
+        for i in 0..100 {
+            q.push(Notice::new(Kind::Error, "failed", &format!("error-{i}")));
+        }
+        assert_eq!(q.entries.len(), MAX_HISTORY);
+        assert_eq!(q.active().len(), 2);
+        let mut n = Notice::new(Kind::Error, "failed", "recovery");
+        n.details = "original sanitized diagnostic".into();
+        let id = q.push(n);
+        q.push(Notice::new(Kind::Success, "core.recovered", "recovery"));
+        assert_eq!(q.entries[0].id, id);
+        assert_eq!(q.entries[0].details, "original sanitized diagnostic");
+        assert!(q.entries[0].resolved_at.is_some());
     }
 }

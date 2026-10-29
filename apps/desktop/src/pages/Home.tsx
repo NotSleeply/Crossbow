@@ -90,7 +90,12 @@ export default function HomePage() {
           });
         } else if (hadConflict) {
           hadConflict = false;
-          notify.success(notificationText("coexist.resolved"), "coexist");
+          void notify.publish({
+            kind: "success",
+            code: "coexist.resolved",
+            source: "coexist",
+            operationId: "coexist",
+          });
         }
       } catch (error) {
         if (active) notify.error(error, "coexist-read");
@@ -230,12 +235,8 @@ export default function HomePage() {
     setBusy(true);
     try {
       await ipc.setTun(!tun.enabled);
-    } catch (error) {
-      notify.error(
-        error,
-        "tun-switch",
-        t(tun.enabled ? "settings.tunOffFailed" : "settings.tunFailed"),
-      );
+    } catch {
+      // setTun publishes its result in the backend.
     } finally {
       await refresh();
       setBusy(false);
@@ -459,6 +460,8 @@ export default function HomePage() {
                           "core-mode",
                           notificationText("core.mode"),
                           () => ipc.setCoreMode(m.id),
+                          undefined,
+                          { feedback: "error-only" },
                         )
                       }
                     >
