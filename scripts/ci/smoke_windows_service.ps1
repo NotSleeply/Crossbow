@@ -19,6 +19,15 @@ function Install-Crossbow {
 }
 try {
     Install-Crossbow
+    # Exercise the same command builder as the broker, with canonical Windows
+    # paths and the installed core. Config validation only; no TUN or listeners.
+    $previousCoreBin = $env:CROSSBOW_CORE_BIN
+    try {
+        $env:CROSSBOW_CORE_BIN = Join-Path $env:ProgramFiles 'Crossbow/mihomo.exe'
+        if (-not (Test-Path $env:CROSSBOW_CORE_BIN)) { throw 'Installed mihomo not found' }
+        cargo test --locked -p crossbow-service core_process::tests -- --nocapture
+        if ($LASTEXITCODE -ne 0) { throw 'Windows core path regression tests failed' }
+    } finally { $env:CROSSBOW_CORE_BIN = $previousCoreBin }
     $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', 'crossbow-service', [IO.Pipes.PipeDirection]::InOut)
     try {
         $pipe.Connect(5000)
