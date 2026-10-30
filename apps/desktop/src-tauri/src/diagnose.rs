@@ -15,6 +15,8 @@ pub struct CheckResult {
     /// 稳定 id，前端据此取本地化标题。
     pub id: String,
     pub ok: bool,
+    /// Unsupported checks are excluded, never counted as passed.
+    pub skipped: bool,
     /// 技术细节（直接展示的补充信息）。
     pub detail: String,
     /// 可执行修复动作 id：start_core / restart_core / toggle_sysproxy。
@@ -25,6 +27,7 @@ fn ok(id: &str, detail: impl Into<String>) -> CheckResult {
     CheckResult {
         id: id.into(),
         ok: true,
+        skipped: false,
         detail: detail.into(),
         fix: None,
     }
@@ -34,6 +37,7 @@ fn bad(id: &str, detail: impl Into<String>, fix: Option<&str>) -> CheckResult {
     CheckResult {
         id: id.into(),
         ok: false,
+        skipped: false,
         detail: detail.into(),
         fix: fix.map(String::from),
     }
@@ -95,7 +99,15 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
 
     // 5. 系统代理指向
     let endpoints = state.sysproxy.external_endpoints();
-    if endpoints.is_empty() {
+    if !crate::platform::capabilities().system_proxy {
+        results.push(CheckResult {
+            id: "sysproxy".into(),
+            ok: false,
+            skipped: true,
+            detail: format!("当前平台仅支持显式代理，请将应用的 HTTP/SOCKS 代理设为 127.0.0.1:{mixed_port}；本项不计入通过数量"),
+            fix: None,
+        });
+    } else if endpoints.is_empty() {
         results.push(bad(
             "sysproxy",
             "系统代理未开启（浏览器流量不会经过本应用）",

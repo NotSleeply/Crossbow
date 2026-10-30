@@ -20,7 +20,7 @@ export function dragWindow(e: React.MouseEvent) {
     getCurrentWindow().startDragging();
   }
 }
-import { ipc, type UiSettings } from "./ipc";
+import { ipc, type UiSettings, type PlatformCapabilities } from "./ipc";
 import {
   NotificationHistory,
   useNotificationNavigation,
@@ -66,6 +66,7 @@ function applyTheme(theme: UiSettings["theme"]) {
 export default function App() {
   const t = useT();
   const isWindows = navigator.userAgent.includes("Windows");
+  const isMacos = navigator.userAgent.includes("Macintosh");
   const [page, setPage] = useState<PageId>("home");
   const [settingSection, setSettingSection] = useState<
     "network" | "appearance" | "logs" | "app"
@@ -77,6 +78,15 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("");
   const [coreRunning, setCoreRunning] = useState(false);
   const [coreLabel, setCoreLabel] = useState<string>("");
+  const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    ipc.platformCapabilities()
+      .then((value) => { if (active) setCapabilities(value); })
+      .catch((error) => notify.error(error, "platform-capabilities"));
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -211,8 +221,8 @@ export default function App() {
     setPage(next);
   };
   return (
-    <div className={`cb-frame ${isWindows ? "is-windows" : "is-mac"}`}>
-      {!isWindows && (
+    <div className={`cb-frame ${isWindows ? "is-windows" : isMacos ? "is-mac" : "is-linux"}`}>
+      {isMacos && (
         <div
           className="cb-window-drag"
           data-tauri-drag-region
@@ -313,7 +323,7 @@ export default function App() {
           </nav>
         )}
         <div className={`cb-page-content cb-view-${page}`}>
-          {page === "home" && <HomePage />}
+          {page === "home" && <HomePage capabilities={capabilities} />}
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} />}
           {page === "connections" && <ConnectionsPage />}
@@ -341,7 +351,7 @@ export default function App() {
                   </button>
                 ))}
               </nav>
-              <SettingsPage section={settingSection} />
+              <SettingsPage section={settingSection} capabilities={capabilities} />
             </div>
           )}
         </div>

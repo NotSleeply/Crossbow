@@ -5,6 +5,14 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "linux.explicitProxy": "显式代理",
+    "linux.explicitOn": "显式代理已启动",
+    "linux.explicitOff": "显式代理未启动",
+    "linux.explicitHint": "应用可手动使用 HTTP/SOCKS 代理 127.0.0.1:{port}；系统网络设置保持不变",
+    "linux.takeoverUnavailable": "当前平台暂不支持网络接管",
+    "linux.updateUnavailable": "Linux 验证版暂不提供应用自动更新",
+    "diag.notApplicable": "不适用",
+    "diag.applicableOk": "所有适用检查已通过",
     "studio.previous": "上一页",
     "studio.next": "下一页",
     "proxies.search": "搜索节点或协议",
@@ -84,7 +92,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "sites.title": "站点连通性",
     "sites.hint": "通过 Crossbow 代理，检查当前节点的站点连接情况。",
     "sites.scope":
-      "仅检查代理链路；浏览器还需使用系统代理。HTTP 限制响应表示已连接站点，但请求受限。",
+      "仅检查代理链路；浏览器也需配置为使用该代理。HTTP 限制响应表示已连接站点，但请求受限。",
     "sites.testAll": "测试全部站点",
     "sites.test": "测试",
     "sites.testing": "测试中…",
@@ -327,6 +335,14 @@ const dict: Record<Lang, Record<string, string>> = {
       "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
+    "linux.explicitProxy": "Explicit proxy",
+    "linux.explicitOn": "Explicit proxy is running",
+    "linux.explicitOff": "Explicit proxy is stopped",
+    "linux.explicitHint": "Set an application's HTTP/SOCKS proxy to 127.0.0.1:{port}; system network settings stay unchanged",
+    "linux.takeoverUnavailable": "Network takeover is not available on this platform",
+    "linux.updateUnavailable": "App updates are not available for the Linux preview",
+    "diag.notApplicable": "Not applicable",
+    "diag.applicableOk": "All applicable checks passed",
     "studio.previous": "Previous page",
     "studio.next": "Next page",
     "studio.proxy": "System proxy",
@@ -384,7 +400,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "sites.title": "Site connectivity",
     "sites.hint": "Check the current node through Crossbow’s proxy.",
     "sites.scope":
-      "Tests the proxy route only; your browser must also use the system proxy. HTTP restrictions mean the site responded but limited the request.",
+      "Tests the proxy route only; your browser must also be configured to use this proxy. HTTP restrictions mean the site responded but limited the request.",
     "sites.testAll": "Test all sites",
     "sites.test": "Test",
     "sites.testing": "Testing…",

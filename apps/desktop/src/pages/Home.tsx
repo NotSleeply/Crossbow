@@ -11,6 +11,7 @@ import {
   type Profile,
   type SysProxyStatus,
   type UpdateState,
+  type PlatformCapabilities,
 } from "../ipc";
 import { fmtBytes } from "../format";
 import { useT } from "../i18n";
@@ -21,8 +22,10 @@ import { ConnectionFlow } from "../components/ConnectionFlow";
 const POINTS = 120;
 
 /** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
-export default function HomePage() {
+export default function HomePage({ capabilities }: { capabilities: PlatformCapabilities | null }) {
   const t = useT();
+  const explicitOnly = capabilities !== null && !capabilities.system_proxy && !capabilities.tun;
+  const [mixedPort, setMixedPort] = useState<number | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
@@ -129,6 +132,7 @@ export default function HomePage() {
       })),
     );
     setMode(await ipc.coreMode().catch(() => "rule" as const));
+    setMixedPort(await ipc.getEngineConfig().then((config) => config.mixed_port).catch(() => null));
     setOutbound(await ipc.currentOutbound().catch(() => null));
   }, []);
 
@@ -245,13 +249,28 @@ export default function HomePage() {
     }
   };
 
+  const toggleCore = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await notify.run("explicit-core", t("home.core"),
+        () => running ? ipc.coreStop() : ipc.coreStart(),
+        undefined, { feedback: "error-only", titleKey: "home.core" });
+    } finally {
+      await refresh();
+      setBusy(false);
+    }
+  };
+
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
-  const statusTitle = tun.enabled
+  const statusTitle = explicitOnly
+    ? t(core.state === "Starting" ? "home.coreStarting" : core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
+    : tun.enabled
     ? running
       ? proxy.enabled
         ? t("home.tunAndSysproxyOn")
@@ -263,6 +282,8 @@ export default function HomePage() {
 
   const statusHint = !activeId
     ? t("studio.noSource")
+    : explicitOnly
+      ? t("linux.explicitHint", { port: mixedPort ?? "—" })
     : !running && routingEnabled
       ? t("studio.coreUnavailable")
       : tun.enabled && proxy.enabled
@@ -303,7 +324,7 @@ export default function HomePage() {
             </div>
             <ConnectionFlow
               enabled={
-                core.state === "Running" && routingEnabled && !!outbound?.node
+                core.state === "Running" && (routingEnabled || explicitOnly) && !!outbound?.node
               }
               lastTrafficAt={lastTrafficAt}
             >
@@ -315,7 +336,7 @@ export default function HomePage() {
                 <small>
                   {navigator.userAgent.includes("Windows")
                     ? "Windows"
-                    : "macOS"}
+                    : navigator.userAgent.includes("Macintosh") ? "macOS" : "Linux"}
                 </small>
               </div>
               <span
@@ -417,10 +438,22 @@ export default function HomePage() {
                   </div>
                 </details>
               </div>
-              <div className="cb-takeover-row" title={t("studio.proxyHint")}>
+              {explicitOnly && (
+                <div className="cb-takeover-row">
+                  <div>
+                    <b>{t("linux.explicitProxy")}</b>
+                    <p>{t("linux.explicitHint", { port: mixedPort ?? "—" })}</p>
+                  </div>
+                  <button className={`cb-toggle ${core.state === "Running" ? "on" : ""}`}
+                    role="switch" aria-label={t("linux.explicitProxy")}
+                    aria-checked={core.state === "Running"} onClick={toggleCore}
+                    disabled={busy || !activeId || core.state === "Starting"} />
+                </div>
+              )}
+              <div className="cb-takeover-row" title={t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable")}>
                 <div>
                   <b>{t("studio.proxy")}</b>
-                  <p>{t("studio.proxyHint")}</p>
+                  <p>{t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable")}</p>
                 </div>
                 <button
                   className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
@@ -428,13 +461,13 @@ export default function HomePage() {
                   aria-label={t("studio.proxy")}
                   aria-checked={proxy.enabled}
                   onClick={toggleProxy}
-                  disabled={busy || !activeId}
+                  disabled={busy || !activeId || !capabilities?.system_proxy}
                 />
               </div>
-              <div className="cb-takeover-row" title={t("studio.tunHint")}>
+              <div className="cb-takeover-row" title={t(capabilities?.tun ? "studio.tunHint" : "linux.takeoverUnavailable")}>
                 <div>
                   <b>{t("settings.tun")}</b>
-                  <p>{t("studio.tunHint")}</p>
+                  <p>{t(capabilities?.tun ? "studio.tunHint" : "linux.takeoverUnavailable")}</p>
                 </div>
                 <button
                   className={`cb-toggle ${tun.enabled ? "on" : ""}`}
@@ -442,7 +475,7 @@ export default function HomePage() {
                   aria-label={t("settings.tun")}
                   aria-checked={tun.enabled}
                   onClick={toggleTun}
-                  disabled={busy || !activeId}
+                  disabled={busy || !activeId || !capabilities?.tun}
                 />
               </div>
               <div className="cb-mode-control">

@@ -6,6 +6,7 @@ import {
   type EngineConfigView,
   type UiSettings,
   type UpdateState,
+  type PlatformCapabilities,
 } from "../ipc";
 import Select from "../components/Select";
 import { useT } from "../i18n";
@@ -14,8 +15,10 @@ import { PageHead } from "./Home";
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage({
   section = "network",
+  capabilities,
 }: {
   section?: "network" | "appearance" | "logs" | "app";
+  capabilities: PlatformCapabilities | null;
 }) {
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
@@ -39,8 +42,6 @@ export default function SettingsPage({
     null,
   );
   const [tunBusy, setTunBusy] = useState(false);
-  // Windows 的 TUN（wintun + 特权服务）未落地前隐藏开关（#25），
-  // 避免「打开无效」的困惑；落地后移除此判定
   const isMacos = navigator.userAgent.includes("Macintosh");
   const [logsSave, setLogsSave] = useState(true);
   const [logsRetention, setLogsRetention] = useState(7);
@@ -348,7 +349,7 @@ export default function SettingsPage({
           </Row>
           <Row
             label={t("settings.tun")}
-            hint={tunBusy ? t("settings.tunSwitching") : t("settings.tunHint")}
+            hint={!capabilities?.tun ? t("linux.takeoverUnavailable") : tunBusy ? t("settings.tunSwitching") : t("settings.tunHint")}
           >
             <div className="flex items-center gap-2">
               {tunBusy && (
@@ -370,7 +371,7 @@ export default function SettingsPage({
               )}
               <Switch
                 checked={tun?.enabled ?? false}
-                disabled={tunBusy}
+                disabled={tunBusy || !capabilities?.tun}
                 onChange={async (v) => {
                   if (tunBusy) return;
                   setTunBusy(true);
@@ -561,10 +562,11 @@ export default function SettingsPage({
           </Row>
           <Row
             label={t("settings.autoCheck")}
-            hint={t("settings.autoCheckHint")}
+            hint={t(capabilities?.app_update ? "settings.autoCheckHint" : "linux.updateUnavailable")}
           >
             <Switch
-              checked={autoCheck}
+              checked={Boolean(capabilities?.app_update && autoCheck)}
+              disabled={!capabilities?.app_update}
               onChange={async (v) => {
                 await saveSetting(
                   "auto-check",
@@ -577,10 +579,11 @@ export default function SettingsPage({
           </Row>
           <Row
             label={t("settings.autoDownload")}
-            hint={t("settings.autoDownloadHint")}
+            hint={t(capabilities?.app_update ? "settings.autoDownloadHint" : "linux.updateUnavailable")}
           >
             <Switch
-              checked={autoDownload}
+              checked={Boolean(capabilities?.app_update && autoDownload)}
+              disabled={!capabilities?.app_update}
               onChange={async (v) => {
                 await saveSetting(
                   "auto-download",
@@ -594,7 +597,7 @@ export default function SettingsPage({
           <Row
             label={t("settings.updateNow")}
             hint={
-              updateState
+              !capabilities?.app_update ? t("linux.updateUnavailable") : updateState
                 ? updateState.downloaded
                   ? t("settings.updateReady")
                   : updateState.progress
@@ -615,7 +618,7 @@ export default function SettingsPage({
                   <button
                     className="cb-btn inline-flex items-center gap-1.5 py-1.5"
                     onClick={runUpdateCheck}
-                    disabled={updateChecking}
+                    disabled={updateChecking || !capabilities?.app_update}
                     aria-busy={updateChecking}
                   >
                     {updateChecking && (

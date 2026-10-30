@@ -11,6 +11,8 @@ import zipfile
 VERSION = 'v1.19.32'
 # GitHub release asset digests, reviewed against MetaCubeX/mihomo v1.19.32.
 ASSETS = {
+    'x86_64-unknown-linux-gnu': ('mihomo-linux-amd64-v1.19.32.gz',
+        '8451100836c9eda194331c2babfad490b2faf30cebc1a04b0e76fd8ac2d35d10'),
     'aarch64-apple-darwin': ('mihomo-darwin-arm64-v1.19.32.gz',
         '3312a6780652c622890fd4357c6a853bbf865464fd047ac7b7f52dab8de18652'),
     'x86_64-pc-windows-msvc': ('mihomo-windows-amd64-v1.19.32.zip',
