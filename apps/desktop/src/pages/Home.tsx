@@ -253,9 +253,17 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     if (busy) return;
     setBusy(true);
     try {
-      await notify.run("explicit-core", t("home.core"),
-        () => running ? ipc.coreStop() : ipc.coreStart(),
-        undefined, { feedback: "error-only", titleKey: "home.core" });
+      if (running) {
+        try {
+          await ipc.coreStop();
+        } catch {
+          // CoreManager reports stop failures through the backend callback.
+        }
+      } else {
+        await notify.run("explicit-core", t("home.core"),
+          () => ipc.coreStart(),
+          undefined, { feedback: "error-only", titleKey: "home.core" });
+      }
     } finally {
       await refresh();
       setBusy(false);
@@ -266,6 +274,11 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
+  const proxyLabel = t(explicitOnly ? "linux.explicitProxy" : "studio.proxy");
+  const proxyHint = explicitOnly
+    ? t("linux.explicitHint", { port: mixedPort ?? "—" })
+    : t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable");
+  const proxyOn = explicitOnly ? core.state === "Running" : proxy.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
   const statusTitle = explicitOnly
@@ -438,30 +451,18 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   </div>
                 </details>
               </div>
-              {explicitOnly && (
-                <div className="cb-takeover-row">
-                  <div>
-                    <b>{t("linux.explicitProxy")}</b>
-                    <p>{t("linux.explicitHint", { port: mixedPort ?? "—" })}</p>
-                  </div>
-                  <button className={`cb-toggle ${core.state === "Running" ? "on" : ""}`}
-                    role="switch" aria-label={t("linux.explicitProxy")}
-                    aria-checked={core.state === "Running"} onClick={toggleCore}
-                    disabled={busy || !activeId || core.state === "Starting"} />
-                </div>
-              )}
-              <div className="cb-takeover-row" title={t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable")}>
+              <div className="cb-takeover-row" title={proxyHint}>
                 <div>
-                  <b>{t("studio.proxy")}</b>
-                  <p>{t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable")}</p>
+                  <b>{proxyLabel}</b>
+                  <p>{proxyHint}</p>
                 </div>
                 <button
-                  className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
+                  className={`cb-toggle ${proxyOn ? "on" : ""}`}
                   role="switch"
-                  aria-label={t("studio.proxy")}
-                  aria-checked={proxy.enabled}
-                  onClick={toggleProxy}
-                  disabled={busy || !activeId || !capabilities?.system_proxy}
+                  aria-label={proxyLabel}
+                  aria-checked={proxyOn}
+                  onClick={explicitOnly ? toggleCore : toggleProxy}
+                  disabled={busy || !activeId || (explicitOnly ? core.state === "Starting" : !capabilities?.system_proxy)}
                 />
               </div>
               <div className="cb-takeover-row" title={t(capabilities?.tun ? "studio.tunHint" : "linux.takeoverUnavailable")}>

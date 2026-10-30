@@ -1155,14 +1155,6 @@ summary:focus-visible {
   position: relative;
   max-height: 296px;
 }
-/* The Linux preview adds an explicit-proxy row above the unavailable controls. */
-.is-linux .cb-home-side {
-  grid-template-rows: max-content minmax(min-content, 76px) minmax(min-content, 224px);
-  max-height: none;
-}
-.is-linux .cb-takeover-panel {
-  max-height: none;
-}
 .cb-home-card-title {
   display: flex;
   align-items: center;

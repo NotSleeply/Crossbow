@@ -257,10 +257,12 @@ rules:
         report['checks'].append('invalid subscription refresh retained the last working configuration')
         subscription['broken'] = False
         original = subscription['content']
-        subscription['content'] += '\ntun: {enable: true}\n'
-        assert 'rejected' in driver.ipc('update_profile', {'id': profile_id})
-        assert driver.invoke('list_profiles')[0]['content'] == original
-        assert driver.invoke('core_status')['state'] == 'Running'
+        for tun in ['tun: {enable: true}', 'tun: {enable: yes}',
+                    'base: &base {enable: on}\ntun: {<<: *base}']:
+            subscription['content'] = original + '\n' + tun + '\n'
+            assert 'rejected' in driver.ipc('update_profile', {'id': profile_id}), tun
+            assert driver.invoke('list_profiles')[0]['content'] == original
+            assert driver.invoke('core_status')['state'] == 'Running'
         subscription['content'] = original
         report['checks'].append('TUN in subscription update rejected without replacing the running configuration')
         diagnosis = driver.invoke('run_diagnosis')
