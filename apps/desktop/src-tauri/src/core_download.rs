@@ -148,6 +148,7 @@ fn platform_asset_name() -> Result<String, String> {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
         "windows" => "windows",
+        "linux" => "linux",
         other => return Err(format!("unsupported os {other}")),
     };
     Ok(format!("mihomo-{os}-{arch}-{CORE_VERSION}"))
@@ -171,6 +172,7 @@ pub fn singbox_asset_name() -> Result<String, String> {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
         "windows" => "windows",
+        "linux" => "linux",
         other => return Err(format!("unsupported os {other}")),
     };
     let base = format!(
@@ -385,6 +387,10 @@ mod tests {
         }
         if cfg!(windows) && cfg!(target_arch = "x86_64") {
             assert_eq!(name, "mihomo-windows-amd64-v1.19.32.zip");
+        }
+        if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+            assert_eq!(name, "mihomo-linux-amd64-v1.19.32.gz");
+            assert_eq!(singbox_asset_name().unwrap(), "sing-box-1.14.2-linux-amd64.tar.gz");
         }
         assert!(name.ends_with(if cfg!(windows) { ".zip" } else { ".gz" }));
     }

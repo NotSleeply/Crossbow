@@ -49,7 +49,8 @@ export default function DiagnosticsPage() {
     }
   };
 
-  const allOk = results?.every((r) => r.ok);
+  const applicable = results?.filter((r) => !r.skipped);
+  const allOk = applicable && applicable.length > 0 && applicable.every((r) => r.ok);
 
   return (
     <div className="cb-diagnostics-page">
@@ -71,10 +72,10 @@ export default function DiagnosticsPage() {
         <div className="cb-diag-results">
           <div className="cb-diag-summary">
             <span style={{ color: allOk ? "var(--cb-ok)" : "var(--cb-warn)" }}>
-              {results.filter((result) => result.ok).length}/{results.length}
+              {applicable?.filter((result) => result.ok).length}/{applicable?.length}
             </span>
             <div>
-              <h2>{allOk ? t("diag.allOk") : t("diag.title")}</h2>
+              <h2>{allOk ? t(results.some((r) => r.skipped) ? "diag.applicableOk" : "diag.allOk") : t("diag.title")}</h2>
             </div>
           </div>
           {results.map((r) => (
@@ -82,7 +83,7 @@ export default function DiagnosticsPage() {
               key={r.id}
               className="cb-card flex items-center gap-3 px-4 py-3"
             >
-              <i className={`cb-dot flex-none ${r.ok ? "ok" : "bad"}`} />
+              <i className={`cb-dot flex-none ${r.skipped ? "idle" : r.ok ? "ok" : "bad"}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium">
                   {t(`check.${r.id}` as const)}
@@ -97,7 +98,9 @@ export default function DiagnosticsPage() {
                   </div>
                 )}
               </div>
-              {r.ok ? (
+              {r.skipped ? (
+                <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>{t("diag.notApplicable")}</span>
+              ) : r.ok ? (
                 <span
                   className="cb-mono text-[11px]"
                   style={{ color: "var(--cb-text-dim)" }}

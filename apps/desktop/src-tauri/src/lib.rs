@@ -27,6 +27,7 @@ mod log_files;
 mod mihomo_api;
 mod notifications;
 mod process;
+mod platform;
 mod update_check;
 mod scheduler;
 mod sysproxy;
@@ -228,6 +229,7 @@ fn render_current(
     let mut store = state.store.lock().unwrap();
     match crossbow_core::render_config_with(store.data(), use_overrides) {
         Ok(r) => {
+            platform::validate_config(store.data().engine.engine, &r.config)?;
             // 不在这里落盘。配置切换要等内核就绪后才保存；这里保存会把
             // 尚未确认的内存修改写进磁盘。覆写错误的清除留在内存里，
             // 下一次成功的保存会带上。
@@ -340,7 +342,7 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            return Err("TUN 模式即将支持".into());
+            return Err("当前平台暂不支持 TUN，请使用显式 HTTP/SOCKS 代理".into());
         }
     }
     #[cfg(target_os = "macos")]
@@ -1265,7 +1267,7 @@ async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Re
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = enable;
-        let result = Err("TUN 模式即将支持".into());
+        let result = Err("当前平台暂不支持 TUN，请使用显式 HTTP/SOCKS 代理".into());
         notifications::result(&app, "tun-switch", "tray.tun", result.clone());
         result
     }
@@ -1381,14 +1383,23 @@ fn active_profile_id(state: State<AppState>) -> Option<String> {
 // ---------- 内核与系统代理命令 ----------
 
 #[tauri::command]
+fn platform_capabilities() -> platform::Capabilities {
+    platform::capabilities()
+}
+
+#[tauri::command]
 async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
     start_core(&state)
 }
 
 #[tauri::command]
 async fn core_stop(state: State<'_, AppState>) -> Result<(), String> {
-    state.core().stop();
-    Ok(())
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    if state.core().stop() {
+        Ok(())
+    } else {
+        Err("内核未退出，请重试停止".into())
+    }
 }
 
 #[tauri::command]
@@ -2058,6 +2069,10 @@ fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
 
 /// 总开关：开启 = 确保内核运行 + 设置系统代理；关闭 = 还原系统代理（内核保持）。
 fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
+    // Reject before starting a core or changing any persistent state.
+    if !platform::capabilities().system_proxy {
+        return Err("当前平台仅支持显式 HTTP/SOCKS 代理，尚未支持系统代理接管".into());
+    }
     if !state.sysproxy.status().enabled && state.core().status() != CoreStatus::Running {
         start_core(state)?;
         wait_core_running(state)?;
@@ -2946,7 +2961,9 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 
     let sp = state.sysproxy.status();
     let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-    let proxy_label = if sp.enabled {
+    let proxy_label = if !platform::capabilities().system_proxy {
+        tr(&lang, "系统代理：当前平台暂不支持", "System proxy: unavailable on this platform")
+    } else if sp.enabled {
         format!(
             "{} :{}",
             tr(&lang, "系统代理：已开启", "System Proxy: On"),
@@ -2955,7 +2972,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     } else {
         tr(&lang, "系统代理：已关闭", "System Proxy: Off")
     };
-    let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, true, None::<&str>)?;
+    let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, platform::capabilities().system_proxy, None::<&str>)?;
     #[cfg(target_os = "macos")]
     let tun_label = if tun_enabled {
         if state.core().status() == CoreStatus::Running {
@@ -3629,6 +3646,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            platform_capabilities,
             notifications::notification_publish,
             notifications::notification_snapshot,
             notifications::notification_dismiss,

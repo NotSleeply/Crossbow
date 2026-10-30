@@ -3,7 +3,8 @@
 > 跨平台（**macOS + Windows + iOS**）代理客户端，对标 Clash Verge 与 Mihomo Party，
 > 目标是「Clash Verge 的易用性 + Surge 级别的可观测性与细节」。
 >
-> v3（2026-10）：重新纳入 Windows；仅不做 Linux。
+> v4（2026-10-30）：纳入 Linux 分阶段适配，先验证 CachyOS x86_64 + niri/Wayland（#213）。
+> v3（2026-10）：重新纳入 Windows；当时不做 Linux。
 > v2（2026-10）：平台范围曾收敛为 macOS + iOS。
 > 状态：设计冻结，工程骨架搭建中。
 
@@ -19,7 +20,9 @@
 2. **轻**：安装包小、待机内存低、支持「轻量模式」（GUI 退出后只留内核）。
 3. **可观测**：连接、日志、流量、延迟可查可用，对齐 Surge 的仪表盘体验。
 
-**平台策略**：macOS / Windows / iOS 三端，不做 Linux（明确记录不做）。桌面端同一 Tauri 壳覆盖双系统；iOS 因平台限制独立壳；三端共享 Rust 核心逻辑。
+**平台策略**：macOS / Windows 桌面端、iOS 原生壳，以及分阶段加入的 Linux 桌面端。
+Linux 复用 Tauri 壳和 Rust 配置逻辑；第一阶段仅承诺 CachyOS x86_64 + niri/Wayland 的显式代理验证。
+系统代理、TUN/特权服务、跨发行版打包与公开更新留到后续阶段，见 [Linux 测试说明](LINUX-TESTING.md)。
 
 ---
 

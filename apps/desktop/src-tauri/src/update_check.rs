@@ -48,6 +48,9 @@ fn set_current(app: &AppHandle, info: Option<UpdateInfo>) {
 
 /// 后台检查线程：启动 30s 后首查，之后每 6h 一轮；每轮读当前设置。
 pub fn spawn_checker(app: &AppHandle) {
+    if !crate::platform::capabilities().app_update {
+        return;
+    }
     let h = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(30));
@@ -92,6 +95,9 @@ pub fn check_once(
     auto_download: bool,
     notify_available: bool,
 ) -> Result<Option<String>, String> {
+    if !crate::platform::capabilities().app_update {
+        return Err("当前平台尚未提供应用更新包".into());
+    }
     let updater = updater_with_proxy(app)?;
     // Updater requests have no default timeout. Limit only the check, so a slow
     // download is not aborted by the same deadline.

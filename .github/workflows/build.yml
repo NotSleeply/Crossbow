@@ -22,6 +22,38 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
 
 jobs:
+  linux-foundation:
+    name: Linux foundation (build and tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+      - run: python3 scripts/ci/download_sidecar.py x86_64-unknown-linux-gnu
+      - run: pnpm install --frozen-lockfile
+      - run: cargo test --locked -p crossbow-core
+      - run: cargo test --locked --lib -p crossbow-desktop
+      - run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs
+      - name: Build Linux executable (no public installer yet)
+        working-directory: apps/desktop
+        run: pnpm tauri build --no-bundle --config tauri.ci.conf.json
+
   pipeline-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10

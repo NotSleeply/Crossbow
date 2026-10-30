@@ -102,6 +102,7 @@ export interface LogEntry {
 export interface CheckResult {
   id: string;
   ok: boolean;
+  skipped: boolean;
   detail: string;
   fix: string | null;
 }
@@ -170,7 +171,14 @@ export interface UpdateState {
   progress: [number, number] | null;
 }
 
+export interface PlatformCapabilities {
+  system_proxy: boolean;
+  tun: boolean;
+  app_update: boolean;
+}
+
 export const ipc = {
+  platformCapabilities: () => invoke<PlatformCapabilities>("platform_capabilities"),
   onUpdateState: (cb: (s: UpdateState | null) => void) =>
     listen<UpdateState | null>("update://state", (e) => cb(parsePayload<UpdateState | null>(e.payload))),
   updateStateGet: () => invoke<UpdateState | null>("update_state_get"),
