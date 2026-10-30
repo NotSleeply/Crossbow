@@ -110,6 +110,32 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
     report(SERVICE_STOPPED);
 }
 
+/// 服务目录可能位于用户自选盘符（非管理员可写）：启动即收紧服务与
+/// 托管内核二进制的 DACL——非管理员只读可执行，封死换文件提权。
+/// SYSTEM/管理员全权不受影响，安装器（提权）升级不受影响。
+fn restrict_write_acl(path: &Path) {
+    let mut descriptor = std::ptr::null_mut();
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            text("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;RX;;;BU)").as_ptr(),
+            1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return;
+    }
+    let _descriptor = Local(descriptor);
+    unsafe {
+        SetFileSecurityW(
+            wide(path.as_os_str()).as_ptr(),
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            descriptor,
+        );
+    }
+}
+
 fn no_reparse(path: &Path) -> Result<(), String> {
     for part in path.ancestors() {
         if std::fs::symlink_metadata(part)
@@ -211,28 +237,9 @@ impl Broker {
             .to_path_buf();
         no_reparse(&dir)?;
         let dir = dir.canonicalize().map_err(|e| e.to_string())?;
-        let mut known = std::ptr::null_mut();
-        if unsafe {
-            SHGetKnownFolderPath(&FOLDERID_ProgramFiles, 0, std::ptr::null_mut(), &mut known)
-        } < 0
-        {
-            return Err("cannot find Program Files".into());
-        }
-        let mut len = 0;
-        unsafe {
-            while *known.add(len) != 0 {
-                len += 1;
-            }
-        }
-        let program_files = PathBuf::from(OsString::from_wide(unsafe {
-            std::slice::from_raw_parts(known, len)
-        }));
-        unsafe {
-            CoTaskMemFree(known.cast());
-        }
-        let program_files = program_files.canonicalize().map_err(|e| e.to_string())?;
-        if !dir.starts_with(&program_files) || dir == program_files {
-            return Err("service requires a per-machine Program Files installation".into());
+        // 位置无关前提（#191）：服务与托管内核二进制收紧为非管理员只读
+        for name in ["crossbow-service.exe", "mihomo.exe"] {
+            restrict_write_acl(&dir.join(name));
         }
         let runtime = dir.join("service-runtime");
         std::fs::create_dir_all(&runtime).map_err(|e| e.to_string())?;
