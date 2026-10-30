@@ -3,6 +3,7 @@ import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../components/Button";
 import { ipc, type GroupView, type NodeView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
@@ -247,10 +248,10 @@ export default function ProxiesPage() {
   return (
     <div className="cb-proxies-page cb-node-toolbar-page">
       {groups.length === 0 && <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
-        <button className="cb-btn" onClick={load}>
+        <Button onClick={load}>
           <Icon name="refresh" />
           {t("proxies.refresh")}
-        </button>
+        </Button>
       </PageHead>}
       {groups.length === 0 ? (
         <div className="cb-empty">
@@ -407,10 +408,10 @@ function GroupCard({
             <summary>{t("proxies.subscriptionInfo")}</summary>
             <div className="cb-node-info-panel">{infoNodes.map((node) => <p key={node.name}><NodeName name={node.name} /></p>)}</div>
           </details>}
-          <button className="cb-btn cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></button>
-          <button className="cb-btn cb-node-test-all" onClick={onTest} disabled={busy}>
+          <Button className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></Button>
+          <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
-          </button>
+          </Button>
         </div>
       </div>
       {realNodes.length > 0 && <div className="cb-node-filters">
