@@ -1,4 +1,4 @@
-import { fitGrid } from "./fitGrid";
+import { fitGrid, fitRowHeight } from "./fitGrid";
 import "./FitItems.css";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
@@ -39,17 +39,22 @@ export default function FitItems<T>({
   }, []);
   const { columns, rows, count, pages } = fitGrid(size.width, size.height, items.length, minWidth, maxColumns, rowHeight, maxRows);
   const active = Math.min(page, pages - 1);
+  const pageItems = items.slice(active * count, (active + 1) * count);
+  const visibleRows = Math.max(1, Math.ceil(pageItems.length / columns));
+  const height = stretch
+    ? fitRowHeight(size.height, rowHeight, rows, pages, pageItems.length, count)
+    : rowHeight;
   return (
     <div ref={ref} className={`cb-fit-items ${stretch ? "cb-fit-stretch" : ""}`} aria-label={label}>
       <div
         className="cb-fit-cells"
         style={{
           gridTemplateColumns: `repeat(${columns},minmax(0,1fr))`,
-          gridAutoRows: stretch ? undefined : rowHeight,
-          gridTemplateRows: stretch ? `repeat(${Math.min(rows, Math.max(1, Math.ceil(Math.min(count, items.length - active * count) / columns)))}, minmax(0,1fr))` : undefined,
+          gridAutoRows: height,
+          gridTemplateRows: stretch ? `repeat(${visibleRows}, ${height}px)` : undefined,
         }}
       >
-        {items.slice(active * count, (active + 1) * count).map(render)}
+        {pageItems.map(render)}
       </div>
       {pages > 1 && (
         <nav className="cb-fit-pager" aria-label={label}>
