@@ -13,6 +13,7 @@
   --cb-text-dim: #596777;
   --cb-faint: #626e7d;
   --cb-accent: #455ab5;
+  --cb-brand: #3f52cf;
   --cb-accent-soft: #eff2fc;
   --cb-accent-line: #8592c9;
   --cb-ok: #267659;
@@ -2951,11 +2952,11 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-/* B1 silhouette follows the approved theme accent; no image filters or duplicate marks. */
+/* B1 uses the same approved brand ink in light and dark themes. */
 .cb-logo-glyph {
   display: block;
   flex: none;
-  background: var(--cb-accent);
+  background: var(--cb-brand);
   mask-size: contain;
   mask-repeat: no-repeat;
   mask-position: center;
