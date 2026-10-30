@@ -258,6 +258,12 @@ fn controlled_config(
     root.insert(key("bind-address"), key("127.0.0.1"));
     root.insert(key("routing-mark"), serde_yaml::Value::from(MARK));
     root.insert(key("ipv6"), serde_yaml::Value::Bool(true));
+    // Match the desktop runtime and initialize the shared cache before readiness.
+    root.entry(key("profile"))
+        .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()))
+        .as_mapping_mut()
+        .ok_or("profile must be a mapping")?
+        .insert(key("store-selected"), serde_yaml::Value::Bool(true));
     // mihomo 1.19.32 / sing-tun 0.4.27 installs IPv6 routes and an oif rule even
     // with auto-route=false if Inet6Address is nonempty. gvisor still forwards
     // IPv6 with an empty list; this service owns both families' routes instead.
@@ -326,16 +332,39 @@ fn prepare(request: &Value) -> Result<(SocketAddr, String, File), String> {
         .filter(|p| p.is_absolute())
         .ok_or("log must be an absolute path")?;
     let bytes = read_limited(config, crate::policy::MAX_CONFIG)?;
-    let (yaml, mut paths, controller, secret, mixed) = controlled_config(&bytes)?;
+    let (yaml, paths, controller, secret, mixed) = controlled_config(&bytes)?;
     fs::create_dir(SESSION).map_err(|e| format!("建立 TUN 工作目录失败：{e}"))?;
     fs::set_permissions(SESSION, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     own_directory(Path::new(SESSION))?;
     let base = config.parent().ok_or("missing configuration directory")?;
+    copy_assets(base, Path::new(SESSION), paths)?;
+    link_cache(base, Path::new(SESSION))?;
+    write_private(&Path::new(SESSION).join("runtime.yaml"), yaml.as_bytes())?;
+    // This process has the requesting user's filesystem privileges, never root's.
+    let log = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(log)
+        .map_err(|e| e.to_string())?;
+    let meta = log.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.uid() != uid() {
+        return Err("log must be a user-owned regular file".into());
+    }
+    log.set_len(0).map_err(|e| e.to_string())?;
+    ensure_ports_available(&[SocketAddr::from((Ipv4Addr::LOCALHOST, mixed)), controller])?;
+    Ok((controller, secret, log))
+}
+
+fn copy_assets(base: &Path, session: &Path, mut paths: Vec<String>) -> Result<(), String> {
     paths.extend(
         [
+            // The desktop downloads these lowercase names (core_manager::GEO_FILES).
+            "geoip.metadb",
+            "geosite.dat",
             "GeoIP.dat",
             "GeoSite.dat",
-            "geoip.metadb",
             "geosite.db",
             "country.mmdb",
             "Country.mmdb",
@@ -357,26 +386,64 @@ fn prepare(request: &Value) -> Result<(SocketAddr, String, File), String> {
         if total > 128 * 1024 * 1024 {
             return Err("provider assets too large".into());
         }
-        let output = Path::new(SESSION).join(relative);
+        let output = session.join(relative);
         fs::create_dir_all(output.parent().unwrap()).map_err(|e| e.to_string())?;
         write_private(&output, &bytes)?;
     }
-    write_private(&Path::new(SESSION).join("runtime.yaml"), yaml.as_bytes())?;
-    // This process has the requesting user's filesystem privileges, never root's.
-    let log = OpenOptions::new()
-        .create(true)
+    Ok(())
+}
+
+fn link_cache(base: &Path, session: &Path) -> Result<(), String> {
+    let target = fs::canonicalize(base)
+        .map_err(|e| e.to_string())?
+        .join("cache.db");
+    let cache = OpenOptions::new()
+        .read(true)
         .write(true)
+        .create(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(log)
-        .map_err(|e| e.to_string())?;
-    let meta = log.metadata().map_err(|e| e.to_string())?;
+        .open(&target)
+        .map_err(|e| format!("无法打开节点选择缓存：{e}"))?;
+    let meta = cache.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() || meta.uid() != uid() {
-        return Err("log must be a user-owned regular file".into());
+        return Err("节点选择缓存必须是当前用户的普通文件".into());
     }
-    log.set_len(0).map_err(|e| e.to_string())?;
-    ensure_ports_available(&[SocketAddr::from((Ipv4Addr::LOCALHOST, mixed)), controller])?;
-    Ok((controller, secret, log))
+    if unsafe { libc::flock(cache.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err("节点选择缓存仍被占用，请等待原内核退出后重试".into());
+    }
+    // Both modes use the same database. Removing SESSION only removes this link,
+    // so selection writes survive service/core crashes without a copy-back step.
+    std::os::unix::fs::symlink(target, session.join("cache.db"))
+        .map_err(|e| format!("无法共享节点选择缓存：{e}"))
+}
+
+fn verify_cache_link(session: &Path) -> Result<(), String> {
+    if !fs::symlink_metadata(session.join("cache.db"))
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        // The pinned core replaces a corrupt database by unlinking its path.
+        return Err("mihomo 未使用共享节点缓存；请先在显式代理模式修复缓存后重试".into());
+    }
+    Ok(())
+}
+
+fn cache_ready(session: &Path) -> Result<bool, String> {
+    verify_cache_link(session)?;
+    let cache = File::open(session.join("cache.db")).map_err(|e| e.to_string())?;
+    if unsafe { libc::flock(cache.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        // Dropping this descriptor releases the probe lock. /version can be
+        // available before providers and the selected-node cache have loaded.
+        return Ok(false);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(true)
+    } else {
+        Err(format!("无法确认节点选择缓存就绪：{error}"))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -784,12 +851,12 @@ impl Session {
                     }
                     .save()?;
                 }
-                if controller_ready(controller, &secret) {
+                if controller_ready(controller, &secret) && cache_ready(Path::new(SESSION))? {
                     break;
                 }
             }
             if Instant::now() >= deadline {
-                return Err("等待 TUN 设备和内核控制器超时".into());
+                return Err("等待 TUN 设备、内核控制器和节点缓存超时".into());
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -842,7 +909,10 @@ impl Session {
     fn status(&self) -> Value {
         json!({"ok":true,"active":self.child.is_some(),"pid":self.child.as_ref().map(Child::id),"ifindex":self.ifindex,"stopped":self.child.is_none() && self.ifindex.is_none()})
     }
-    fn verify_network(&self) -> Result<(), String> {
+    fn verify_session(&self) -> Result<(), String> {
+        if !cache_ready(Path::new(SESSION))? {
+            return Err("内核节点缓存未保持打开，正在退出本次接管".into());
+        }
         let expected = self.ifindex.ok_or("TUN 尚未就绪")?;
         if network::device_index()? != Some(expected) {
             return Err("TUN 接口已消失或身份发生变化".into());
@@ -943,7 +1013,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
             return Ok(true);
         }
     } else {
-        session.verify_network()?;
+        session.verify_session()?;
         reply(&mut stream, session.status())?;
     }
     loop {
@@ -972,7 +1042,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 recovery?;
                 return Ok(false);
             }
-            if let Err(error) = session.verify_network() {
+            if let Err(error) = session.verify_session() {
                 let recovery = session.stop();
                 let _ = reply(
                     &mut stream,
@@ -1057,6 +1127,18 @@ fn serve() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_dir() -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "crossbow-service-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&path).unwrap();
+        path
+    }
     fn base() -> &'static str {
         "mixed-port: 19080\nexternal-controller: 127.0.0.1:19090\nsecret: abcdef0123456789abcdef\nrules: [MATCH,DIRECT]\n"
     }
@@ -1074,6 +1156,7 @@ mod tests {
             .is_empty());
         assert_eq!(value["routing-mark"].as_u64(), Some(MARK as u64));
         assert_eq!(value["allow-lan"].as_bool(), Some(false));
+        assert_eq!(value["profile"]["store-selected"].as_bool(), Some(true));
         assert!(value["listeners"].is_null() && value["iptables"].is_null());
         assert!(value["dns"]["listen"].is_null());
         assert_eq!(
@@ -1104,6 +1187,70 @@ mod tests {
         drop(occupied);
         assert!(ensure_ports_available(&[address]).is_ok());
         assert!(ensure_ports_available(&[address, address]).is_err());
+    }
+    #[test]
+    fn copies_desktop_geo_filenames_on_case_sensitive_filesystems() {
+        let base = test_dir();
+        let session = test_dir();
+        for name in ["geosite.dat", "geoip.metadb", "GeoSite.dat"] {
+            fs::write(base.join(name), name.as_bytes()).unwrap();
+        }
+        copy_assets(&base, &session, Vec::new()).unwrap();
+        for name in ["geosite.dat", "geoip.metadb", "GeoSite.dat"] {
+            assert_eq!(fs::read(session.join(name)).unwrap(), name.as_bytes());
+        }
+        fs::remove_dir_all(base).unwrap();
+        fs::remove_dir_all(session).unwrap();
+    }
+    #[test]
+    fn cache_writes_survive_session_removal_and_restarts() {
+        let base = test_dir();
+        let session = test_dir();
+        let target = base.join("cache.db");
+        fs::write(&target, b"existing selection").unwrap();
+        let inode = fs::metadata(&target).unwrap().ino();
+        link_cache(&base, &session).unwrap();
+        verify_cache_link(&session).unwrap();
+        let cached = session.join("cache.db");
+        assert_eq!(fs::metadata(&cached).unwrap().ino(), inode);
+        assert_eq!(fs::read(&cached).unwrap(), b"existing selection");
+        fs::write(&cached, b"new selection").unwrap();
+        fs::remove_dir_all(&session).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"new selection");
+        fs::create_dir(&session).unwrap();
+        link_cache(&base, &session).unwrap();
+        assert_eq!(fs::read(&cached).unwrap(), b"new selection");
+        assert_eq!(fs::metadata(&cached).unwrap().ino(), inode);
+        fs::remove_dir_all(base).unwrap();
+        fs::remove_dir_all(session).unwrap();
+    }
+    #[test]
+    fn cache_rejects_symlink_targets_locks_and_core_replacements() {
+        let base = test_dir();
+        let session = test_dir();
+        let target = base.join("cache.db");
+        let unrelated = base.join("unrelated");
+        fs::write(&unrelated, b"untouched").unwrap();
+        std::os::unix::fs::symlink(&unrelated, &target).unwrap();
+        assert!(link_cache(&base, &session).is_err());
+        assert_eq!(fs::read(&unrelated).unwrap(), b"untouched");
+        fs::remove_file(&target).unwrap();
+        let lock = File::create(&target).unwrap();
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        assert!(link_cache(&base, &session).is_err());
+        drop(lock);
+        link_cache(&base, &session).unwrap();
+        assert!(!cache_ready(&session).unwrap());
+        let core_lock = File::open(&target).unwrap();
+        assert_eq!(unsafe { libc::flock(core_lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        assert!(cache_ready(&session).unwrap());
+        drop(core_lock);
+        assert!(!cache_ready(&session).unwrap());
+        fs::remove_file(session.join("cache.db")).unwrap();
+        fs::write(session.join("cache.db"), b"core rebuilt a corrupt DB").unwrap();
+        assert!(verify_cache_link(&session).is_err());
+        fs::remove_dir_all(base).unwrap();
+        fs::remove_dir_all(session).unwrap();
     }
     #[test]
     fn resource_ledger_cannot_request_arbitrary_routes_or_owners() {

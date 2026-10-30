@@ -6,6 +6,8 @@
 
 桌面先检查现有隧道、代理进程、IPv4/IPv6 策略路由和保留路由表。发现 FlClash、WireGuard、Tailscale 等冲突时直接返回原因，保留正在运行的显式代理；不会关闭其他程序、修改它们的配置或抢占端口。服务在真正启动前再检查一次，运行中发现新的冲突或自身路由丢失时停止本次接管。
 
+可用 IPv4 接口还需通过反向路径检查预检。Linux 使用 `max(conf/all/rp_filter, conf/接口/rp_filter)` 作为有效值；值为 `1` 时，这种 TUN 策略路由会使公网代理回包被严格检查丢弃。因此当前实现明确拒绝接管，报出接口与参数，原显式代理继续运行。值为 `2` 的宽松模式不属于这个限制；不能读取或确认参数时也拒绝。Crossbow 不修改这些 sysctl，需由管理员结合现有网络策略处理。[内核参数说明](https://docs.kernel.org/networking/ip-sysctl.html#rp-filter-integer)
+
 检查通过后才请求系统授权。桌面保持普通用户权限，`pkexec` 只调用固定安装路径的 `crossbow-service --authorize`。它从 `PKEXEC_UID` 取得调用用户，启动固定名称的 systemd 临时服务 `crossbow-tun.service`：
 
 - 服务和 mihomo 以该用户身份运行，仅有 `CAP_NET_ADMIN`；不授予 root 文件访问权限，不给桌面或下载内核设置 setuid/file capability。
@@ -14,6 +16,8 @@
 - 桌面到服务的连接在整个 TUN 会话中保持打开。配置变化复用已有的服务重启流程，重新经过检查，不直接向特权内核热重载未经处理的配置。
 
 服务安装与一次系统授权是两件事。取消授权或服务启动失败会报告错误，原来的显式代理继续运行。服务正常停止后保留最多 30 秒空闲时间，供配置重启复用；桌面重新启动不会根据旧开关自动接管网络。
+
+已有的 `geosite.dat`、`geoip.metadb` 等数据文件会复制到受控目录，保留 Linux 文件名大小写。节点选择使用普通运行目录中的同一份 `cache.db`，会话目录只持有链接；退出或清理会话不会删除原数据库，普通代理与 TUN 切换也不会各留一份选择。服务验证缓存的所属用户、文件类型和占用状态，等待内核实际打开缓存后才报告就绪。若内核重建损坏数据库并断开共享链接，接管会失败并恢复，原缓存留给显式代理模式修复。
 
 ## 安装
 
@@ -57,8 +61,10 @@ cargo build --locked -p crossbow-service
 python3 scripts/linux/smoke_network.py
 ```
 
-网络脚本需要已安装的 bubblewrap 和允许创建的用户命名空间。它使用独立 user/PID/mount/network namespace、临时安装映射和真实 mihomo，不需要 sudo；宿主网络在前后只读对比。覆盖双栈 TCP、UDP DNS、正常停止、授权服务复用、端口冲突、桌面断连、内核 SIGKILL、外来策略路由保留、所属规则丢失以及独立的 `ExecStopPost` 清理入口。设置页和开关另有前端故障注入检查，不能代替真实权限故障。
+网络脚本需要已安装的 bubblewrap 和允许创建的用户命名空间。它使用独立 user/PID/mount/network namespace、临时安装映射和真实 mihomo，不需要 sudo；宿主网络在前后只读对比。覆盖双栈 TCP、UDP DNS、正常停止、授权服务复用、端口冲突、桌面断连、内核 SIGKILL、外来策略路由保留、所属规则丢失以及独立的 `ExecStopPost` 清理入口。另覆盖严格 `rp_filter` 拒绝、仅小写 GeoSite 文件的离线启动，以及普通代理、TUN 重启和崩溃后的节点选择持久化。测试只在确认独立的网络命名空间内设置该场景需要的 sysctl。
 
 2026-10-30：上述隔离场景通过；niri 实机的显式代理、已有代理/VPN 冲突拦截、失败保留原内核通过。两组验证的宿主路由/DNS 摘要均未变。当前机器没有安装此服务，也没有开启真实 TUN。
 
-**第二阶段的宿主实网验收仍未完成。** 隔离环境没有启动真正的系统级 systemd/polkit，因此认证代理弹窗、取消授权、systemd 的服务属性生效及 `ExecStopPost` 自动执行仍需在专用测试环境验证；脚本只验证了同一个清理入口。不能把这些本机/隔离通过项当作完整日用或公开发布验收。详细结果见 [Linux 测试记录](LINUX-TESTING.md)。
+此外，一次性 KVM 虚拟机已补充真实 systemd/polkit、服务权限、自动 `ExecStopPost`、KDE 图形授权的取消与成功，以及外部代理连接验证。图形路径使用 Xorg，未借用宿主登录会话或网络。
+
+**第二阶段的宿主实网验收仍未完成。** 当前 niri/Wayland 桌面没有实际开启 TUN；不能把隔离系统和图形检查当作当前宿主的完整日用或公开发布验收。各轮的版本、范围和结果见 [Linux 测试记录](LINUX-TESTING.md)。

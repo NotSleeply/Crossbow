@@ -4,6 +4,7 @@ No sudo, service installation, host routes, DNS or firewall writes. Requires bub
 """
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -84,6 +85,10 @@ def inside(output):
     run('ip', 'link', 'set', 'uplink', 'up')
     run('ip', 'route', 'add', 'default', 'dev', 'uplink')
     run('ip', '-6', 'route', 'add', 'default', 'dev', 'uplink')
+    # These sysctls belong to this asserted-private network namespace only.
+    Path('/proc/sys/net/ipv4/conf/all/rp_filter').write_text('0')
+    rp_filter = Path('/proc/sys/net/ipv4/conf/uplink/rp_filter')
+    rp_filter.write_text('1')
     baseline = snapshot()
     checks = []
     proxies = []
@@ -113,6 +118,15 @@ def inside(output):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     config = output / 'config.yaml'
     core_log = output / 'core.log'
+    # Minimal GeoSiteList: TEST plus CN, which mihomo probes during validation.
+    # Keeping the only GeoSite file lowercase exercises Linux's actual filename.
+    domain = b'\x08\x03\x12\x0f' + b'fixture.invalid'
+    geosite = b''
+    for name in [b'CN', b'TEST']:
+        site = b'\x0a' + bytes([len(name)]) + name + b'\x12' + bytes([len(domain)]) + domain
+        geosite += b'\x0a' + bytes([len(site)]) + site
+    (output / 'geosite.dat').write_bytes(geosite)
+    (output / 'cache.db').unlink(missing_ok=True)
     mixed, controller = free_port(), free_port()
     while controller == mixed:
         controller = free_port()
@@ -120,16 +134,55 @@ def inside(output):
 external-controller: 127.0.0.1:{controller}
 secret: crossbow-isolated-test-secret
 log-level: debug
+profile: {{store-selected: true}}
+geox-url:
+  geosite: http://127.0.0.1:1/must-not-download
 proxies:
   - name: fixture
     type: http
     server: 127.0.0.1
     port: {server.server_address[1]}
-rules: [MATCH,fixture]
+proxy-groups:
+  - name: selection
+    type: select
+    proxies: [fixture, DIRECT]
+rules: ["GEOSITE,TEST,selection", "MATCH,selection"]
 dns:
   nameserver: [127.0.0.1:65530]
-'''.replace('rules: [MATCH,fixture]', 'rules: ["MATCH,fixture"]'))
+''')
     processes = []
+
+    def api(method, path, value=None):
+        connection = http.client.HTTPConnection('127.0.0.1', controller, timeout=3)
+        try:
+            connection.request(method, path, None if value is None else json.dumps(value),
+                               {'Authorization': 'Bearer crossbow-isolated-test-secret',
+                                'Content-Type': 'application/json'})
+            response = connection.getresponse()
+            body = response.read()
+            assert response.status in [200, 204], (response.status, body)
+            return json.loads(body) if body else None
+        finally:
+            connection.close()
+
+    def select(name):
+        previous = (output / 'cache.db').stat().st_mtime_ns
+        api('PUT', '/proxies/selection', {'name': name})
+        wait(lambda: (output / 'cache.db').stat().st_mtime_ns != previous)
+        assert api('GET', '/proxies/selection')['now'] == name
+
+    def ordinary():
+        log = (output / 'ordinary.log').open('wb')
+        process = subprocess.Popen(['/usr/lib/crossbow/mihomo', '-d', str(output), '-f', str(config)],
+                                   stdout=log, stderr=log)
+        log.close()
+        processes.append(process)
+        def ready():
+            assert process.poll() is None, (output / 'ordinary.log').read_text()
+            try: return api('GET', '/proxies/selection')
+            except (OSError, http.client.HTTPException): return False
+        wait(ready)
+        return process
 
     def launch():
         log = (output / f'service-{len(processes)}.log').open('wb')
@@ -156,7 +209,24 @@ dns:
 
     try:
         process = launch()
+        with connect() as rejected:
+            result = request(rejected, {'cmd': 'start', 'config': str(config), 'log': str(core_log)})
+            assert not result['ok'] and result['stopped'] and 'rp_filter=1' in result['error'], result
+        assert rp_filter.read_text().strip() == '1'
+        clean()
+        checks.append('strict rp_filter is rejected without changing routes or the sysctl')
+        rp_filter.write_text('2')
+        explicit = ordinary()
+        select('DIRECT')
+        explicit.terminate(); explicit.wait(timeout=5)
+        cache_inode = (output / 'cache.db').stat().st_ino
         stream, state = start()
+        assert Path('/run/crossbow-tun/session/geosite.dat').read_bytes() == geosite
+        checks.append('lowercase geosite.dat serves GEOSITE rules without a download')
+        assert api('GET', '/proxies/selection')['now'] == 'DIRECT'
+        assert Path('/run/crossbow-tun/session/cache.db').stat().st_ino == cache_inode
+        checks.append('ordinary proxy selection is preserved when entering TUN')
+        select('fixture')
         status_text = Path(f'/proc/{state["pid"]}/status').read_text()
         cap = next(line.split()[1] for line in status_text.splitlines() if line.startswith('CapEff:'))
         assert int(cap, 16) == 1 << 12, cap
@@ -181,15 +251,19 @@ dns:
             assert answer[:2] == query[:2] and struct.unpack('!H', answer[6:8])[0] > 0
         assert not (output / 'resolver-called').exists(), 'core tried to invoke a system DNS helper'
         checks.append('UDP DNS is handled in TUN without changing resolver configuration or invoking resolvectl')
+        select('DIRECT')
         assert request(stream, {'cmd': 'stop'})['stopped']
         stream.close()
         clean()
         checks.append('normal stop restores the namespace network exactly')
         stream, state = start()
+        assert api('GET', '/proxies/selection')['now'] == 'DIRECT'
         assert request(stream, {'cmd': 'stop'})['stopped']
         stream.close()
         clean()
         checks.append('configuration restart reuses the authorized idle service')
+        assert (output / 'cache.db').stat().st_ino == cache_inode
+        checks.append('TUN restart preserves the selected node and original cache database')
         # Occupied listeners must not be killed or mistaken for readiness.
         with socket.socket() as occupied:
             occupied.bind(('127.0.0.1', mixed)); occupied.listen()
@@ -205,10 +279,16 @@ dns:
         checks.append('desktop disconnect stops its core and releases all recorded resources')
         process = launch()
         stream, state = start()
+        select('fixture')
         os.kill(state['pid'], signal.SIGKILL)
         process.wait(timeout=10); stream.close()
         clean()
         checks.append('core SIGKILL is detected and its network resources are released')
+        explicit = ordinary()
+        wait(lambda: api('GET', '/proxies/selection')['now'] == 'fixture')
+        assert (output / 'cache.db').stat().st_ino == cache_inode
+        explicit.terminate(); explicit.wait(timeout=5)
+        checks.append('TUN selection survives core SIGKILL and return to ordinary proxy mode')
         process = launch()
         stream, state = start()
         run('ip', 'rule', 'add', 'priority', '11000', 'table', 'main')

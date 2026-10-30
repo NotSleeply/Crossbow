@@ -118,7 +118,7 @@ CI 编译通过不是 niri/Wayland 实机通过；本机原生验证结果单独
 本机证据位于 `target/linux-validation/fixes-native/` 和 `target/linux-validation/fixes-ui/`；原生程序 SHA-256 为 `c26549920c48aab4bbf7b9cb83ffa93ae4d47ff36923a09851fdee3576f7e3ee`。
 
 
-## 第二阶段：受控 TUN 与恢复（2026-10-30，#216）
+## 第二阶段首轮：受控 TUN 与恢复（2026-10-30，#216）
 
 实现与安装步骤见 [LINUX-NETWORK.md](LINUX-NETWORK.md)。沿用现有 `crossbow-service` 和 `CoreManager`，没有新增通知框架、进程框架或第三方包；Linux 仅复用已有的 libc、serde 与 socket2。第一阶段 PR #214 已由维护者合并，提交仍是 `f6dccc1`。
 
@@ -142,3 +142,18 @@ CI 编译通过不是 niri/Wayland 实机通过；本机原生验证结果单独
 - 服务：`17b789334077dbea84d1dd42921ee4caba969634653a47990c8efba12d5d26bb`
 
 这些结果支持代码评审及下一步专用环境验收；第二阶段完整日用验收仍未通过。
+
+## 第二阶段补充：系统授权与维护者反馈（2026-10-30，PR #223）
+
+提交 `a1ddc826` 随后在一次性 QEMU/KVM 虚拟机完成 15 项补充检查：真实 systemd/polkit、按用户运行且只有 `CAP_NET_ADMIN`、服务身份确认、自动 `ExecStopPost`、跨用户连接拒绝、运行中安装拒绝、外部公网地址代理防回环，以及 KDE 图形授权的 Cancel/OK。取消和成功授权前后，原真实 mihomo 显式代理仍可用。虚拟机图形环境使用 Xorg，未据此声称宿主 Wayland 授权窗口已验证；报告在 `target/linux-validation/system-acceptance/report.json`。该提交的 CI run `41021486895` 六个 job 均通过。
+
+维护者随后指出严格反向路径检查、GeoSite 文件大小写和节点选择缓存三项问题。本轮修复保持原服务与网络恢复流程，验证如下：
+
+- **反向路径检查**：在 KVM guest 将外部代理放入另一个网络命名空间，使用公共地址 `203.0.113.2`。旧版在 `all=0 / external0=1` 时返回 active，但请求失败，内核 `IPReversePathFilter` 丢包计数增加 6；同环境改为宽松模式后请求成功且不再增加。新共享预检拒绝有效严格模式，原显式代理 PID、代理请求、路由/DNS 和 sysctl 均保持不变，未创建授权服务。另核验 `(all,接口)` 为 `(1,0)` 时拒绝、`(1,2)/(2,1)/(0,2)` 时放行。
+- **GeoSite**：使用只含 CN/TEST 的合法微型数据文件，仅保留小写 `geosite.dat`，并将下载地址指向不可连接的本地端口。旧服务实测启动失败；通过真实安装脚本换成新服务后，同配置能离线加载 `GEOSITE` 规则。复制测试同时覆盖普通应用实际使用的 `geoip.metadb` 和已有大写兼容名。
+- **节点选择**：真实 mihomo 的普通代理选择进入 TUN 后保留；TUN 重启、内核 SIGKILL、再切回普通模式后选择与原数据库 inode 均保留。现有合法 `0644` 缓存不会被截断或收紧权限，新文件用 `0600`；符号链接目标和占用中的数据库会被拒绝。
+- **缓存就绪**：慢 provider 证明 `/version` 的 200 响应可能早于缓存初始化，不能单凭控制器可用就报告接管完成。真实 systemd 服务在控制器已就绪、缓存尚未打开时仍等待，尚未安装优先级 `12020` 的规则。放行 provider 后，合法缓存正常启动；损坏缓存使共享链接被替换时明确失败并清理，原坏数据库的内容摘要不变。
+
+本轮桌面后端 105 项、服务 19 项单测通过；服务构建及 clippy 通过。扩展后的 `scripts/linux/smoke_network.py` 共 16 项通过，宿主路由/DNS 摘要未变。测试产物与报告位于 `target/linux-validation/review-network/`、`review-rp-filter/`、`review-assets/` 和 `cache-review/`；独立测试基础设施没有提交到仓库。服务实测 SHA-256 为 `982b8e1ceb6b49f7f55837ee8d607fc5d0849b02874926478c87a1d1236e11fb`。
+
+当前宿主没有安装服务或启用 TUN，FlClash 和 VPN 未改动。宿主实网日用与公开发布验收仍不标记为通过。

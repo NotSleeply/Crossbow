@@ -158,6 +158,80 @@ fn proxy_processes(own_pids: &[u32]) -> Vec<String> {
     found
 }
 
+fn rp_filter_value(value: &str) -> Option<u8> {
+    value.trim().parse::<u8>().ok().filter(|value| *value <= 2)
+}
+
+fn read_rp_filter(interface: &str) -> Result<u8, String> {
+    // Interface names come from iproute2, but must remain one procfs component.
+    if interface.is_empty() || matches!(interface, "." | "..") || interface.contains('/') {
+        return Err("无法确认 IPv4 接口的反向路径检查参数：接口名无效，未接管网络".into());
+    }
+    let setting = format!("net.ipv4.conf.{interface}.rp_filter");
+    let path = Path::new("/proc/sys/net/ipv4/conf")
+        .join(interface)
+        .join("rp_filter");
+    let value = std::fs::read_to_string(path)
+        .map_err(|error| format!("无法读取 {setting}：{error}；未接管网络"))?;
+    rp_filter_value(&value).ok_or_else(|| format!("{setting} 的值无效，未接管网络"))
+}
+
+fn rp_filter_conflicts(
+    addresses: &[Value],
+    own_ifindex: Option<u32>,
+    mut read: impl FnMut(&str) -> Result<u8, String>,
+) -> Result<Vec<String>, String> {
+    let mut interfaces = Vec::new();
+    for link in addresses {
+        let flags = link["flags"].as_array();
+        if !flags.is_some_and(|flags| flags.iter().any(|flag| flag == "UP"))
+            || flags.is_some_and(|flags| flags.iter().any(|flag| flag == "LOOPBACK"))
+            || matches!(
+                link["operstate"].as_str(),
+                Some("DOWN" | "LOWERLAYERDOWN" | "DORMANT" | "NOTPRESENT")
+            )
+            || (link["ifname"] == DEVICE
+                && own_ifindex.is_some()
+                && link["ifindex"].as_u64() == own_ifindex.map(u64::from))
+        {
+            continue;
+        }
+        // RFC1918 addresses also have global scope: ordinary Wi-Fi/Ethernet
+        // uplinks behind NAT need the same check as publicly addressed links.
+        let ipv4 = link["addr_info"].as_array().is_some_and(|addresses| {
+            addresses.iter().any(|address| {
+                address["family"] == "inet"
+                    && address["scope"] == "global"
+                    && address["local"]
+                        .as_str()
+                        .and_then(|value| value.parse::<std::net::Ipv4Addr>().ok())
+                        .is_some_and(|address| !address.is_loopback() && !address.is_unspecified())
+            })
+        });
+        if ipv4 {
+            interfaces.push(
+                link["ifname"]
+                    .as_str()
+                    .ok_or("无法确认 IPv4 出口接口，未接管网络")?,
+            );
+        }
+    }
+    if interfaces.is_empty() {
+        return Ok(Vec::new());
+    }
+    let all = read("all")?;
+    let mut conflicts = Vec::new();
+    for interface in interfaces {
+        let value = read(interface)?;
+        // Linux uses the numeric max, not a boolean OR: 1 + 2 is loose mode.
+        // https://docs.kernel.org/networking/ip-sysctl.html#rp-filter-integer
+        if all.max(value) == 1 {
+            conflicts.push(format!("IPv4 接口 {interface} 的有效 rp_filter=1（all={all}，接口={value}）；严格反向路径检查会丢弃 TUN 的公网回包，请管理员检查网络策略"));
+        }
+    }
+    Ok(conflicts)
+}
+
 pub fn conflicts(own_ifindex: Option<u32>, own_pids: &[u32]) -> Result<Vec<String>, String> {
     let links = rows(&["-j", "-d", "link", "show"])?;
     let mut rules = rows(&["-j", "-4", "rule", "show"])?;
@@ -165,6 +239,11 @@ pub fn conflicts(own_ifindex: Option<u32>, own_pids: &[u32]) -> Result<Vec<Strin
     let mut routes = rows(&["-j", "-4", "route", "show", "table", "all"])?;
     routes.extend(rows(&["-j", "-6", "route", "show", "table", "all"])?);
     let mut result = inspect(&links, &rules, &routes, own_ifindex);
+    result.extend(rp_filter_conflicts(
+        &rows(&["-j", "-4", "address", "show", "up"])?,
+        own_ifindex,
+        read_rp_filter,
+    )?);
     result.extend(proxy_processes(own_pids));
     Ok(result)
 }
@@ -175,7 +254,7 @@ pub fn ensure_available(own_ifindex: Option<u32>, own_pids: &[u32]) -> Result<()
         Ok(())
     } else {
         Err(format!(
-            "未接管网络：{}。请自行关闭冲突项后重试；Crossbow 不会停止其他代理或 VPN",
+            "未接管网络：{}。请处理上述问题后重试；Crossbow 不会修改系统参数或停止其他代理和 VPN",
             found.join("；")
         ))
     }
@@ -211,5 +290,82 @@ mod tests {
         assert!(!builtin_rule(
             &json!({"priority":32766,"src":"all","table":"main","fwmark":"0x1"})
         ));
+    }
+
+    fn ipv4_link(name: &str, index: u32) -> Value {
+        json!({"ifname":name,"ifindex":index,"flags":["UP","LOWER_UP"],"operstate":"UP",
+            "addr_info":[{"family":"inet","scope":"global","local":"192.168.1.2"}]})
+    }
+
+    #[test]
+    fn rp_filter_uses_numeric_max_for_all_and_interface() {
+        for all in 0..=2 {
+            for interface in 0..=2 {
+                let found = rp_filter_conflicts(&[ipv4_link("eth0", 2)], None, |name| {
+                    Ok(if name == "all" { all } else { interface })
+                })
+                .unwrap();
+                assert_eq!(
+                    !found.is_empty(),
+                    all.max(interface) == 1,
+                    "all={all}, interface={interface}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rp_filter_checks_only_usable_ipv4_links_and_excludes_exact_own_tun() {
+        let mut loopback = ipv4_link("lo", 1);
+        loopback["flags"] = json!(["UP", "LOOPBACK"]);
+        let mut down = ipv4_link("eth1", 3);
+        down["operstate"] = json!("DOWN");
+        let mut ipv6 = ipv4_link("eth2", 4);
+        ipv6["addr_info"] = json!([{"family":"inet6","scope":"global","local":"2001:db8::1"}]);
+        let mut link_local = ipv4_link("eth3", 5);
+        link_local["addr_info"] = json!([{"family":"inet","scope":"link","local":"169.254.1.1"}]);
+        let own = ipv4_link(DEVICE, 6);
+        assert!(rp_filter_conflicts(
+            &[loopback, down, ipv6, link_local, own.clone()],
+            Some(6),
+            |_| panic!(
+                "inactive, local-only, IPv6-only and own TUN links need no IPv4 sysctl read"
+            )
+        )
+        .unwrap()
+        .is_empty());
+        assert_eq!(
+            rp_filter_conflicts(&[own], Some(7), |_| Ok(1))
+                .unwrap()
+                .len(),
+            1
+        );
+        let mut unknown = ipv4_link("ppp-test", 8);
+        unknown["operstate"] = json!("UNKNOWN");
+        assert_eq!(
+            rp_filter_conflicts(&[unknown], None, |_| Ok(1))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn rp_filter_unknown_values_or_unreadable_settings_fail_closed() {
+        for value in ["", "-1", "3", "strict", "1 2"] {
+            assert!(rp_filter_value(value).is_none());
+        }
+        assert_eq!(rp_filter_value("2\n"), Some(2));
+        for missing in ["all", "eth0"] {
+            let error = rp_filter_conflicts(&[ipv4_link("eth0", 2)], None, |name| {
+                if name == missing {
+                    Err("unreadable setting".into())
+                } else {
+                    Ok(0)
+                }
+            })
+            .unwrap_err();
+            assert_eq!(error, "unreadable setting");
+        }
     }
 }
