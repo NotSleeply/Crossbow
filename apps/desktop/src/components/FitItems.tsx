@@ -1,3 +1,5 @@
+import { fitGrid } from "./fitGrid";
+import "./FitItems.css";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 
@@ -9,6 +11,8 @@ export default function FitItems<T>({
   minWidth = 0,
   maxColumns = 1,
   label,
+  stretch = false,
+  maxRows,
 }: {
   items: T[];
   render: (item: T) => ReactNode;
@@ -16,6 +20,8 @@ export default function FitItems<T>({
   minWidth?: number;
   maxColumns?: number;
   label: string;
+  stretch?: boolean;
+  maxRows?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -31,28 +37,16 @@ export default function FitItems<T>({
     update();
     return () => observer.disconnect();
   }, []);
-  const columns = minWidth
-    ? Math.max(
-        1,
-        Math.min(maxColumns, Math.floor((size.width + 10) / (minWidth + 10))),
-      )
-    : 1;
-  const fullRows = Math.max(1, Math.floor((size.height + 8) / (rowHeight + 8)));
-  const needsPager = items.length > columns * fullRows;
-  const rows = Math.max(
-    1,
-    Math.floor((size.height - (needsPager ? 32 : 0) + 8) / (rowHeight + 8)),
-  );
-  const count = rows * columns;
-  const pages = Math.max(1, Math.ceil(items.length / count));
+  const { columns, rows, count, pages } = fitGrid(size.width, size.height, items.length, minWidth, maxColumns, rowHeight, maxRows);
   const active = Math.min(page, pages - 1);
   return (
-    <div ref={ref} className="cb-fit-items" aria-label={label}>
+    <div ref={ref} className={`cb-fit-items ${stretch ? "cb-fit-stretch" : ""}`} aria-label={label}>
       <div
         className="cb-fit-cells"
         style={{
           gridTemplateColumns: `repeat(${columns},minmax(0,1fr))`,
-          gridAutoRows: rowHeight,
+          gridAutoRows: stretch ? undefined : rowHeight,
+          gridTemplateRows: stretch ? `repeat(${Math.min(rows, Math.max(1, Math.ceil(Math.min(count, items.length - active * count) / columns)))}, minmax(0,1fr))` : undefined,
         }}
       >
         {items.slice(active * count, (active + 1) * count).map(render)}

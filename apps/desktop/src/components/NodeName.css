@@ -1,2 +1,5 @@
 .cb-node-flag { display: inline-block; width: 1.25em; height: .9375em; object-fit: contain; vertical-align: -.08em; margin-inline-end: .4em; flex: none; }
 .cb-node-region { display: inline-block; color: var(--cb-text-dim); font-size: .85em; margin-inline-end: .4em; }
+
+/* The outline belongs to the image box, preserving white regions in light mode. */
+.cb-node-flag { outline: 1px solid var(--cb-line-strong); outline-offset: 0; border-radius: 1px; }
