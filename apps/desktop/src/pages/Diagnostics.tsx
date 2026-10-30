@@ -116,18 +116,6 @@ export default function DiagnosticsPage() {
             </section>
           ))}
 
-          {allOk && (
-            <div
-              className="rounded-lg border px-3 py-2 text-xs"
-              style={{
-                borderColor: "var(--cb-accent-line)",
-                color: "var(--cb-accent)",
-                background: "var(--cb-accent-soft)",
-              }}
-            >
-              {t("diag.allOk")}
-            </div>
-          )}
         </div>
       )}
     </div>
