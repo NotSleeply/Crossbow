@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-30",
+  "version": "v02",
+  "status": "implemented-user-approved-direction",
+  "issue": 207,
+  "baseline": "52eb55d962196352046cff9e89126189fa814258",
+  "files": {
+    "index.html": "bf38f8a6c43e8a1385bdc5b50964dee1df2cd54154fc7a5a29303c5757ca73e3",
+    "preview.js": "f282122e071e9d0f52d0f7c23345d06118474436ab77aa7919538af562af8d47",
+    "style.css": "80e070c9bfc49e0e85b1d0b7f670d560f58f4c04ec2971eab60faa1f16fec6f5",
+    "SPEC.md": "046adc15b7f62c3c6a050b0f74e9b2e1961e92a88313ac59d3f85968c026c682",
+    "source/Proxies.css": "f1b6d603c668092c75db7bd7026ea84ee1f705ef6bb46a2f5355893dc7c29c7b",
+    "source/Proxies.tsx": "937a6d5f48e1c938b97f22676a8287ff0b7a352dac11c053945fdc05f0b89e33",
+    "previews/details.png": "f48311b8065ba99dd8da9d60b7c66fc14e0ac81a66e576227166a5765cbbcd95",
+    "previews/dark.png": "9212824a895c5f5c39852f966ea4f4049028db2b62d6c0f3376c05f786274fb4",
+    "previews/narrow.png": "541d3d6cd8fb4bbbb381a54cf55f6b4512f4764302d56e44ed7d5a48d64efcb3",
+    "previews/compact.png": "594087dbd694d8dd901db99951303640b26a7ff017fcf6b4031dc9787b9e5da0",
+    "previews/light.png": "a186ccdb35d0a955ed09beb9992721b8bc9c0c4e5ac7d5433e5b74083882d65f"
+  },
+  "checks": "Production build,6 unit tests,real React component browser checks with mock IPC; no live proxy changes"
+}

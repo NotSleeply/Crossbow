@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-30",
+  "version": "v01",
+  "status": "proposal-pending-user-approval",
+  "issue": 207,
+  "baseline": "951d9e959eda8671cef97001570963e61a7b47a6",
+  "pr": null,
+  "files": {
+    "index.html": "5046c66b96f0e8c6684befd0ebb65e27d7464cb9d7bdf0282c86b35f65292e0d",
+    "preview.js": "f282122e071e9d0f52d0f7c23345d06118474436ab77aa7919538af562af8d47",
+    "style.css": "93629016a51d0db2808ece182c1f4a49e13db6161a53ade3cc949edac69ff8ba",
+    "SPEC.md": "dab70e61fe97bd65f9ffb0d94f44dfe266ad305004be6afe0fc77fcd03740b54",
+    "previews/details.png": "3133b89add3794288b48262faeb27ba3f9dadec24192a61cec924fec5721f195",
+    "previews/dark.png": "eb81126de47c30533032626155452704033714975200de959e4b65486f47a248",
+    "previews/narrow.png": "87987df7d0fe5e55d27f21398dc53a4bc29e589504f790a9a110b770c641af15",
+    "previews/compact.png": "bcf161866190a5eedff8703610be7843aea0977c356d28cd6be50dabea5eff06",
+    "previews/light.png": "f80f3ab67a3c8d0859250951a2c2979a27283d59454fc4d110ad8396740a31ba"
+  },
+  "dependency": "../../../../apps/desktop/src/assets/flags/*.svg",
+  "checks": "1440x960 light/dark,1100x740,720x900; search,region,selection,disclosure; no page errors",
+  "index_note": "Central docs/designs/README.md claimed by codex-logo-b-production; defer index registration until available."
+}

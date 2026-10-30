@@ -30,3 +30,6 @@
 | 2026-10-28 | 概览连接路径单条传输 / 间隔 2.56 秒 | v03 | 提案 | [原型](2026-10-27-connection-flow/v03/index.html) · [规格](2026-10-27-connection-flow/v03/SPEC.md) | #160 |
 
 | 2026-10-29 | 日志筛选工具栏 | v01 | 已实现 / 待确认 | [规格](2026-10-29-log-toolbar/v01/SPEC.md) · [浅色预览](2026-10-29-log-toolbar/v01/previews/light.png) · [深色预览](2026-10-29-log-toolbar/v01/previews/dark.png) | #193 |
+
+| 2026-10-30 | 节点工具栏降噪 | v01 | 整体方向已确认 | [原型](2026-10-30-node-toolbar/v01/index.html) · [规格](2026-10-30-node-toolbar/v01/SPEC.md) | #207 |
+| 2026-10-30 | 节点工具栏与可用滑动开关 | v02 | 已实现 | [规格](2026-10-30-node-toolbar/v02/SPEC.md) · [实际浅色](2026-10-30-node-toolbar/v02/previews/light.png) · [实际深色](2026-10-30-node-toolbar/v02/previews/dark.png) | #207 |
