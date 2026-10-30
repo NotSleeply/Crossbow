@@ -49,12 +49,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cargo test --locked -p crossbow-core
       - run: cargo test --locked -p crossbow-service
-      - run: cargo build --locked -p crossbow-service
+      - run: cargo build --locked --release -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
       - run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs
       - name: Build Linux executable (no public installer yet)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle --config tauri.ci.conf.json
+      - name: Package and verify experimental Linux archive
+        run: python3 scripts/ci/package_linux.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: crossbow-linux-x86_64-experimental
+          path: dist-linux/Crossbow_*_linux_x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
   pipeline-check:
     runs-on: ubuntu-latest

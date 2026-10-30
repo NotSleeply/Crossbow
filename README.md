@@ -4,21 +4,22 @@ Crossbow 是面向 macOS 和 Windows 的开源代理客户端，使用 Tauri 2�
 mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
 并在托盘 / 菜单栏显示实时速率。
 
-**当前版本：** [v0.11.3](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.11.3)。
-提供 macOS Apple Silicon DMG 和 Windows x64 安装包；iOS 目前为工程骨架。
-Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
+**当前版本：** [v0.11.5](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.11.5)。
+提供 macOS Apple Silicon DMG、Windows x64 安装包和 Linux x86_64 实验性压缩包。
+Windows 版持续完善中，TUN 使用安装包附带的受控服务；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
 
 Linux 正在面向 **CachyOS x86_64 + niri/Wayland** 分阶段适配。显式 HTTP/SOCKS 代理可独立使用；
 第二阶段增加了需单独安装和授权的 mihomo TUN 服务，遇到其他代理、VPN 或策略路由会拒绝接管。
-系统代理、正式安装包和自动更新仍未开放。构建及实机记录见 [Linux 测试说明](docs/LINUX-TESTING.md)，
+Linux 发布包附带桌面程序、mihomo 和可选 TUN 服务安装脚本；系统代理、AppImage/DEB 和自动更新仍未开放。构建及实机记录见 [Linux 测试说明](docs/LINUX-TESTING.md)，
 服务安装、权限和恢复边界见 [Linux 网络接管](docs/LINUX-NETWORK.md)。
 
 ## 安装与使用
 
 | 平台 | 安装包 | 说明 |
 |---|---|---|
-| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.3/Crossbow_0.11.3_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
-| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.3/Crossbow_0.11.3_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
+| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.5/Crossbow_0.11.5_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
+| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.5/Crossbow_0.11.5_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
+| Linux x86_64（实验性） | [下载 tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.11.5/Crossbow_0.11.5_linux_x86_64.tar.gz) | 解压后以普通用户运行 `run.sh`；依赖及 TUN 安装见包内 `README.txt` |
 
 下载与更新内容以 [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest) 为准；
 应用内可在「设置 → 软件更新」检查更新，下载后请按界面提示完成安装。
@@ -29,8 +30,7 @@ Linux 正在面向 **CachyOS x86_64 + niri/Wayland** 分阶段适配。显式 HT
 3. 本应用的 TUN 与系统代理可同时开启、独立控制；TUN 首次开启需要管理员授权。
    请先关闭其他代理或 VPN 的 TUN，避免路由冲突。
 
-v0.11.3 重设计通知中心，支持未读与待处理筛选、清除已完成和撤销；主题、语言等可直接感知的成功操作不再重复通知，真实失败仍保留。
-同时优化概览的多尺寸布局、更新信息条与日志筛选工具栏，统一节点国旗资源，并修复 Windows 标题栏按钮显示。
+v0.11.5 统一按钮交互，优化小节点列表和速率图历史，修复订阅文件导入弹窗及 Windows 节点名称显示，并加入 Linux 实验性发布包。
 Windows GUI 与真实网络仍需实机验收，步骤见
 [Windows 测试说明](docs/WINDOWS-TESTING.md)。显式代理能访问而浏览器不能访问时，请检查浏览器是否使用系统代理。
 
