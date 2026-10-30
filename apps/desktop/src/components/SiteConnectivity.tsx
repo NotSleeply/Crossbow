@@ -1,3 +1,4 @@
+import "./SiteConnectivity.css";
 import { useEffect, useRef, useState } from "react";
 import { ipc, type SiteResult } from "../ipc";
 import { useT } from "../i18n";

@@ -489,9 +489,11 @@ function GroupCard({
 
       <FitItems
         items={visible}
-        minWidth={185}
-        maxColumns={3}
-        rowHeight={60}
+        minWidth={200}
+        maxColumns={4}
+        rowHeight={76}
+        maxRows={4}
+        stretch
         label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
