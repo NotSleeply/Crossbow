@@ -127,6 +127,8 @@ export default function ProfilesPage({
         return ipc.importProfileContent(f.name.replace(/\.[^.]+$/, ""), text);
       });
     }
+    // 导入完成后与 URL 导入一致：自动关闭弹窗（失败会以通知卡提示，可重开重试）
+    setImporting(false);
   };
 
   const selected =
