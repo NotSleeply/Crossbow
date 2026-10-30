@@ -114,6 +114,17 @@ export interface OutboundInfo {
   chain: string[];
 }
 
+/** Windows 的 WebView2 不渲染地区旗标 emoji（退化为两字母代码 JP/HK）。
+ *  显示层剥掉名称开头的旗标序列与其后分隔符；API 调用仍用原始名称。 */
+export const IS_WINDOWS = navigator.userAgent.includes("Windows");
+const LEADING_FLAG_RE = /^(?:\p{Regional_Indicator}{2})+\s*[|｜]?\s*/u;
+
+export function displayNodeName(name: string): string {
+  if (!IS_WINDOWS) return name;
+  const stripped = name.replace(LEADING_FLAG_RE, "").trim();
+  return stripped || name;
+}
+
 export interface NodeView {
   name: string;
   kind: string;
