@@ -48,6 +48,8 @@ jobs:
       - run: python3 scripts/ci/download_sidecar.py x86_64-unknown-linux-gnu
       - run: pnpm install --frozen-lockfile
       - run: cargo test --locked -p crossbow-core
+      - run: cargo test --locked -p crossbow-service
+      - run: cargo build --locked -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
       - run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs
       - name: Build Linux executable (no public installer yet)

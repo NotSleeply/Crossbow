@@ -43,6 +43,7 @@ export default function SettingsPage({
   );
   const [tunBusy, setTunBusy] = useState(false);
   const isMacos = navigator.userAgent.includes("Macintosh");
+  const isLinux = navigator.userAgent.includes("Linux");
   const [logsSave, setLogsSave] = useState(true);
   const [logsRetention, setLogsRetention] = useState(7);
   const [autoCheck, setAutoCheck] = useState(true);
@@ -349,7 +350,7 @@ export default function SettingsPage({
           </Row>
           <Row
             label={t("settings.tun")}
-            hint={!capabilities?.tun ? t("linux.takeoverUnavailable") : tunBusy ? t("settings.tunSwitching") : t("settings.tunHint")}
+            hint={!capabilities?.tun ? t("linux.takeoverUnavailable") : tunBusy ? t("settings.tunSwitching") : t(isLinux ? "linux.tunHint" : "settings.tunHint")}
           >
             <div className="flex items-center gap-2">
               {tunBusy && (
@@ -388,16 +389,17 @@ export default function SettingsPage({
               />
             </div>
           </Row>
-          {isMacos && tun?.enabled && (
+          {((isMacos && tun?.enabled) || isLinux) && (
             <Row
               label={t("settings.tunState")}
-              hint={t("settings.tunStateHint")}
+              hint={t(isLinux ? "linux.tunHint" : "settings.tunStateHint")}
             >
               <span
                 className="text-xs"
-                style={{ color: tun.ready ? "var(--cb-ok)" : "var(--cb-warn)" }}
+                style={{ color: tun?.ready ? "var(--cb-ok)" : "var(--cb-warn)" }}
               >
-                {tun.ready ? t("settings.tunReady") : t("settings.tunNeedAuth")}
+                {isLinux ? t(tun?.ready ? "linux.serviceReady" : "linux.serviceMissing")
+                  : tun?.ready ? t("settings.tunReady") : t("settings.tunNeedAuth")}
               </span>
             </Row>
           )}

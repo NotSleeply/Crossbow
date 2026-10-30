@@ -275,6 +275,19 @@ impl Shared {
             }
             // gone=false 时故意丢弃 Child：进程仍存活，句柄无再收价值
         } else if let Some((pid, binary)) = external {
+            #[cfg(target_os = "linux")]
+            let stopped = if crate::linux_service::managed_pid() == Some(pid) {
+                match crate::linux_service::stop_core() {
+                    Ok(stopped) => stopped,
+                    Err(error) => {
+                        eprintln!("Linux service cleanup failed: {error}");
+                        false
+                    }
+                }
+            } else {
+                kill_external(pid, binary.as_deref())
+            };
+            #[cfg(not(target_os = "linux"))]
             let stopped = kill_external(pid, binary.as_deref());
             if !stopped {
                 let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -382,16 +395,11 @@ impl CoreManager {
         append_decision(&self.shared.work_dir, line);
     }
 
-    /// 内核子进程 PID；诊断信息展示与测试用。
+    /// 当前内核 PID，包括收养或服务托管的进程。
     #[allow(dead_code)]
     pub fn pid(&self) -> Option<u32> {
-        self.shared
-            .inner
-            .lock()
-            .unwrap()
-            .child
-            .as_ref()
-            .map(|c| c.id())
+        let inner = self.shared.inner.lock().unwrap();
+        inner.child.as_ref().map(|c| c.id()).or(inner.external_pid)
     }
 
     /// 启动内核。`base_config` 是渲染后的订阅配置（未经运行时注入）。
@@ -399,7 +407,7 @@ impl CoreManager {
         self.start_internal(base_config, engine_rt, None)
     }
 
-    /// 服务托管变体（Windows TUN，#81）：「拉起进程」外包给特权服务，
+    /// 服务托管变体（Windows/Linux TUN）：「拉起进程」外包给特权服务，
     /// 端口/密钥生成、配置注入、就绪探测与状态簿记与常规路径完全一致。
     pub fn start_with_spawner(
         &self,
@@ -603,10 +611,18 @@ impl CoreManager {
                     let mut inner = self.shared.inner.lock().unwrap();
                     inner.external_pid = Some(pid);
                     inner.detached = true;
+                    #[cfg(target_os = "linux")]
+                    {
+                        inner.external_binary = Some(crate::linux_service::binary_path());
+                    }
                 }
+                #[cfg(target_os = "linux")]
+                let actual_binary = crate::linux_service::binary_path();
+                #[cfg(not(target_os = "linux"))]
+                let actual_binary = self.shared.binary_path.clone();
                 if let Err(error) = self
                     .shared
-                    .write_descriptor(pid, port, &secret, &self.shared.binary_path)
+                    .write_descriptor(pid, port, &secret, &actual_binary)
                 {
                     eprintln!("could not persist core descriptor: {error}");
                 }
@@ -616,6 +632,8 @@ impl CoreManager {
                 std::thread::spawn(move || {
                     probe_external_core(shared, port, secret);
                 });
+                #[cfg(target_os = "linux")]
+                watch_linux_service(self.shared.clone(), pid);
             }
         }
         Ok(())
@@ -626,6 +644,12 @@ impl CoreManager {
         let Some(d) = Shared::read_descriptor(&self.shared.work_dir) else {
             return false;
         };
+        // A Linux TUN lease ends with its owning GUI connection. Never adopt
+        // that capability-bearing process as an ordinary detached core.
+        #[cfg(target_os = "linux")]
+        if d.binary_path.as_ref() == Some(&crate::linux_service::binary_path()) {
+            return false;
+        }
         // Do not block GUI startup probing a descriptor whose process already exited
         // or whose PID was reused by a different binary.
         let gone = || !pid_is_alive(d.pid) || d.binary_path.as_ref()
@@ -700,6 +724,31 @@ impl CoreManager {
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
     pub fn stop(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).stopping = true;
+        }
+        #[cfg(target_os = "linux")]
+        match crate::linux_service::stop_core() {
+            Ok(true) => {
+                {
+                    let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+                    inner.stopping = true;
+                    inner.external_pid = None;
+                    inner.external_binary = None;
+                    inner.detached = false;
+                    inner.controller = None;
+                }
+                let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
+                self.shared.notify(CoreStatus::Stopped);
+                return true;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                self.shared.notify(CoreStatus::Crashed(format!("Linux TUN 清理失败：{error}")));
+                return false;
+            }
+        }
         // Windows TUN 内核以 SYSTEM 运行，GUI 杀不动：先请服务停
         #[cfg(target_os = "windows")]
         {
@@ -1225,6 +1274,32 @@ fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
         shared.notify(CoreStatus::Crashed(
             "收养的内核进程已退出（可能是被外部终止或异常崩溃）".into(),
         ));
+        return;
+    });
+}
+
+/// A live service connection confirms both core lifetime and owned resources.
+#[cfg(target_os = "linux")]
+fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(1));
+        {
+            let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.stopping || inner.external_pid != Some(pid) { return; }
+        }
+        let result = crate::linux_service::status();
+        if result.as_ref().ok().and_then(|s| s.as_ref())
+            .is_some_and(|s| s.pid == pid && s.active) { continue; }
+        {
+            let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.stopping || inner.external_pid != Some(pid) { return; }
+        }
+        let message = match result {
+            Ok(_) => "Linux TUN 服务已停止，接管资源已释放".to_string(),
+            Err(error) => format!("Linux TUN 服务失联，尚未确认清理完成：{error}"),
+        };
+        // Keep the tracked PID on uncertain cleanup so a later stop can retry.
+        shared.notify(CoreStatus::Crashed(message));
         return;
     });
 }
@@ -1904,6 +1979,7 @@ pub(crate) mod tests {
             inner.external_binary = Some(PathBuf::from("/bin/sleep"));
         }
         let pid = sleeper.id();
+        assert_eq!(mgr.pid(), Some(pid));
         // A real adopted core is reaped by its original parent/launchd. Reap
         // concurrently so an exited zombie is not mistaken for a live core.
         let reaper = std::thread::spawn(move || sleeper.wait());

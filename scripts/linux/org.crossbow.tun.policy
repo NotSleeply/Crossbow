@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <action id="org.crossbow.tun">
+    <description>Start Crossbow network service</description>
+    <message>Authentication is required to let Crossbow manage its TUN connection</message>
+    <message xml:lang="zh_CN">需要管理员授权才能启动 Crossbow 的 TUN 网络服务</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/crossbow/crossbow-service</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--authorize</annotate>
+  </action>
+</policyconfig>

@@ -893,6 +893,7 @@ name = "crossbow-desktop"
 version = "0.11.4"
 dependencies = [
  "crossbow-core",
+ "crossbow-service",
  "flate2",
  "libc",
  "objc2",
@@ -926,6 +927,7 @@ dependencies = [
 name = "crossbow-service"
 version = "0.11.4"
 dependencies = [
+ "libc",
  "serde_json",
  "serde_yaml",
  "windows-sys 0.59.0",

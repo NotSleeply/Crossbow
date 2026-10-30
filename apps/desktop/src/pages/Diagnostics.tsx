@@ -35,7 +35,12 @@ export default function DiagnosticsPage() {
     try {
       if (check.fix === "start_core") await ipc.coreStart();
       if (check.fix === "restart_core") {
-        await ipc.coreStop();
+        try {
+          await ipc.coreStop();
+        } catch {
+          // The backend already reported this failure. Do not start another core.
+          return;
+        }
         await new Promise((r) => setTimeout(r, 500));
         await ipc.coreStart();
       }
