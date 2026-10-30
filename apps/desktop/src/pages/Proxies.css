@@ -34,3 +34,6 @@
 @media(max-width:1050px) { .cb-node-result { margin-left:auto; } .cb-node-search { min-width:140px; } }
 @media(max-width:760px) { .cb-node-search { flex-basis:100%; } .cb-node-heading-copy { flex-basis:100%; } .cb-node-heading-actions { margin-left:auto; } }
 @media(prefers-reduced-motion:reduce) { .cb-node-switch-track > span { transition:none; } }
+
+/* 填充钮 hover 保护（#219）*/
+@media(hover:hover) { .cb-node-heading-actions .cb-node-test-all:hover:not(:disabled) { background:color-mix(in srgb, var(--cb-primary) 86%, var(--cb-bg)); color:var(--cb-on-primary); border-color:var(--cb-primary); } }

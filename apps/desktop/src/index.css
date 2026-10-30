@@ -802,9 +802,9 @@ summary:focus-visible {
   font-weight: 450;
   white-space: nowrap;
 }
+/* 填充钮（primary/acc）hover 不换底色：只加深边框（#219） */
 .cb-btn:hover:not(:disabled) {
-  background: var(--cb-surface-2);
-  border-color: var(--cb-line-strong);
+  border-color: color-mix(in srgb, var(--cb-text) 24%, transparent);
 }
 .cb-btn.acc {
   background: var(--cb-bg);
