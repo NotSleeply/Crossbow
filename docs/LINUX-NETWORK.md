@@ -1,6 +1,6 @@
 # Linux 网络接管（第二阶段，#216）
 
-面向 CachyOS x86_64 + niri/Wayland。显式代理仍可独立使用；TUN 需要单独安装网络服务，当前只支持随安装提供的 mihomo。系统代理设置、正式 Linux 安装包及自动更新不在这一阶段开放。
+面向 CachyOS x86_64 + niri/Wayland。显式代理仍可独立使用；TUN 需要单独安装网络服务，当前只支持随安装提供的 mihomo。v0.11.5 起提供实验性 x86_64 压缩包；系统代理设置、AppImage/DEB 安装包及自动更新尚未开放。
 
 ## 开启前会发生什么
 
@@ -20,6 +20,16 @@
 已有的 `geosite.dat`、`geoip.metadb` 等数据文件会复制到受控目录，保留 Linux 文件名大小写。节点选择使用普通运行目录中的同一份 `cache.db`，会话目录只持有链接；退出或清理会话不会删除原数据库，普通代理与 TUN 切换也不会各留一份选择。服务验证缓存的所属用户、文件类型和占用状态，等待内核实际打开缓存后才报告就绪。若内核重建损坏数据库并断开共享链接，接管会失败并恢复，原缓存留给显式代理模式修复。
 
 ## 安装
+
+使用 Release 的 `Crossbow_<版本>_linux_x86_64.tar.gz` 时，完整解压到独立目录，以普通用户运行 `./run.sh`。包内 README 列出运行依赖；在解压目录执行以下命令安装可选服务：
+
+```sh
+sudo ./install-service.sh "$PWD/crossbow-service" "$PWD/mihomo"
+```
+
+升级前关闭 TUN，等待 `crossbow-tun.service` 空闲退出（最多约 30 秒），再从新版本目录运行安装脚本，同时更新服务和内核。不要以 root 启动图形应用。
+
+从源码构建时按以下步骤：
 
 需要 systemd、polkit、iproute2 和可用的 `/dev/net/tun`；niri 会话需要运行 polkit 认证代理。先从仓库根目录构建并检查产物，再明确执行安装：
 

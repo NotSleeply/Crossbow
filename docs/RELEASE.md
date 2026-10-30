@@ -60,6 +60,16 @@
 
 PR 的 build 工作流上传 NSIS 测试包，并在临时 Windows runner 上验证服务安装、升级、启停及拒绝非 GUI 调用。Windows 编译与后端测试通过 Actions 验证，GUI 和真实联网需按 [Windows 验收说明](WINDOWS-TESTING.md) 在实机测试。
 
+## Linux（v0.11.5 起提供实验性 x86_64 压缩包）
+
+`release-linux` 在 Ubuntu 24.04 上从同一不可变 tag commit 构建桌面程序与服务，使用经过摘要校验的 mihomo。Linux 打包显式关闭更新器产物，不加入 `latest.json`；macOS 和 Windows 的更新签名流程保持原有行为。
+
+`package_linux.py` 检查三份 ELF 的 x86_64 架构、必需文件和执行权限，归档后逐项核对内容与权限。压缩包包含 `crossbow-desktop`、`mihomo`、`crossbow-service`、`run.sh`、服务安装脚本、polkit action 和 `README.txt`。安装服务仍需用户明确执行 sudo，解压或启动桌面不会自动提权。
+
+Linux job 失败会阻止整个 Release 发布。通过的归档汇入统一的 `SHA256SUMS` 和 Release 下载列表。发布包需要 GTK3、WebKitGTK 4.1、AppIndicator，glibc 基线为 Ubuntu 24.04；不是自包含 AppImage，也不声称支持旧发行版或完成 niri/Wayland 实网 TUN 验收。升级服务前须关闭 TUN，待空闲服务退出，再运行新包内的安装脚本同时替换服务和内核。
+
+本地打包脚本测试：`python3 -m unittest discover -s scripts/ci/tests -v`；真实 Linux 构建由 Actions 验证。运行及网络验收见 [Linux 网络接管](LINUX-NETWORK.md)。
+
 ## iOS
 
 后续通过 App Store / TestFlight 分发，NE entitlement 申请通过后配置。
