@@ -1,3 +1,4 @@
+import "./Proxies.css";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
@@ -244,13 +245,13 @@ export default function ProxiesPage() {
   const selectedGroup =
     groups.find((group) => group.name === groupName) ?? groups[0];
   return (
-    <div className="cb-proxies-page">
-      <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
+    <div className="cb-proxies-page cb-node-toolbar-page">
+      {groups.length === 0 && <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
         <button className="cb-btn" onClick={load}>
           <Icon name="refresh" />
           {t("proxies.refresh")}
         </button>
-      </PageHead>
+      </PageHead>}
       {groups.length === 0 ? (
         <div className="cb-empty">
           <Icon name="bolt" size={24} />
@@ -260,7 +261,8 @@ export default function ProxiesPage() {
       ) : (
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
-            <h2>{t("studio.groups")}</h2>
+            <h2 className="cb-node-page-title">{t("studio.nodes")}</h2>
+            <p className="cb-node-nav-caption">{t("studio.groups")}</p>
             <div className="cb-context-scroll">
               {groups.map((group) => (
                 <button
@@ -286,6 +288,7 @@ export default function ProxiesPage() {
                 busy={testing !== null}
                 testingNodes={testingNodes}
                 selecting={selecting}
+                onRefresh={load}
                 onTest={() => testGroup(selectedGroup.name)}
                 onTestNode={(node) => testNode(selectedGroup.name, node)}
                 onSelect={(node) => select(selectedGroup.name, node)}
@@ -310,6 +313,7 @@ function GroupCard({
   testingNodes,
   selecting,
   onTest,
+  onRefresh,
   onTestNode,
   onSelect,
 }: {
@@ -319,6 +323,7 @@ function GroupCard({
   testingNodes: Set<string>;
   selecting: string | null;
   onTest: () => void;
+  onRefresh: () => void;
   onTestNode: (node: string) => void;
   onSelect: (node: string) => void;
 }) {
@@ -327,6 +332,15 @@ function GroupCard({
   const [region, setRegion] = useState("all");
   const [onlyAlive, setOnlyAlive] = useState(false);
   const [sortByLatency, setSortByLatency] = useState(false);
+  const infoRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (infoRef.current && !infoRef.current.contains(event.target as Node)) infoRef.current.open = false;
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+
 
   const infoNodes = group.nodes.filter((n) => INFO_NAME.test(n.name));
   const realNodes = useMemo(
@@ -382,112 +396,40 @@ function GroupCard({
 
   return (
     <section className="cb-node-group">
-      <div className="mb-2.5 flex items-baseline gap-2.5">
-        <b className="text-[13px] font-semibold"><NodeName name={group.name} /></b>
-        <span className="cb-micro">{group.kind}</span>
-        <span
-          className="cb-group-current cb-mono ml-auto text-[11px]"
-          title={group.now ? nodeNameText(group.now) : undefined}
-          style={{ color: "var(--cb-accent)" }}
-        >
-          {t("proxies.now")} → <NodeName name={group.now ?? "—"} />
-        </span>
-        <button
-          className={`cb-btn flex items-center gap-1.5 ${testing ? "opacity-60" : ""}`}
-          onClick={onTest}
-          disabled={busy}
-        >
-          <svg
-            className={`h-3 w-3 ${testing ? "animate-spin" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
-          </svg>
-          {testing ? t("proxies.testing") : t("proxies.testAll")}
-        </button>
+      <div className="cb-node-heading">
+        <div className="cb-node-heading-copy">
+          <h1><NodeName name={group.name} /><span>{realNodes.length} {t("proxies.nodeCount")}</span></h1>
+          <p>{t("proxies.now")} <b title={group.now ? nodeNameText(group.now) : undefined}><NodeName name={group.now ?? "—"} /></b><span>{group.kind}</span></p>
+        </div>
+        <div className="cb-node-heading-actions">
+          {infoNodes.length > 0 && <details className="cb-node-info" ref={infoRef}
+            onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+            <summary>{t("proxies.subscriptionInfo")}</summary>
+            <div className="cb-node-info-panel">{infoNodes.map((node) => <p key={node.name}><NodeName name={node.name} /></p>)}</div>
+          </details>}
+          <button className="cb-btn cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></button>
+          <button className="cb-btn cb-node-test-all" onClick={onTest} disabled={busy}>
+            {testing ? t("proxies.testing") : t("proxies.testAll")}
+          </button>
+        </div>
       </div>
-
-      {infoNodes.length > 0 && (
-        <div className="mb-2.5 flex flex-wrap gap-1.5">
-          {infoNodes.map((n) => (
-            <span
-              key={n.name}
-              className="cb-mono rounded-md px-2 py-0.5 text-[10.5px]"
-              style={{
-                background: "var(--cb-surface-2)",
-                color: "var(--cb-text-dim)",
-              }}
-            >
-              <NodeName name={n.name} />
-              {n.alive && (n.delay_ms ?? 0) > 0 ? ` · ${n.delay_ms}ms` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {realNodes.length > 0 && (
-        <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("proxies.search")}
-            className="h-7 w-36 rounded-lg border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-2.5 text-[12px] outline-none placeholder:text-[var(--cb-faint)] focus:border-[var(--cb-accent-line)]"
-          />
-          <button
-            className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-              region === "all"
-                ? "text-[var(--cb-accent)]"
-                : "text-[var(--cb-text-dim)]"
-            }`}
-            style={{
-              background:
-                region === "all"
-                  ? "var(--cb-accent-soft)"
-                  : "var(--cb-surface-2)",
-            }}
-            onClick={() => setRegion("all")}
-          >
-            {t("proxies.all")} {realNodes.length}
-          </button>
-          {regionChips.map((chip) => (
-            <button
-              key={chip.key}
-              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-                region === chip.key
-                  ? "text-[var(--cb-accent)]"
-                  : "text-[var(--cb-text-dim)]"
-              }`}
-              style={{
-                background:
-                  region === chip.key
-                    ? "var(--cb-accent-soft)"
-                    : "var(--cb-surface-2)",
-              }}
-              onClick={() => setRegion(region === chip.key ? "all" : chip.key)}
-            >
-              {regionLabel(chip.key)} {chip.count}
-            </button>
-          ))}
-          <span className="grow" />
-          <button
-            className={`cb-btn h-7 px-2 text-[11px] ${onlyAlive ? "text-[var(--cb-accent)]" : ""}`}
-            onClick={() => setOnlyAlive((v) => !v)}
-          >
-            {t("proxies.onlyAlive")}
-          </button>
-          <button
-            className={`cb-btn h-7 px-2 text-[11px] ${sortByLatency ? "text-[var(--cb-accent)]" : ""}`}
-            onClick={() => setSortByLatency((v) => !v)}
-          >
-            {t("proxies.sortLatency")}
-          </button>
-        </div>
-      )}
-
+      {realNodes.length > 0 && <div className="cb-node-filters">
+        <label className="cb-node-search"><Icon name="search" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("proxies.search")} aria-label={t("proxies.search")} /></label>
+        <select value={region} onChange={(e) => setRegion(e.target.value)} aria-label={t("proxies.regionFilter")}>
+          <option value="all">{t("proxies.allRegions")}</option>
+          {regionChips.map((chip) => <option key={chip.key} value={chip.key}>{regionLabel(chip.key)} · {chip.count}</option>)}
+        </select>
+        <select value={sortByLatency ? "latency" : "default"} onChange={(e) => setSortByLatency(e.target.value === "latency")} aria-label={t("proxies.sortOrder")}>
+          <option value="default">{t("proxies.defaultOrder")}</option><option value="latency">{t("proxies.latencyOrder")}</option>
+        </select>
+        <button type="button" role="switch" aria-checked={onlyAlive} className="cb-node-alive-switch" onClick={() => setOnlyAlive((value) => !value)}>
+          <span className="cb-node-switch-track" aria-hidden="true"><span /></span>{t("proxies.onlyAlive")}
+        </button>
+        <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
+      </div>}
+      {visible.length === 0 ? <div className="cb-node-filter-empty">{t("proxies.noMatch")}</div> :
       <FitItems
+        key={`${query}:${region}:${onlyAlive}:${sortByLatency}`}
         items={visible}
         minWidth={200}
         maxColumns={4}
@@ -592,7 +534,7 @@ function GroupCard({
             </div>
           );
         }}
-      />
+      />}
 
       {visible.length === 0 && realNodes.length > 0 && (
         <div
