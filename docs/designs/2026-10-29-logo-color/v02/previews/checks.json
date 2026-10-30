@@ -1,0 +1,35 @@
+{
+  "images": [
+    {
+      "alt": "正式应用图标",
+      "loaded": true,
+      "width": 256
+    },
+    {
+      "alt": "官网Logo",
+      "loaded": true,
+      "width": 512
+    },
+    {
+      "alt": "正式favicon",
+      "loaded": true,
+      "width": 32
+    },
+    {
+      "alt": "iOS正式图标",
+      "loaded": true,
+      "width": 1024
+    }
+  ],
+  "logos": [
+    {
+      "color": "rgb(63, 82, 207)",
+      "maskAsset": "apps/desktop/src/assets/logo-glyph.png"
+    },
+    {
+      "color": "rgb(63, 82, 207)",
+      "maskAsset": "apps/desktop/src/assets/logo-glyph.png"
+    }
+  ],
+  "overflow": false
+}

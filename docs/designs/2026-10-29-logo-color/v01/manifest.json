@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-29",
+  "version": "v01",
+  "status": "proposal-awaiting-selection",
+  "issue": 202,
+  "baseline": "110c7f73fca72ffa3071e8507f0b87f64332f4d5",
+  "input": "用户反馈实际Dock中的B1偏淡，希望略深、略鲜明；保持造型",
+  "skill": "logo-generator / phase 3 targeted color refinement",
+  "recommended": "B / #3F52CF",
+  "productionAssetsModified": false,
+  "sources": {
+    "design/logo/current/mark.svg": "17eb3445f410b778443ebdeece43735a2d1a9a54e8a0e90159311e703f4c5eb6",
+    "design/logo/current/app-icon.svg": "c6f67d462810231182a0a17be9b0547ec940f56f02423e3327d7b6494336b616"
+  },
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "ed05a2f5d4472795d369e5ddcae4fcf312fe717d24236f821bb26e5dca15f35c"
+    },
+    {
+      "path": "assets/a-app-icon.svg",
+      "sha256": "0f1f0a87a1ea60973dacb43a20baa74bef31d101a279f0ba32aaed7fcfdfda62"
+    },
+    {
+      "path": "assets/a-mark.svg",
+      "sha256": "0781f7a720244b7e7425cd43f4cb149d34ba76dcebdef1f15f08443aaa913bd6"
+    },
+    {
+      "path": "assets/b-app-icon.svg",
+      "sha256": "e7df831615292e040b25b62cf06ba29770d4f2c6b0fd426a42f9fa3ff3b41ceb"
+    },
+    {
+      "path": "assets/b-mark.svg",
+      "sha256": "fdf22713980ec130cd5fd42b12e7039f6c1ea59da4b88d9aa0f5a0f75f18a81c"
+    },
+    {
+      "path": "assets/c-app-icon.svg",
+      "sha256": "502dfdf80bd5ef5e321bb82dbf62afce61ef8a909bc06e1b4ded4e306432aec2"
+    },
+    {
+      "path": "assets/c-mark.svg",
+      "sha256": "0c14223ca5f036d274deaaa1cf0a6ff50f3181213b9f874d021a91d8163be6fe"
+    },
+    {
+      "path": "generate.py",
+      "sha256": "dfc4603a040c6c03ca9bd553c161716ee93de70008f67695db82ea7002e5267e"
+    },
+    {
+      "path": "index.html",
+      "sha256": "b0c29315cf0085b4e743a61527befda18d1444277dc1f92f5273158e435f9336"
+    },
+    {
+      "path": "preview.js",
+      "sha256": "cfc32aa74888c427f7658607fc1bfff113249d2a287f531064dd5e9955e28e1b"
+    },
+    {
+      "path": "previews/checks.json",
+      "sha256": "e7aae4dce2494e0394f024281ee19d17b673551016f33f169a2e4fc4c90f2b41"
+    },
+    {
+      "path": "previews/compact.jpg",
+      "sha256": "8f91357f9a5a4b0b1b09807fe96b3afd27d829f2641727cf2f4430d108d9b88a"
+    },
+    {
+      "path": "previews/comparison-1120.jpg",
+      "sha256": "c0ca7dba31aa088d336d7612b934faa8228ccfbb2b1f683f837de6555a0e1fd3"
+    },
+    {
+      "path": "previews/comparison-390.jpg",
+      "sha256": "7fc922f9f8f7c9cde96f92c23a013dce20e65c2793d6e836eed821ce4613162b"
+    },
+    {
+      "path": "style.css",
+      "sha256": "5f7b7d9bef504c5429c09754e35cf483e364727de7aa28e4e5be7b12dd02d28e"
+    },
+    {
+      "path": "variants.json",
+      "sha256": "917dc64bf448c52984c805e4bc7816ba1586361bb782efb3b9db4b6a2fb2b6a1"
+    }
+  ]
+}

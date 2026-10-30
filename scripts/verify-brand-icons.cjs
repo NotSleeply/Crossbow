@@ -4,8 +4,23 @@ const sharp=require(process.env.CROSSBOW_SHARP_MODULE||'sharp');
 const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.readFileSync(file(p));
 (async()=>{
   const approved=read('docs/designs/2026-10-28-logo/v01/assets/b1.svg');
-  assert.equal(read('design/logo/current/mark.svg').toString(),approved.toString(),'Master must be the approved original B1, not a V2 variation');
+  const normalizeColor=svg=>svg.toString().replace(/color="#[a-fA-F0-9]+"/,'color="APPROVED"');
+  assert.equal(normalizeColor(read('design/logo/current/mark.svg')),normalizeColor(approved),'B1 geometry must remain the approved original, not a V2 variation');
+  const brandColor='#3f52cf';
+  assert(read('design/logo/current/mark.svg').toString().includes('color="'+brandColor+'"'),'Master must use approved B color');
+  const rgb=[63,82,207];
+  for(const p of ['design/logo/current/mark-512.png','design/logo/current/mark-dark-512.png','apps/desktop/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph.png']){
+    const {data}=await sharp(read(p)).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    let opaque=0;for(let i=0;i<data.length;i+=4)if(data[i+3]===255){opaque++;assert.deepEqual([...data.subarray(i,i+3)],rgb,p+' uses a stale brand color');}
+    assert(opaque>0,p+' must contain opaque brand ink');
+  }
+  for(const scale of [1,2,3])assert.deepEqual(read('apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@'+scale+'x.png'),read('apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@'+scale+'x.png'),'iOS theme logos must use the same ink');
+  assert.equal(read('apps/site/public/favicon.svg').toString(),read('design/logo/current/mark.svg').toString(),'Favicon must use the same brand color in both themes');
+  const css=read('apps/desktop/src/index.css').toString();
+  assert(css.includes('--cb-brand: '+brandColor),'Desktop brand token must match master');
+  assert(/\.cb-logo-glyph\s*\{[^}]*background:\s*var\(--cb-brand\)/s.test(css),'Desktop logo must not inherit the theme accent');
   const manifest=JSON.parse(read('design/logo/current/manifest.json'));
+  assert.equal(manifest.colors.light,brandColor);assert.equal(manifest.colors.dark,brandColor);
   for(const f of manifest.files)assert.equal(crypto.createHash('sha256').update(read(f.path)).digest('hex'),f.sha256,f.path+' drifted; regenerate');
   for(const [p,n] of [['apps/desktop/src-tauri/icons/32x32.png',32],['apps/desktop/src-tauri/icons/128x128.png',128],['apps/desktop/src-tauri/icons/128x128@2x.png',256],['apps/desktop/src-tauri/icons/icon-source.png',1024],['apps/site/public/apple-touch-icon.png',180]]){
     const m=await sharp(read(p)).metadata();assert.equal(m.width,n,p);assert.equal(m.height,n,p);

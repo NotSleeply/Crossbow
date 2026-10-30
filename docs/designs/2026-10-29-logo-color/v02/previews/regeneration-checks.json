@@ -1,0 +1,32 @@
+{
+  "icnsImageChunksIdentical": true,
+  "beforeOrder": [
+    "ic11",
+    "ic14",
+    "ic10",
+    "ic07",
+    "ic13",
+    "il32",
+    "l8mk",
+    "ic09",
+    "ic12",
+    "ic08",
+    "is32",
+    "s8mk"
+  ],
+  "afterOrder": [
+    "ic12",
+    "ic11",
+    "is32",
+    "s8mk",
+    "il32",
+    "l8mk",
+    "ic13",
+    "ic09",
+    "ic10",
+    "ic08",
+    "ic07",
+    "ic14"
+  ],
+  "monochromeUnchanged": 21
+}
