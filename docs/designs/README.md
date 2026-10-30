@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-30 | 节点搜索与筛选行：单层焦点、320px限宽 | v03 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v03/SPEC.md) · [实际预览](2026-10-30-node-toolbar/v03/previews/wide.jpg) · [源快照](2026-10-30-node-toolbar/v03/source.zip) | #227 |
 | 2026-10-30 | B1 主色 B：正式品牌资产与主题一致性 | v02 | 已实现，待 PR 评审 | [规格](2026-10-29-logo-color/v02/SPEC.md) · [正式效果](2026-10-29-logo-color/v02/previews/production-1120.jpg) · [源快照](2026-10-29-logo-color/v02/source.zip) | #202 / #204 |
 | 2026-10-29 | B1 主色微调：更深、更鲜明的靛蓝 | v01 | B 色已确认，正式实现见 v02 | [交互稿](2026-10-29-logo-color/v01/index.html) · [规格](2026-10-29-logo-color/v01/SPEC.md) · [对比预览](2026-10-29-logo-color/v01/previews/comparison-1120.jpg) | #202 |
 | 2026-10-29 | 通知中心与操作反馈降噪：正式实现 | v02 | 已实现，待 PR 评审 | [规格/运行](2026-10-29-notifications/v02/SPEC.md) · [源快照](2026-10-29-notifications/v02/source.zip) · [预览](2026-10-29-notifications/v02/previews/center-light.jpg) · [验证](2026-10-29-notifications/v02/previews/checks.json) | #196 |
