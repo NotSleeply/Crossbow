@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-31 | 公共选择器：统一样式、键盘与浮层过渡 | v04 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v04/SPEC.md) · [生产预览](2026-10-30-node-toolbar/v04/previews/production-open.jpg) · [源快照](2026-10-30-node-toolbar/v04/source.zip) | #227 |
 | 2026-10-30 | 连接路径：信息组与传输轨迹居中 | v01 | 已实现，待 PR 评审 | [规格](2026-10-30-route-centering/v01/SPEC.md) · [预览](2026-10-30-route-centering/v01/previews/regular.jpg) | #227 |
 | 2026-10-30 | 节点搜索与筛选行：单层焦点、320px限宽 | v03 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v03/SPEC.md) · [实际预览](2026-10-30-node-toolbar/v03/previews/wide.jpg) · [源快照](2026-10-30-node-toolbar/v03/source.zip) | #227 |
 | 2026-10-30 | B1 主色 B：正式品牌资产与主题一致性 | v02 | 已实现，待 PR 评审 | [规格](2026-10-29-logo-color/v02/SPEC.md) · [正式效果](2026-10-29-logo-color/v02/previews/production-1120.jpg) · [源快照](2026-10-29-logo-color/v02/source.zip) | #202 / #204 |

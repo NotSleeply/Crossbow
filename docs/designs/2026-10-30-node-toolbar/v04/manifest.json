@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-31",
+  "version": "v04",
+  "status": "implemented",
+  "issue": 227,
+  "baseline": "24a060d",
+  "files": {
+    "index.html": "a6a248809a0669dfa1b01d269cd58a2557ce7caa749eb36f9e84011fd15c93ef",
+    "preview.tsx": "9f381879ab3ffc78935e804654d41f0b623b354e99b90cb5ed079cf6407b701e",
+    "source.zip": "8c56e49fb6f749d6511edbd3cac857920ebc88825ece58469ca809e46259dfba",
+    "preview.css": "de09873d646e10a97d1eeb5c52b4dbc7d6c540d0d8a84a980cc243746806d933",
+    "mock-tauri.ts": "241944305747b1248e5a7b090957b708cbf5ee7ee5b4477fee85944f432dff43",
+    "vite.config.mts": "90c79fa8d3a88ce5b719025a3be46a036ea4bae2ed9f492d07cd7faa88c94c3f",
+    "SPEC.md": "2896ebb3801a5c9d56a2d7c91c976d53bf21087aa658f2652e5f80d91351897e",
+    "previews/dark.jpg": "37d59f2780d071e690e7911b040818d917cc2a1f156abe7b0b431a2be63f6617",
+    "previews/narrow.jpg": "87fd8021b76b1a0eb3284f8010f14e56a9ec22943bfa51da45781a8ff9de5eda",
+    "previews/wide.jpg": "d4800521c2de117ecf0ae9dddc4369474ca62f4eb587cb9eace4acb04e556eec",
+    "previews/select-gallery.jpg": "da52fbf5712dff133dcd35b157883ad9ae8f2d833ee1e468e16221221d9b7958",
+    "previews/long-list.jpg": "a761ab8a88388881e4b0d2ae9b556994c02f838820595ef42674357d8a29a30f",
+    "previews/dark-open.jpg": "d95678e3c95def8c95a2187a43800167be9f8db4e0507a8e8684f153e1dedb6e",
+    "previews/checks.json": "1a72d7bfe47e803d66152a8621535235009c110eef9ec17fe45809496b0772b3",
+    "previews/region-open.jpg": "8fd38a2c7c544743fd81ce61586c8c411799b4170c53ac326d9e541a119cbb1e",
+    "previews/narrow-en.jpg": "2fecad66e140cd1d8bfe3852fd5a81bcafa90cfafae3386b7b9b47801315ea5a",
+    "previews/production-open.jpg": "8fd38a2c7c544743fd81ce61586c8c411799b4170c53ac326d9e541a119cbb1e"
+  }
+}

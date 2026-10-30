@@ -2896,55 +2896,6 @@ textarea:focus-visible,
 .cb-node-bottom {
   margin-top: 4px;
 }
-.cb-select-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: auto;
-  max-width: 100%;
-  text-align: left;
-}
-.cb-select-trigger > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cb-select-trigger > svg {
-  flex: none;
-  color: var(--cb-text-dim);
-}
-.cb-select-options {
-  position: fixed;
-  z-index: 110;
-  overflow: auto;
-  padding: 4px;
-  background: var(--cb-floating);
-  color: var(--cb-text);
-  border: 1px solid var(--cb-line-strong);
-  border-radius: 8px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
-}
-.cb-select-options > button {
-  display: block;
-  min-height: 34px;
-  line-height: 20px;
-  padding: 7px 10px;
-  width: 100%;
-  font-size: 12px;
-  text-align: left;
-  border-radius: 4px;
-}
-.cb-select-options > button:hover,
-.cb-select-options > button:focus-visible {
-  background: var(--cb-surface-2);
-  outline: none;
-}
-.cb-select-options > button[aria-selected="true"] {
-  background: var(--cb-accent-soft);
-  color: var(--cb-accent);
-}
 
 .cb-group-current {
   min-width: 0;

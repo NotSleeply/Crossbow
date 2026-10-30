@@ -1,4 +1,5 @@
 import "./Proxies.css";
+import Select from "../components/Select";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
@@ -416,13 +417,10 @@ function GroupCard({
       </div>
       {realNodes.length > 0 && <div className="cb-node-filters">
         <label className="cb-node-search"><Icon name="search" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("proxies.search")} aria-label={t("proxies.search")} /></label>
-        <span className="cb-node-select"><select value={region} onChange={(e) => setRegion(e.target.value)} aria-label={t("proxies.regionFilter")}>
-          <option value="all">{t("proxies.allRegions")}</option>
-          {regionChips.map((chip) => <option key={chip.key} value={chip.key}>{regionLabel(chip.key)} · {chip.count}</option>)}
-        </select><Icon name="chevron" size={12} /></span>
-        <span className="cb-node-select"><select value={sortByLatency ? "latency" : "default"} onChange={(e) => setSortByLatency(e.target.value === "latency")} aria-label={t("proxies.sortOrder")}>
-          <option value="default">{t("proxies.defaultOrder")}</option><option value="latency">{t("proxies.latencyOrder")}</option>
-        </select><Icon name="chevron" size={12} /></span>
+        <Select className="cb-node-filter-select" size="compact" label={t("proxies.regionFilter")} value={region} onChange={setRegion}
+          options={[{ value: "all", label: t("proxies.allRegions") }, ...regionChips.map((chip) => ({ value: chip.key, label: `${regionLabel(chip.key)} · ${chip.count}` }))]} />
+        <Select className="cb-node-filter-select" size="compact" label={t("proxies.sortOrder")} value={sortByLatency ? "latency" : "default"} onChange={(value) => setSortByLatency(value === "latency")}
+          options={[{ value: "default", label: t("proxies.defaultOrder") }, { value: "latency", label: t("proxies.latencyOrder") }]} />
         <button type="button" role="switch" aria-checked={onlyAlive} className="cb-node-alive-switch" onClick={() => setOnlyAlive((value) => !value)}>
           <span className="cb-node-switch-track" aria-hidden="true"><span /></span>{t("proxies.onlyAlive")}
         </button>
