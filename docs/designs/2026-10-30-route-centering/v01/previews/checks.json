@@ -1,0 +1,30 @@
+[
+  {
+    "error": 0,
+    "groupCenter": 184.5,
+    "groupHeight": 104,
+    "lineCenters": [
+      184.5,
+      184.5
+    ],
+    "packetCenter": 184.5,
+    "viewport": [
+      1120,
+      800
+    ]
+  },
+  {
+    "error": 0,
+    "groupCenter": 172,
+    "groupHeight": 79,
+    "lineCenters": [
+      172,
+      172
+    ],
+    "packetCenter": 172,
+    "viewport": [
+      820,
+      620
+    ]
+  }
+]

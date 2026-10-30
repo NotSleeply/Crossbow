@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-30",
+  "version": "v01",
+  "issue": 227,
+  "status": "implemented",
+  "baseline": "5e57e92",
+  "files": {
+    "index.html": "1f97c032fc5df948a0647bdaf89fcf75a7ec7e49ea30bcefd6a451caf8f3f6b6",
+    "preview.tsx": "f7db7daa84fb29f95f9b28cb4c9976c8c5b17c692020a3fff6f6bf6f3b2e4e46",
+    "source.zip": "bb29efb05e37142bf9a4f33cffa46125b1b951b7422971869485a65e228a97cb",
+    "mock-tauri.ts": "acab96d1e40917fb36f494cf6ff9b849ead5c5fb5d77b245122282c0edfb9c10",
+    "vite.config.mts": "72550b29e7e7308bdef6c8afc92e3e7143dc5d2da79cb005ecfc1fbef0d3a4f5",
+    "SPEC.md": "8ea5b1a7631504a179c3ca7f1fc7397119d2b486048be014a68647c5b2bd6a06",
+    "previews/regular.jpg": "96bd0113f39771e56c6eb6648b0c2474f53f26d662f6ebcec160ff0a3740cbb1",
+    "previews/compact.jpg": "116f5ecaacb3fdc1cedaa5968ecf64788c69e6472097da18b727e2772aa9c081",
+    "previews/checks.json": "523ee798fd6a46df3b72fa9e888e8fa4bdab65cd535c7cbef40b0be8ac046593"
+  }
+}

@@ -968,7 +968,7 @@ summary:focus-visible {
   display: grid;
   /* Slightly reduce both end margins from V2's equal thirds: 14.7%, 50%, 85.3%. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   min-width: 0;
 }
 .cb-route-flow > div {
@@ -1003,7 +1003,8 @@ summary:focus-visible {
 }
 .cb-route-line {
   position: absolute;
-  top: 24px;
+  /* Center on icon + name + metadata as a group, not on the icon alone. */
+  top: calc(50% - 0.5px);
   height: 1px;
   width: calc(35.294118% - 58px);
   background: var(--cb-line-strong);
@@ -1570,7 +1571,6 @@ summary:focus-visible {
     line-height: 16px;
   }
   .cb-route-line {
-    top: 18px;
     width: calc(35.294118% - 48px);
   }
   .cb-route-line:nth-child(2) {
