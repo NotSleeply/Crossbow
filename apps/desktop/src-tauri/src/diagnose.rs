@@ -104,7 +104,7 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
             id: "sysproxy".into(),
             ok: false,
             skipped: true,
-            detail: format!("当前平台仅支持显式代理，请将应用的 HTTP/SOCKS 代理设为 127.0.0.1:{mixed_port}；本项不计入通过数量"),
+            detail: format!("当前平台不修改系统代理；应用可使用 HTTP/SOCKS 代理 127.0.0.1:{mixed_port}，或单独开启 TUN；本项不计入通过数量"),
             fix: None,
         });
     } else if endpoints.is_empty() {

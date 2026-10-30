@@ -1,5 +1,5 @@
 //! Capabilities of this build, shared by commands, diagnostics and the UI.
-//! Linux phase one offers an explicit proxy only; it never takes over networking.
+//! Linux keeps system proxy settings untouched; TUN uses its separate service.
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct Capabilities {
@@ -12,14 +12,14 @@ pub const fn capabilities() -> Capabilities {
     let supported = cfg!(any(target_os = "macos", windows));
     Capabilities {
         system_proxy: supported,
-        tun: supported,
+        tun: supported || cfg!(target_os = "linux"),
         app_update: supported,
     }
 }
 
-/// A subscription/override must not bypass the unavailable TUN switch.
+/// A subscription/override must not bypass the controlled TUN startup path.
 pub fn validate_config(engine: crossbow_core::Engine, config: &str) -> Result<(), String> {
-    if capabilities().tun {
+    if cfg!(any(target_os = "macos", windows)) {
         return Ok(());
     }
     let has_tun = match engine {
@@ -49,7 +49,7 @@ pub fn validate_config(engine: crossbow_core::Engine, config: &str) -> Result<()
         }
     };
     if has_tun {
-        Err("当前平台仅支持显式代理，请先移除配置或覆写中的 TUN 入站".into())
+        Err("请移除配置或覆写中的 TUN 入站，使用应用的受控 TUN 开关".into())
     } else {
         Ok(())
     }

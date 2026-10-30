@@ -326,7 +326,19 @@ fn foreign_tunnel_adapters(text: &str) -> Vec<String> {
     adapters
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
+    let session = crate::linux_service::status().ok().flatten();
+    let own_index = session.as_ref().filter(|s| s.active).map(|s| s.ifindex);
+    let mut pids: Vec<_> = state.core().pid().into_iter().collect();
+    if let Some(session) = session { pids.push(session.pid); }
+    match crossbow_service::linux_network::conflicts(own_index, &pids) {
+        Ok(conflicts) => conflicts.into_iter().map(|detail| CoexistFinding { kind: "tunnel".into(), detail }).collect(),
+        Err(detail) => vec![CoexistFinding { kind: "tunnel".into(), detail }],
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn detect(_state: &crate::AppState) -> Vec<CoexistFinding> {
     Vec::new()
 }

@@ -116,3 +116,29 @@ CI 编译通过不是 niri/Wayland 实机通过；本机原生验证结果单独
 这组故障注入验证的是前端分支，不代表真实操作系统拒绝终止进程的场景已实测。
 
 本机证据位于 `target/linux-validation/fixes-native/` 和 `target/linux-validation/fixes-ui/`；原生程序 SHA-256 为 `c26549920c48aab4bbf7b9cb83ffa93ae4d47ff36923a09851fdee3576f7e3ee`。
+
+
+## 第二阶段：受控 TUN 与恢复（2026-10-30，#216）
+
+实现与安装步骤见 [LINUX-NETWORK.md](LINUX-NETWORK.md)。沿用现有 `crossbow-service` 和 `CoreManager`，没有新增通知框架、进程框架或第三方包；Linux 仅复用已有的 libc、serde 与 socket2。第一阶段 PR #214 已由维护者合并，提交仍是 `f6dccc1`。
+
+| 验证层 | 结果与边界 |
+| --- | --- |
+| 桌面 Rust | 105 项通过，其中服务客户端 6 项覆盖权限、身份、错误帧、超时和清理确认 |
+| Linux 服务 | 13 项通过，覆盖受控配置、provider 路径、端口占用、资源匹配与未确认创建记录 |
+| 构建与静态检查 | 前端、Tauri 原生程序、Linux 服务构建通过；差异空白、安装脚本及 polkit XML 检查通过 |
+| 隔离网络 | 11 项真实服务/内核检查通过，IPv4/IPv6 TCP、UDP DNS、正常停止、重启复用、端口冲突、桌面 EOF、内核 SIGKILL、外来规则保留、所属规则丢失、独立恢复入口均覆盖 |
+| niri/Wayland 实机 | 14 项通过，含显式代理链路、现有 FlClash/VPN 冲突在授权前被拒绝、原内核保留、设置页服务状态及正常退出 |
+| 浏览器故障注入 | 7 项通过；TUN 失败不重复通知，关闭失败保留开启态并可重试；中英文、深浅主题和五种尺寸共 20 组布局通过 |
+| 系统级授权与实网 TUN | **未验收**。没有在这台机器安装服务、触发管理员授权或开启宿主 TUN。隔离测试没有运行真正的系统级 systemd/polkit |
+
+隔离与原生两组报告的宿主路由/DNS 摘要均未变化。隔离核心实际只有 `CAP_NET_ADMIN`；提供的 resolvectl 探针未被调用。`ExecStopPost` 测试运行了同一个恢复入口，但没有证明 systemd 会在所有故障场景自动调用它。前端故障注入也不代表真实系统拒绝终止进程的场景已实测。
+
+完整服务 lint 命令为 `cargo clippy --locked -p crossbow-service --all-targets -- -D warnings -A clippy::assertions_on_constants`，通过；仅排除了原有 `policy.rs` 常量断言提示，没有为此改动 Windows 策略代码。
+
+本机证据：`target/linux-validation/network/report.json`、`network-native/report.json`、`network-ui/report.json`（均在 `target/linux-validation/` 下）。实测产物 SHA-256：
+
+- 桌面：`065cf781c36e665a2ed1ea786d4230048da6f5ba2065ed079411032b261f249f`
+- 服务：`17b789334077dbea84d1dd42921ee4caba969634653a47990c8efba12d5d26bb`
+
+这些结果支持代码评审及下一步专用环境验收；第二阶段完整日用验收仍未通过。

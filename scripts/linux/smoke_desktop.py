@@ -190,12 +190,12 @@ rules:
         driver.session = result['sessionId']
         driver.command('POST', '/timeouts', {'script': 180000})
         wait_until(lambda: driver.js('return !!document.querySelector(".cb-home-page")'))
-        assert driver.invoke('platform_capabilities') == {'system_proxy': False, 'tun': False, 'app_update': False}
+        assert driver.invoke('platform_capabilities') == {'system_proxy': False, 'tun': True, 'app_update': False}
         assert driver.js('return Array.from(document.querySelectorAll(".cb-takeover-row button")).every(b => b.disabled)')
         for command, params in [('sysproxy_toggle', {}), ('set_tun', {'enable': True})]:
             assert 'rejected' in driver.ipc(command, params)
         assert driver.invoke('core_status')['state'] == 'Stopped'
-        report['checks'].append('unsupported network takeover rejected without starting a core')
+        report['checks'].append('system proxy and TUN without an active profile rejected before starting a core')
         for notice in driver.invoke('notification_snapshot')['active']:
             driver.invoke('notification_dismiss', {'id': notice['id']})
         driver.invoke('set_mixed_port', {'port': mixed_port})
@@ -221,6 +221,26 @@ rules:
                          'return control.bottom <= panel.bottom;'), 'takeover controls overflow their panel'
         driver.screenshot(args.output / 'home.png')
         report['checks'].append('explicit proxy started through the UI')
+        # Only test the rejection path when read-only checks prove a conflict.
+        # A clean host must never become a TUN acceptance test by accident.
+        conflicts = driver.invoke('coexist_detect')
+        if conflicts:
+            result = driver.ipc('set_tun', {'enable': True})
+            assert 'rejected' in result and '未接管网络' in str(result), result
+            assert driver.invoke('core_status')['state'] == 'Running'
+            assert not driver.invoke('tun_status')['enabled']
+            report['checks'].append('existing proxy/VPN conflict rejected before authorization; explicit core retained')
+            for notice in driver.invoke('notification_snapshot')['active']:
+                driver.invoke('notification_dismiss', {'id': notice['id']})
+
+        driver.page('settings')
+        wait_until(lambda: '偏好设置' in driver.js('return document.body.innerText'))
+        driver.js('Array.from(document.querySelectorAll("button")).find(b => b.textContent.trim() === "网络与内核").click()')
+        expected_service = '网络服务已安装' if driver.invoke('tun_status')['ready'] else '尚未安装 Linux 网络服务'
+        wait_until(lambda: expected_service in driver.js('return document.body.innerText'))
+        assert '授权一次后内核升级前无需重复授权' not in driver.js('return document.body.innerText')
+        driver.screenshot(args.output / 'settings.png')
+        report['checks'].append('Linux settings distinguish service installation from session authorization')
         driver.page('proxies')
         wait_until(lambda: 'Linux HTTP B' in driver.js('return document.body.innerText'))
         node = driver.js('return Array.from(document.querySelectorAll(".cb-node-card")).find(e => e.textContent.includes("Linux HTTP B"))')

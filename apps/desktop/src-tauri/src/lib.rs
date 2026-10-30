@@ -40,6 +40,10 @@ mod tun;
 mod tun_windows;
 #[cfg(windows)]
 mod service_client;
+#[cfg(target_os = "linux")]
+mod linux_service;
+#[cfg(target_os = "linux")]
+mod tun_linux;
 mod ws_bridge;
 
 mod core_download;
@@ -340,7 +344,16 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             }
             return state.core().start_with_spawner(&rendered.config, &rt, Box::new(spawner));
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(target_os = "linux")]
+        {
+            if is_singbox {
+                return Err("Linux TUN 当前仅支持 mihomo".into());
+            }
+            crossbow_service::linux_network::ensure_available(None, &[])?;
+            let spawner = linux_service::make_core_spawner()?;
+            return state.core().start_with_spawner(&rendered.config, &rt, Box::new(spawner));
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             return Err("当前平台暂不支持 TUN，请使用显式 HTTP/SOCKS 代理".into());
         }
@@ -466,7 +479,7 @@ fn commit_config_change_inner(
             && status == CoreStatus::Running,
         controller: state.core().controller().is_some(),
         cached_config: old_config.is_some(),
-        service_managed: cfg!(windows) && before.engine.tun_enable,
+        service_managed: cfg!(any(windows, target_os = "linux")) && before.engine.tun_enable,
     };
     let plan = if config_transition::needs_new_process(
         before.engine.engine,
@@ -1264,7 +1277,17 @@ async fn set_tun(app: AppHandle, state: State<'_, AppState>, enable: bool) -> Re
         refresh_tray(&app);
         result
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        let result = crate::tun_linux::toggle_tun(&state, enable);
+        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        let actual = linux_service::status().map(|s| s.is_some_and(|s| s.active))
+            .unwrap_or_else(|_| state.store.lock().unwrap().data().engine.tun_enable);
+        let _ = app.emit("tun://status", actual);
+        refresh_tray(&app);
+        result
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = enable;
         let result = Err("当前平台暂不支持 TUN，请使用显式 HTTP/SOCKS 代理".into());
@@ -1315,7 +1338,16 @@ fn tun_status(state: State<AppState>) -> TunStatus {
             core_running: state.core().status() == CoreStatus::Running,
         }
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        TunStatus {
+            enabled: linux_service::status().map(|s| s.is_some_and(|s| s.active))
+                .unwrap_or_else(|_| state.store.lock().unwrap().data().engine.tun_enable),
+            ready: linux_service::installed(),
+            core_running: state.core().status() == CoreStatus::Running,
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         TunStatus {
             enabled: false,
@@ -2175,6 +2207,17 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
             let Some(state) = handle.try_state::<AppState>() else {
                 return;
             };
+            #[cfg(target_os = "linux")]
+            if linux_service::status().is_ok_and(|session| session.is_none_or(|s| !s.active)) {
+                let mut store = state.store.lock().unwrap();
+                if store.data().engine.tun_enable {
+                    store.data_mut().engine.tun_enable = false;
+                    if let Err(error) = store.save() {
+                        eprintln!("persist disabled Linux TUN: {error}");
+                    }
+                    let _ = handle.emit("tun://status", false);
+                }
+            }
             // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
             let proxy_was_on = state.sysproxy.status().enabled;
             if proxy_was_on {
@@ -3473,6 +3516,13 @@ pub fn run() {
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
+            // Linux network authorization belongs to this desktop session.
+            // A previous TUN preference never silently takes over after login.
+            #[cfg(target_os = "linux")]
+            if store.data().engine.tun_enable {
+                store.data_mut().engine.tun_enable = false;
+                store.save().map_err(|e| std::io::Error::other(e.to_string()))?;
+            }
             let update_settings_init = store.data().update.clone();
 
             // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。

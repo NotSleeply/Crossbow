@@ -5,6 +5,9 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "linux.tunHint": "接管前检查其他代理和 VPN；需要管理员授权",
+    "linux.serviceReady": "网络服务已安装，开启时由系统确认授权",
+    "linux.serviceMissing": "尚未安装 Linux 网络服务，显式代理可继续使用",
     "linux.explicitProxy": "显式代理",
     "linux.explicitOn": "显式代理已启动",
     "linux.explicitOff": "显式代理未启动",
@@ -335,6 +338,9 @@ const dict: Record<Lang, Record<string, string>> = {
       "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
+    "linux.tunHint": "Checks for other proxies and VPNs before takeover; requires authorization",
+    "linux.serviceReady": "Network service installed; the system requests authorization when enabling TUN",
+    "linux.serviceMissing": "Linux network service is not installed; explicit proxy remains available",
     "linux.explicitProxy": "Explicit proxy",
     "linux.explicitOn": "Explicit proxy is running",
     "linux.explicitOff": "Explicit proxy is stopped",

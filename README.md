@@ -8,9 +8,10 @@ mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN
 提供 macOS Apple Silicon DMG 和 Windows x64 安装包；iOS 目前为工程骨架。
 Windows 版持续完善中，TUN 目前尚未开放；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
 
-Linux 正在进行分阶段适配：第一阶段面向 **CachyOS x86_64 + niri/Wayland**，
-提供源码构建与显式 HTTP/SOCKS 代理验证，不接管系统代理或 TUN，也未提供正式 Linux 安装包。
-构建、隔离验证和已知边界见 [Linux 测试说明](docs/LINUX-TESTING.md)。
+Linux 正在面向 **CachyOS x86_64 + niri/Wayland** 分阶段适配。显式 HTTP/SOCKS 代理可独立使用；
+第二阶段增加了需单独安装和授权的 mihomo TUN 服务，遇到其他代理、VPN 或策略路由会拒绝接管。
+系统代理、正式安装包和自动更新仍未开放。构建及实机记录见 [Linux 测试说明](docs/LINUX-TESTING.md)，
+服务安装、权限和恢复边界见 [Linux 网络接管](docs/LINUX-NETWORK.md)。
 
 ## 安装与使用
 

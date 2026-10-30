@@ -24,7 +24,7 @@ const POINTS = 120;
 /** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
 export default function HomePage({ capabilities }: { capabilities: PlatformCapabilities | null }) {
   const t = useT();
-  const explicitOnly = capabilities !== null && !capabilities.system_proxy && !capabilities.tun;
+  const explicitProxy = capabilities !== null && !capabilities.system_proxy;
   const [mixedPort, setMixedPort] = useState<number | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -274,11 +274,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
-  const proxyLabel = t(explicitOnly ? "linux.explicitProxy" : "studio.proxy");
-  const proxyHint = explicitOnly
+  const explicitOnly = explicitProxy && !tun.enabled;
+  const proxyLabel = t(explicitProxy ? "linux.explicitProxy" : "studio.proxy");
+  const proxyHint = explicitProxy
     ? t("linux.explicitHint", { port: mixedPort ?? "—" })
     : t(capabilities?.system_proxy ? "studio.proxyHint" : "linux.takeoverUnavailable");
-  const proxyOn = explicitOnly ? core.state === "Running" : proxy.enabled;
+  const proxyOn = explicitProxy ? core.state === "Running" : proxy.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
   const statusTitle = explicitOnly
@@ -461,14 +462,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   role="switch"
                   aria-label={proxyLabel}
                   aria-checked={proxyOn}
-                  onClick={explicitOnly ? toggleCore : toggleProxy}
-                  disabled={busy || !activeId || (explicitOnly ? core.state === "Starting" : !capabilities?.system_proxy)}
+                  onClick={explicitProxy ? toggleCore : toggleProxy}
+                  disabled={busy || !activeId || (explicitProxy ? core.state === "Starting" || tun.enabled : !capabilities?.system_proxy)}
                 />
               </div>
-              <div className="cb-takeover-row" title={t(capabilities?.tun ? "studio.tunHint" : "linux.takeoverUnavailable")}>
+              <div className="cb-takeover-row" title={t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}>
                 <div>
                   <b>{t("settings.tun")}</b>
-                  <p>{t(capabilities?.tun ? "studio.tunHint" : "linux.takeoverUnavailable")}</p>
+                  <p>{t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}</p>
                 </div>
                 <button
                   className={`cb-toggle ${tun.enabled ? "on" : ""}`}
