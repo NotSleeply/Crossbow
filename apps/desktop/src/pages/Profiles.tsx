@@ -412,6 +412,7 @@ function ProfileCard({
             )}
           </div>
           <Select
+            label={t("profiles.autoUpdate")}
             value={profile.update_interval_min}
             options={[
               { value: 0, label: t("profiles.autoOff") },

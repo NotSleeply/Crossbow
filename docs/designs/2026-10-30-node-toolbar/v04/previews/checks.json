@@ -1,0 +1,80 @@
+{
+  "layout": [
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 320,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 243.328125,
+      "viewport": [
+        820,
+        734
+      ]
+    },
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 261.2890625,
+      "viewport": [
+        760,
+        720
+      ]
+    },
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 320,
+      "viewport": [
+        1120,
+        800
+      ]
+    }
+  ],
+  "interaction": {
+    "regionSelected": "2 个结果",
+    "focusReturned": "地区",
+    "keyboardInstant": "true",
+    "escapeReturned": "地区",
+    "availableCount": "4 个结果",
+    "sortedCards": [
+      "自动选择URLTest161 ms",
+      "软银-JP-Hy2Hysteria2161 ms",
+      "HKT-Hy2Hysteria2211 ms",
+      "HDZ-SG-Hy2Hysteria22208 ms"
+    ],
+    "disabled": true,
+    "emptyDisabled": true,
+    "numericValue": "30 天",
+    "disabledOption": "true",
+    "longPopup": {
+      "insideViewport": true,
+      "scrollable": true,
+      "side": "top"
+    },
+    "endOption": "测试选项 40 · 较长标签验证",
+    "lastValue": "测试选项 40 · 较长标签验证",
+    "tabNext": "排序方式",
+    "outsideCloses": true,
+    "typeahead": "sing-box",
+    "engine": "sing-box"
+  },
+  "production": {
+    "bundled": true,
+    "newWarnings": []
+  }
+}

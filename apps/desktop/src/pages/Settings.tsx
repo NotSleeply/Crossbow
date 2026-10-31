@@ -226,6 +226,7 @@ export default function SettingsPage({
         <Group title={t("settings.coreSection")}>
           <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
             <Select
+              label={t("settings.engine")}
               value={selectedEngine}
               onChange={(v) => {
                 // 仅更新本地选择：安装状态随所选引擎显示；
@@ -426,6 +427,7 @@ export default function SettingsPage({
         <Group title={t("settings.appearance")}>
           <Row label={t("settings.theme")}>
             <Select
+              label={t("settings.theme")}
               value={theme}
               options={[
                 { value: "system", label: t("theme.system") },
@@ -445,6 +447,7 @@ export default function SettingsPage({
           </Row>
           <Row label={t("settings.lang")}>
             <Select
+              label={t("settings.lang")}
               value={lang}
               options={[
                 { value: "zh", label: "简体中文" },
@@ -484,6 +487,7 @@ export default function SettingsPage({
             hint={t("settings.logsRetentionHint")}
           >
             <Select
+              label={t("settings.logsRetention")}
               value={String(logsRetention)}
               options={[1, 3, 5, 7, 15, 30].map((d) => ({
                 value: String(d),

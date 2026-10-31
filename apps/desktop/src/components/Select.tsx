@@ -1,179 +1,98 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
+import { Select as SelectPrimitive } from "@base-ui/react/select";
+import { Icon } from "./Icon";
+import "./Select.css";
 
 export interface SelectOption {
   value: string | number;
   label: string;
+  disabled?: boolean;
 }
 
-/** Portal keeps the option list visible outside the fixed-height content sheet. */
+/** Shared desktop select: one visual system, with keyboard/focus/portal behavior from Base UI. */
 export default function Select({
   value,
   options,
   onChange,
+  label,
   className = "",
+  size = "default",
+  disabled = false,
 }: {
   value: string | number;
   options: SelectOption[];
   onChange: (value: string) => void;
+  label: string;
   className?: string;
+  size?: "default" | "compact";
+  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({
-    left: 0,
-    top: 0,
-    width: 160,
-    height: 240,
-  });
-  const button = useRef<HTMLButtonElement>(null);
-  const popup = useRef<HTMLDivElement>(null);
-  const id = useId();
-  const current = options.find(
-    (option) => String(option.value) === String(value),
-  );
-  useLayoutEffect(() => {
-    if (!open || !button.current) return;
-    const box = button.current.getBoundingClientRect();
-    const width = Math.min(
-      300,
-      Math.max(box.width, 160),
-      window.innerWidth - 24,
-    );
-    const below = window.innerHeight - box.bottom - 12,
-      above = box.top - 12;
-    const upwards =
-      below < Math.min(240, options.length * 34 + 8) && above > below;
-    const height = Math.max(
-      34,
-      Math.min(240, upwards ? above - 6 : below - 6, options.length * 34 + 8),
-    );
-    setPosition({
-      left: Math.max(12, Math.min(box.left, window.innerWidth - width - 12)),
-      top: upwards ? box.top - height - 6 : box.bottom + 6,
-      width,
-      height,
-    });
-  }, [open, options.length]);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: MouseEvent) => {
-      if (
-        !button.current?.contains(event.target as Node) &&
-        !popup.current?.contains(event.target as Node)
-      )
-        setOpen(false);
-    };
-    const resize = () => setOpen(false);
-    document.addEventListener("mousedown", outside);
-    window.addEventListener("resize", resize);
-    const selected =
-      popup.current?.querySelector<HTMLButtonElement>(
-        '[aria-selected="true"]',
-      ) ?? popup.current?.querySelector("button");
-    selected?.focus();
-    selected?.scrollIntoView({ block: "nearest" });
-    return () => {
-      document.removeEventListener("mousedown", outside);
-      window.removeEventListener("resize", resize);
-    };
-  }, [open]);
-  const close = () => {
-    setOpen(false);
-    button.current?.focus();
-  };
+  const [keyboard, setKeyboard] = useState(false);
+  const items = options.map((option) => ({
+    ...option,
+    value: String(option.value),
+  }));
+  const current = items.find((option) => option.value === String(value));
   return (
-    <div className={`relative ${className}`}>
-      <button
-        ref={button}
-        type="button"
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={id}
-        aria-haspopup="listbox"
-        onClick={() => setOpen(!open)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
+    <div className={`cb-select ${className}`} data-size={size}>
+      <SelectPrimitive.Root
+        items={items}
+        value={String(value)}
+        onValueChange={(next) => {
+          if (next !== null) onChange(next);
         }}
-        className="cb-input cb-select-trigger"
-        title={current?.label}
+        disabled={disabled || items.length === 0}
+        modal={false}
       >
-        <span>{current?.label ?? "—"}</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="currentColor"
-          aria-hidden="true"
-          style={{ transform: open ? "rotate(180deg)" : undefined }}
+        <SelectPrimitive.Trigger
+          className="cb-select-trigger"
+          aria-label={label}
+          title={current?.label}
+          onPointerDown={() => setKeyboard(false)}
+          onKeyDown={() => setKeyboard(true)}
+          data-instant={keyboard || undefined}
         >
-          <path d="m2 3.5 3 3 3-3" strokeWidth="1.4" strokeLinecap="round" />
-        </svg>
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={popup}
-            id={id}
-            role="listbox"
-            className="cb-select-options"
-            style={{
-              left: position.left,
-              top: position.top,
-              width: position.width,
-              maxHeight: position.height,
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                close();
-              }
-              if (event.key === "Tab") {
-                setOpen(false);
-                return;
-              }
-              const buttons = [
-                ...(popup.current?.querySelectorAll<HTMLButtonElement>(
-                  "button",
-                ) ?? []),
-              ];
-              const index = buttons.indexOf(
-                document.activeElement as HTMLButtonElement,
-              );
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                buttons[
-                  (index +
-                    (event.key === "ArrowDown" ? 1 : buttons.length - 1)) %
-                    buttons.length
-                ]?.focus();
-              }
-              if (event.key === "Home" || event.key === "End") {
-                event.preventDefault();
-                buttons[event.key === "Home" ? 0 : buttons.length - 1]?.focus();
-              }
-            }}
+          <SelectPrimitive.Value className="cb-select-value" placeholder="—" />
+          <SelectPrimitive.Icon className="cb-select-chevron">
+            <Icon name="chevron" size={12} />
+          </SelectPrimitive.Icon>
+        </SelectPrimitive.Trigger>
+        <SelectPrimitive.Portal>
+          <SelectPrimitive.Positioner
+            className="cb-select-positioner"
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            collisionPadding={8}
+            alignItemWithTrigger={false}
           >
-            {options.map((option) => (
-              <button
-                key={option.value}
-                role="option"
-                aria-selected={String(option.value) === String(value)}
-                onClick={() => {
-                  onChange(String(option.value));
-                  close();
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
+            <SelectPrimitive.Popup
+              className="cb-select-popup"
+              data-instant={keyboard || undefined}
+              onKeyDown={() => setKeyboard(true)}
+            >
+              <SelectPrimitive.List className="cb-select-list">
+                {items.map((option) => (
+                  <SelectPrimitive.Item
+                    key={option.value}
+                    value={option.value}
+                    label={option.label}
+                    disabled={option.disabled}
+                    className="cb-select-option"
+                  >
+                    <SelectPrimitive.ItemText className="cb-select-option-text">
+                      {option.label}
+                    </SelectPrimitive.ItemText>
+                    <SelectPrimitive.ItemIndicator className="cb-select-check">
+                      <Icon name="check" size={14} strokeWidth={2} />
+                    </SelectPrimitive.ItemIndicator>
+                  </SelectPrimitive.Item>
+                ))}
+              </SelectPrimitive.List>
+            </SelectPrimitive.Popup>
+          </SelectPrimitive.Positioner>
+        </SelectPrimitive.Portal>
+      </SelectPrimitive.Root>
     </div>
   );
 }

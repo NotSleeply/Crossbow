@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-30",
+  "version": "v03",
+  "status": "implemented",
+  "issue": 227,
+  "baseline": "c9a16f4",
+  "files": {
+    "index.html": "a6a248809a0669dfa1b01d269cd58a2557ce7caa749eb36f9e84011fd15c93ef",
+    "preview.tsx": "3e32eed363f3450b93d75b3db945ede328a0f80782848bee0d270a8cdb1768df",
+    "source.zip": "8f7efbedf9b3bc3e8e99707db222eca4eeaa44f3b900c7795e9e9c0b7635a3e4",
+    "preview.css": "e7b67d6e66c8402567db66d8e6ea48f04ffd2e58be42a8b99d23fe8dfbed69a9",
+    "mock-tauri.ts": "241944305747b1248e5a7b090957b708cbf5ee7ee5b4477fee85944f432dff43",
+    "vite.config.mts": "f54febf9b645042373acaf3226e30c7f6f4b614ebdb13761fb6f6036c22c7412",
+    "SPEC.md": "b8745ef4f3adf25a070e5eeb7d866dec9ff6b39f472ca0b15ec1bbb762e1c5c4",
+    "previews/dark.jpg": "692add2fbf2e2076e681e8971de17fe8e82ea6630ee8d0c85628d4515290eaa3",
+    "previews/narrow.jpg": "3a518e9976f9342f2b3abedc1ec3cf0fb8c4c5fa1d442ebc026c70745e8278cd",
+    "previews/wide.jpg": "93ee80abe7cfa95495dc5649b8d3311be70fa00e5d042bf812072d0cc7047a1a",
+    "previews/checks.json": "14169ae14ca0d96d06cd3317436d763e3ffd1d42ce321da972975206a1ae66cc"
+  }
+}

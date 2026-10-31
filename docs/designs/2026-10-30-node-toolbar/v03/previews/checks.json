@@ -1,0 +1,41 @@
+{
+  "layout": [
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 320,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 272.625,
+      "viewport": [
+        820,
+        734
+      ]
+    },
+    {
+      "inputShadow": "none",
+      "overflow": false,
+      "sameRow": true,
+      "searchHeight": 32,
+      "searchWidth": 320,
+      "viewport": [
+        1120,
+        800
+      ]
+    }
+  ],
+  "filtering": {
+    "queryAndHongKong": 1,
+    "onlyAvailable": 4
+  }
+}
