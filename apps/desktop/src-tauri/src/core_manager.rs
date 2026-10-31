@@ -538,6 +538,33 @@ impl CoreManager {
             {
                 note.push_str("已通过管理员权限清理端口上的残留内核；");
             }
+            // Windows：卸载流程不杀内核子进程，旧安装的内核（可能装在别的目录）
+            // 常驻占端口——路径匹配会漏。netstat 定位端口监听者，镜像名精确
+            // 匹配本应用内核（mihomo.exe/sing-box.exe）后 taskkill 清理。
+            #[cfg(target_os = "windows")]
+            if wait_for_mixed_port(&try_bind, Duration::from_secs(5)).is_err() {
+                for (pid, image) in windows_port_listeners(engine_rt.mixed_port) {
+                    let image_l = image.to_lowercase();
+                    if image_l == "mihomo.exe" || image_l == "sing-box.exe" {
+                        let killed = std::process::Command::new("taskkill")
+                            .args(["/F", "/PID", &pid.to_string()])
+                            .output()
+                            .map(|o| o.status.success())
+                            .unwrap_or(false);
+                        if killed {
+                            note.push_str(&format!(
+                                "已清理本应用残留内核 {image}（pid={pid}）；"
+                            ));
+                        } else {
+                            note.push_str(&format!(
+                                "残留内核 {image}（pid={pid}）清理失败（可能需要管理员权限）；"
+                            ));
+                        }
+                    } else {
+                        note.push_str(&format!("占用者 {image}（pid={pid}）；"));
+                    }
+                }
+            }
             // After a TUN core exits, accepted macOS sockets can keep this
             // address unavailable briefly even though no process is listening.
             // Wait for that handover instead of reporting a false conflict.
@@ -1075,6 +1102,51 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn find_leftover_core_pids(_candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
+    Vec::new()
+}
+
+/// Windows：解析 netstat -ano 找出端口 LISTENING 的 pid，配 tasklist 取
+/// 进程镜像名。内核以管理员/SYSTEM 运行时同样可见（netstat 读内核表）。
+#[cfg(target_os = "windows")]
+fn windows_port_listeners(port: u16) -> Vec<(u32, String)> {
+    let Ok(out) = std::process::Command::new("netstat")
+        .args(["-ano", "-p", "tcp"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = format!(":{port} ");
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in text.lines() {
+        if !line.to_uppercase().contains("LISTENING") || !line.contains(&needle) {
+            continue;
+        }
+        let Some(last) = line.split_whitespace().last() else { continue };
+        let Ok(pid) = last.parse::<u32>() else { continue };
+        if pid == 0 || !seen.insert(pid) {
+            continue;
+        }
+        let image = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        // CSV 形如 "mihomo.exe","1234","Console",... 取第一列去引号
+        let image = image
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim_matches('"')
+            .to_string();
+        out.push((pid, image));
+    }
+    out
+}
+
+#[cfg(not(target_os = "windows"))]
+fn windows_port_listeners(_port: u16) -> Vec<(u32, String)> {
     Vec::new()
 }
 
