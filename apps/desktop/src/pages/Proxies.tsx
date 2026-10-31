@@ -4,7 +4,7 @@ import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "../components/Button";
+import { Button, ButtonBase } from "../components/Button";
 import { ipc, type GroupView, type NodeView } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
@@ -267,7 +267,7 @@ export default function ProxiesPage() {
             <p className="cb-node-nav-caption">{t("studio.groups")}</p>
             <div className="cb-context-scroll">
               {groups.map((group) => (
-                <button
+                <ButtonBase
                   key={group.name}
                   className={selectedGroup?.name === group.name ? "active" : ""}
                   aria-current={
@@ -277,7 +277,7 @@ export default function ProxiesPage() {
                 >
                   <span><NodeName name={group.name} /></span>
                   <small>{group.kind}</small>
-                </button>
+                </ButtonBase>
               ))}
             </div>
           </nav>
@@ -409,8 +409,8 @@ function GroupCard({
             <summary>{t("proxies.subscriptionInfo")}</summary>
             <div className="cb-node-info-panel">{infoNodes.map((node) => <p key={node.name}><NodeName name={node.name} /></p>)}</div>
           </details>}
-          <Button className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></Button>
-          <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy}>
+          <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></Button>
+          <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy} loading={testing}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
           </Button>
         </div>
@@ -421,9 +421,9 @@ function GroupCard({
           options={[{ value: "all", label: t("proxies.allRegions") }, ...regionChips.map((chip) => ({ value: chip.key, label: `${regionLabel(chip.key)} · ${chip.count}` }))]} />
         <Select className="cb-node-filter-select" size="compact" label={t("proxies.sortOrder")} value={sortByLatency ? "latency" : "default"} onChange={(value) => setSortByLatency(value === "latency")}
           options={[{ value: "default", label: t("proxies.defaultOrder") }, { value: "latency", label: t("proxies.latencyOrder") }]} />
-        <button type="button" role="switch" aria-checked={onlyAlive} className="cb-node-alive-switch" onClick={() => setOnlyAlive((value) => !value)}>
+        <ButtonBase type="button" role="switch" aria-checked={onlyAlive} className="cb-node-alive-switch" onClick={() => setOnlyAlive((value) => !value)}>
           <span className="cb-node-switch-track" aria-hidden="true"><span /></span>{t("proxies.onlyAlive")}
-        </button>
+        </ButtonBase>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
       {visible.length === 0 ? <div className="cb-node-filter-empty">{t("proxies.noMatch")}</div> :
@@ -472,8 +472,8 @@ function GroupCard({
                   <Icon name="check" size={17} strokeWidth={2} />
                 </span>
               )}
-              <button
-                className="cb-node-test absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-md border border-[var(--cb-line)] bg-[var(--cb-surface)] text-[10px] opacity-0 transition-opacity hover:text-[var(--cb-accent)] group-hover:opacity-100 group-focus-within:opacity-100"
+              <Button iconOnly size="small"
+                className="cb-node-test z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                 title={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
                 aria-label={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
                 onClick={(e) => {
@@ -481,25 +481,12 @@ function GroupCard({
                   onTestNode(n.name);
                 }}
                 style={{ opacity: nodeTesting ? 1 : undefined }}
-                disabled={nodeTesting || busy}
+                disabled={nodeTesting || busy} loading={nodeTesting}
               >
-                {nodeTesting ? (
-                  <svg
-                    className="h-2.5 w-2.5 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--cb-accent)"
-                    strokeWidth="2.5"
-                    aria-label={t("proxies.testing")}
-                  >
-                    <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  <Icon name="bolt" size={13} />
-                )}
-              </button>
+                <Icon name="bolt" size={13} />
+              </Button>
               <div
-                className="pointer-events-none truncate pr-5 text-[13px] font-medium"
+                className="cb-node-title pointer-events-none truncate text-[13px] font-medium"
                 title={nodeNameText(n.name)}
               >
                 <NodeName name={n.name} />

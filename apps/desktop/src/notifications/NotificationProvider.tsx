@@ -1,3 +1,4 @@
+import { ButtonBase, Button } from "../components/Button";
 import {
   createContext,
   useContext,
@@ -309,17 +310,17 @@ function NotificationCard({
         )}
         <div className="cb-notification-actions">
           {notice.details && (
-            <button
+            <ButtonBase
               aria-expanded={expanded}
               aria-controls={detailsId}
               onClick={() => setExpanded(!expanded)}
               tabIndex={inert ? -1 : undefined}
             >
               {text("details")}
-            </button>
+            </ButtonBase>
           )}
           {notice.actions.map((action) => (
-            <button
+            <ButtonBase
               key={action}
               tabIndex={inert ? -1 : undefined}
               onClick={() =>
@@ -329,13 +330,13 @@ function NotificationCard({
               }
             >
               {text(action)}
-            </button>
+            </ButtonBase>
           ))}
         </div>
         {expanded && (
           <div id={detailsId} className="cb-notification-details">
             <pre className="cb-selectable">{notice.details}</pre>
-            <button
+            <ButtonBase
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(notice.details);
@@ -346,13 +347,13 @@ function NotificationCard({
               }}
             >
               {text("copy")}
-            </button>
+            </ButtonBase>
             <span role="status">{copyState}</span>
           </div>
         )}
       </div>
       {!history && (
-        <button
+        <ButtonBase
           className="cb-notification-close"
           aria-label={text("close")}
           tabIndex={inert ? -1 : undefined}
@@ -363,7 +364,7 @@ function NotificationCard({
           }
         >
           ×
-        </button>
+        </ButtonBase>
       )}
       {history && (
         <time>
@@ -462,13 +463,13 @@ function HistoryRow({
         {(actions.length > 0 || notice.details) && (
           <div className="cb-history-actions">
             {actions[0] && (
-              <button onClick={() => act(actions[0])}>
+              <ButtonBase onClick={() => act(actions[0])}>
                 {text(actions[0])}
                 <span aria-hidden="true"> →</span>
-              </button>
+              </ButtonBase>
             )}
             {(notice.details || actions.length > 1) && (
-              <button
+              <ButtonBase
                 aria-expanded={expanded}
                 aria-controls={detailsId}
                 onClick={() => {
@@ -478,7 +479,7 @@ function HistoryRow({
               >
                 {text("details")}
                 <span aria-hidden="true"> {expanded ? "−" : "+"}</span>
-              </button>
+              </ButtonBase>
             )}
           </div>
         )}
@@ -487,7 +488,7 @@ function HistoryRow({
             {notice.details && (
               <>
                 <pre className="cb-selectable">{notice.details}</pre>
-                <button
+                <ButtonBase
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(notice.details);
@@ -498,14 +499,14 @@ function HistoryRow({
                   }}
                 >
                   {text("copy")}
-                </button>
+                </ButtonBase>
                 <span role="status">{copied}</span>
               </>
             )}
             {actions.slice(1).map((action) => (
-              <button key={action} onClick={() => act(action)}>
+              <ButtonBase key={action} onClick={() => act(action)}>
                 {text(action)}
-              </button>
+              </ButtonBase>
             ))}
           </div>
         )}
@@ -591,9 +592,9 @@ export function NotificationHistory() {
     );
   return (
     <div ref={ref} className="cb-notification-history">
-      <button
+      <Button context="toolbar" iconOnly
         ref={trigger}
-        className="cb-btn cb-notification-trigger"
+        className="cb-notification-trigger"
         aria-label={`${text("history")}${unread ? ` · ${unread} ${text("unread")}` : ""}`}
         title={text("history")}
         aria-expanded={open}
@@ -604,7 +605,7 @@ export function NotificationHistory() {
         {unread > 0 && (
           <span className="cb-notification-unread-dot" aria-hidden="true" />
         )}
-      </button>
+      </Button>
       {open && (
         <section
           id="notification-history-panel"
@@ -620,31 +621,31 @@ export function NotificationHistory() {
                 {unread > 0 && ` · ${unread} ${text("unread")}`}
               </p>
             </div>
-            <button
+            <ButtonBase
               className="cb-history-close"
               aria-label={text("close")}
               onClick={close}
             >
               ×
-            </button>
+            </ButtonBase>
           </header>
           <div className="cb-history-toolbar">
             <div className="cb-history-filters" aria-label={text("history")}>
-              <button
+              <ButtonBase
                 aria-pressed={filter === "all"}
                 onClick={() => setFilter("all")}
               >
                 {text("all")}
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 aria-pressed={filter === "pending"}
                 onClick={() => setFilter("pending")}
               >
                 {text("pending")}
                 {pending > 0 && <span>{pending}</span>}
-              </button>
+              </ButtonBase>
             </div>
-            <button
+            <ButtonBase
               disabled={!unread}
               onClick={() =>
                 void invoke("notification_mark_read", { id: null }).catch(
@@ -653,7 +654,7 @@ export function NotificationHistory() {
               }
             >
               {text("markRead")}
-            </button>
+            </ButtonBase>
           </div>
           <div className="cb-history-list">
             {!rows.length ? (
@@ -676,7 +677,7 @@ export function NotificationHistory() {
             {cleared ? (
               <>
                 <span role="status">{text("cleared", { n: cleared })}</span>
-                <button
+                <ButtonBase
                   disabled={clearing}
                   onClick={async () => {
                     setClearing(true);
@@ -690,12 +691,12 @@ export function NotificationHistory() {
                   }}
                 >
                   {text("undo")}
-                </button>
+                </ButtonBase>
               </>
             ) : (
               <>
                 <span>{text("session")}</span>
-                <button
+                <ButtonBase
                   disabled={clearing || !completed || filter === "pending"}
                   onClick={async () => {
                     setClearing(true);
@@ -715,7 +716,7 @@ export function NotificationHistory() {
                   }}
                 >
                   {text("clear")}
-                </button>
+                </ButtonBase>
               </>
             )}
           </footer>

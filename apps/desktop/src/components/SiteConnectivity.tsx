@@ -1,3 +1,4 @@
+import { Button, ButtonBase } from "./Button";
 import "./SiteConnectivity.css";
 import { useEffect, useRef, useState } from "react";
 import { ipc, type SiteResult } from "../ipc";
@@ -131,13 +132,12 @@ export default function SiteConnectivity({
             {t("sites.hint")}
           </p>
         </div>
-        <button
-          className="cb-btn"
+        <Button loading={busy.size > 0}
           disabled={!running || busy.size > 0}
           onClick={() => void test(SITES.map((site) => site.id))}
         >
           {busy.size ? t("sites.testing") : t("sites.testAll")}
-        </button>
+        </Button>
       </div>
       <div className="cb-site-grid">
         {SITES.map((site) => {
@@ -164,7 +164,7 @@ export default function SiteConnectivity({
                   ? "var(--cb-bad)"
                   : "var(--cb-faint)";
           return (
-            <button
+            <ButtonBase
               key={site.id}
               className="cb-site-card"
               disabled={!running || busy.size > 0}
@@ -203,7 +203,7 @@ export default function SiteConnectivity({
                     : ""}
                 </span>
               </span>
-            </button>
+            </ButtonBase>
           );
         })}
       </div>

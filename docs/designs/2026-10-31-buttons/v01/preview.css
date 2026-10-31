@@ -1,0 +1,51 @@
+.button-demo {
+  background: var(--cb-bg);
+  height: 100%;
+  overflow: auto;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px;
+  color: var(--cb-text);
+}
+.button-demo h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+.button-demo header p,
+.button-demo section p {
+  font-size: 12px;
+  color: var(--cb-text-dim);
+  margin-top: 8px;
+}
+.button-demo section {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--cb-line);
+}
+.button-demo section h2 {
+  font-size: 13px;
+  font-weight: 550;
+  margin-bottom: 16px;
+}
+.button-demo section > div,
+.button-demo form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.button-demo-chrome {
+  background: var(--cb-chrome);
+  padding: 20px !important;
+  border-radius: 10px;
+  margin-top: 24px;
+}
+@media (max-width: 760px) {
+  .button-demo {
+    background: var(--cb-bg);
+    padding: 20px;
+  }
+  .button-demo section > div,
+  .button-demo form {
+    gap: 8px;
+  }
+}

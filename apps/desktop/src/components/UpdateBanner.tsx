@@ -1,3 +1,4 @@
+import { ButtonBase } from "./Button";
 import { ProgressRing } from "./ProgressRing";
 import { Icon } from "./Icon";
 import { useT } from "../i18n";
@@ -35,7 +36,7 @@ export function UpdateBanner({
       : t("home.updateGoBtn");
 
   return (
-    <button className="cb-update-banner" type="button" onClick={onOpen}>
+    <ButtonBase className="cb-update-banner" type="button" onClick={onOpen}>
       <span className="cb-update-icon" aria-hidden="true">
         {downloading ? (
           <ProgressRing value={percent} label={title} size={16} />
@@ -58,6 +59,6 @@ export function UpdateBanner({
           <Icon name="arrow-right" size={14} />
         </span>
       </span>
-    </button>
+    </ButtonBase>
   );
 }

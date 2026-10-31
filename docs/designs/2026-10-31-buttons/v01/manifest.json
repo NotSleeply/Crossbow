@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-31",
+  "version": "v01",
+  "status": "implemented-awaiting-review",
+  "issue": 231,
+  "baseline": "0444f65",
+  "input": "用户要求统一所有桌面按钮，支持实心/描边、顶部/内容区、明暗主题及 hover 过渡；修复预览中节点测速按钮撑坏卡片的回归。",
+  "editable": [
+    "index.html",
+    "preview.tsx",
+    "preview.css",
+    "mock-tauri.ts",
+    "vite.config.mts"
+  ],
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "2f5d3d13e7063c435b065120669324339059ab3d983265233e3a5c4e0f7c8fa5",
+      "bytes": 3985
+    },
+    {
+      "path": "index.html",
+      "sha256": "bf869ae0a476f236e429b7ac9fdb266b833c7dfadf96e1e6b077d419150cf4ce",
+      "bytes": 268
+    },
+    {
+      "path": "mock-tauri.ts",
+      "sha256": "bc2b9c3cca6ccbc199b3e91fbe1afa7c44d6996ff05f6f35ecc0f96525d87f90",
+      "bytes": 4718
+    },
+    {
+      "path": "preview.css",
+      "sha256": "c3feeb80c7d8ef44e74278799046e6053d5246c0ca356b54e95cff7795307ab0",
+      "bytes": 932
+    },
+    {
+      "path": "preview.tsx",
+      "sha256": "d8d3c2c8cd5affe28bca25fb634f5f5afc34188820d4777884364335045fcc22",
+      "bytes": 3849
+    },
+    {
+      "path": "previews/checks.json",
+      "sha256": "f0c88959a39bfdccb263621e3616e738bf6a0d37ed9fcdab4da0b6ca48ca583e",
+      "bytes": 5812
+    },
+    {
+      "path": "previews/gallery-dark.jpg",
+      "sha256": "9ce8bf000c2fe98f20a9042d21d091a2d22b8bd3bd368a10fc52ff4a4fdb496f",
+      "bytes": 35680
+    },
+    {
+      "path": "previews/gallery-light.jpg",
+      "sha256": "7a86f0b497c8f81538bbcbd821212d00db8f647b0c3a455c4a95e9a33dd949ad",
+      "bytes": 35829
+    },
+    {
+      "path": "previews/home-dark.jpg",
+      "sha256": "d0f524c433877d3b929b0733cb3361041904d1e23ff3cdc5f5b7086297d51096",
+      "bytes": 60615
+    },
+    {
+      "path": "previews/home-light.jpg",
+      "sha256": "a424dc019fd2ba9e29a724441acd2352f17373d5b8ae625a2a56fd46f96b5705",
+      "bytes": 60986
+    },
+    {
+      "path": "previews/home-narrow.jpg",
+      "sha256": "ba1983eb3bd9bc394df8b5041d730a4b3200f9206f763b009a845028373aaae3",
+      "bytes": 51332
+    },
+    {
+      "path": "previews/nodes-single-test.jpg",
+      "sha256": "4739167819f66db11eba82d726c2a77f83c6f310f59fc58b017d9ef91316d3ca",
+      "bytes": 56851
+    },
+    {
+      "path": "previews/notification-anchor.jpg",
+      "sha256": "187e97ec944701a1193c0653f7a4809e81f5143e3b1baa61fe48d19f46f2ee20",
+      "bytes": 70625
+    },
+    {
+      "path": "previews/production-nodes.jpg",
+      "sha256": "fea4f84bf4fdc1e81b83dcecb6c06d2ebc582f934f4b1a0f706bf3f27e931dd3",
+      "bytes": 56804
+    },
+    {
+      "path": "previews/profiles-light.jpg",
+      "sha256": "53728066ace9bf7031c0f2b2b96e581c73344d05e221e493573161bf34ff4db5",
+      "bytes": 35052
+    },
+    {
+      "path": "source.zip",
+      "sha256": "2f678b59777f7921cbe1cfc168fd2a6188bde00eada1d6479ec695b15ba8497d",
+      "bytes": 734690
+    },
+    {
+      "path": "vite.config.mts",
+      "sha256": "21e5d254901fdfb0dc9bd5f1fe8adc51e0b7062306d7175c5e00f3922fb82f7e",
+      "bytes": 2246
+    }
+  ]
+}

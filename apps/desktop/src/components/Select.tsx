@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ButtonBase } from "./Button";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { Icon } from "./Icon";
 import "./Select.css";
@@ -45,6 +46,7 @@ export default function Select({
         modal={false}
       >
         <SelectPrimitive.Trigger
+          render={<ButtonBase />}
           className="cb-select-trigger"
           aria-label={label}
           title={current?.label}

@@ -1,3 +1,4 @@
+import { ButtonBase, Button } from "./components/Button";
 import { notify } from "./notifications/service";
 import { useEffect, useState } from "react";
 import HomePage from "./pages/Home";
@@ -231,7 +232,7 @@ export default function App() {
         />
       )}
       <header className="cb-global-nav">
-        <button
+        <ButtonBase
           className="cb-wordmark"
           onClick={() => go("home")}
           aria-label="Crossbow"
@@ -245,7 +246,7 @@ export default function App() {
             }}
           />
           <b>Crossbow</b>
-        </button>
+        </ButtonBase>
         <nav className="cb-primary-nav" aria-label={t("studio.navigation")}>
           {(
             [
@@ -256,18 +257,18 @@ export default function App() {
               ["settings", "studio.settings"],
             ] as const
           ).map(([id, label]) => (
-            <button
+            <ButtonBase
               key={id}
               className={workspace === id ? "active" : ""}
               aria-current={workspace === id ? "page" : undefined}
               onClick={() => go(id === "monitor" ? "connections" : id)}
             >
               {t(label)}
-            </button>
+            </ButtonBase>
           ))}
         </nav>
         <div className="cb-global-tools">
-          <button
+          <Button context="toolbar"
             className="cb-source-pick"
             title={profileName || t("studio.sources")}
             onClick={() => {
@@ -277,11 +278,11 @@ export default function App() {
           >
             <span>{profileName || t("studio.sources")}</span>
             <span aria-hidden="true">›</span>
-          </button>
-          <button className="cb-btn cb-diagnostics-button" onClick={() => go("diagnostics")}>
+          </Button>
+          <Button context="toolbar" className="cb-diagnostics-button" onClick={() => go("diagnostics")}>
             <Icon name="pulse" />
             {t("nav.diagnostics")}
-          </button>
+          </Button>
           <NotificationHistory />
         </div>
       </header>
@@ -295,31 +296,31 @@ export default function App() {
                 ["diagnostics", "nav.diagnostics"],
               ] as const
             ).map(([id, label]) => (
-              <button
+              <ButtonBase
                 key={id}
                 className={page === id ? "active" : ""}
                 aria-current={page === id ? "page" : undefined}
                 onClick={() => go(id)}
               >
                 {t(label)}
-              </button>
+              </ButtonBase>
             ))}
           </nav>
         )}
         {page === "profiles" && (
           <nav className="cb-subnav" aria-label={t("studio.config")}>
-            <button
+            <ButtonBase
               className={configTab === "sources" ? "active" : ""}
               onClick={() => setConfigTab("sources")}
             >
               {t("studio.sources")}
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase
               className={configTab === "overrides" ? "active" : ""}
               onClick={() => setConfigTab("overrides")}
             >
               {t("studio.overrides")}
-            </button>
+            </ButtonBase>
           </nav>
         )}
         <div className={`cb-page-content cb-view-${page}`}>
@@ -341,14 +342,14 @@ export default function App() {
                     ["app", "studio.application"],
                   ] as const
                 ).map(([id, label]) => (
-                  <button
+                  <ButtonBase
                     key={id}
                     className={settingSection === id ? "active" : ""}
                     aria-current={settingSection === id ? "page" : undefined}
                     onClick={() => setSettingSection(id)}
                   >
                     {t(label)}
-                  </button>
+                  </ButtonBase>
                 ))}
               </nav>
               <SettingsPage section={settingSection} capabilities={capabilities} />

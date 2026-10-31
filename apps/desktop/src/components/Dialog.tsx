@@ -1,3 +1,4 @@
+import { ButtonBase } from "./Button";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../i18n";
@@ -71,9 +72,9 @@ export default function Dialog({
       >
         <header>
           <h2 id="cb-dialog-title">{title}</h2>
-          <button onClick={onClose} aria-label={t("studio.close")}>
+          <ButtonBase onClick={onClose} aria-label={t("studio.close")}>
             ×
-          </button>
+          </ButtonBase>
         </header>
         {children}
       </div>

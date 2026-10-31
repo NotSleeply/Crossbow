@@ -1,3 +1,4 @@
+import { Button } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useState } from "react";
 import { ipc, type CheckResult } from "../ipc";
@@ -60,9 +61,9 @@ export default function DiagnosticsPage() {
   return (
     <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
-        <button className="cb-btn acc" onClick={run} disabled={running}>
+        <Button variant="primary" loading={running} onClick={run} disabled={running}>
           {running ? t("diag.running") : t("diag.run")}
-        </button>
+        </Button>
       </PageHead>
 
       {results === null ? (
@@ -113,13 +114,12 @@ export default function DiagnosticsPage() {
                   OK
                 </span>
               ) : r.fix ? (
-                <button
-                  className="cb-btn acc py-1.5"
-                  disabled={fixing !== null}
+                <Button variant="primary"
+                  loading={fixing === r.id} disabled={fixing !== null}
                   onClick={() => applyFix(r)}
                 >
                   {fixing === r.id ? "…" : t(`diag.fix.${r.fix}` as const)}
-                </button>
+                </Button>
               ) : null}
             </section>
           ))}

@@ -1,0 +1,268 @@
+{
+  "rest": {
+    "background": "rgb(41, 51, 69)",
+    "color": "rgb(255, 255, 255)",
+    "transition": "0.14s, 0.14s, 0.14s, 0.1s"
+  },
+  "hover": {
+    "background": "color(srgb 0.26149 0.296 0.358118)",
+    "color": "rgb(255, 255, 255)",
+    "hover": true
+  },
+  "form": "点击 1 次 · 提交 1 次",
+  "refFocus": "默认不提交表单",
+  "beforeWidth": 96,
+  "busy": {
+    "accessibleLabel": "执行异步操作",
+    "ariaBusy": "true",
+    "disabled": true,
+    "spinner": true,
+    "width": 96
+  },
+  "dialog": true,
+  "selectAfterComposition": "2 个结果",
+  "pageLoading": {
+    "busy": "true",
+    "disabled": true,
+    "spinner": true
+  },
+  "cardLayout": [
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "自动选择",
+      "titleTopGap": 7
+    },
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "软银-JP-Hy2",
+      "titleTopGap": 7
+    },
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "HKT-Hy2",
+      "titleTopGap": 7
+    },
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "SG-Hy2",
+      "titleTopGap": 7
+    },
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "软银-JP-VLESS",
+      "titleTopGap": 7
+    },
+    {
+      "buttonInside": true,
+      "buttonPosition": "absolute",
+      "buttonRightGap": 7,
+      "buttonTopGap": 7,
+      "height": 76,
+      "name": "HKT-VLESS",
+      "titleTopGap": 7
+    }
+  ],
+  "singleTestCurrentNode": "软银-JP-Hy2",
+  "notificationAnchor": {
+    "expectedTop": 83,
+    "inside": true,
+    "open": true,
+    "panelTop": 83,
+    "triggerHeight": 34
+  },
+  "layouts": [
+    {
+      "buttons": [
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(89, 103, 119)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(89, 103, 119)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(89, 103, 119)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(41, 51, 69)",
+          "color": "rgb(255, 255, 255)",
+          "context": "content",
+          "height": 32
+        },
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(36, 43, 55)",
+          "context": "content",
+          "height": 32
+        }
+      ],
+      "dark": false,
+      "overflow": false,
+      "viewport": [
+        1120,
+        800
+      ]
+    },
+    {
+      "buttons": [
+        {
+          "background": "rgb(26, 28, 33)",
+          "color": "rgb(173, 178, 190)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(26, 28, 33)",
+          "color": "rgb(173, 178, 190)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(26, 28, 33)",
+          "color": "rgb(173, 178, 190)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(231, 234, 242)",
+          "color": "rgb(32, 35, 43)",
+          "context": "content",
+          "height": 32
+        },
+        {
+          "background": "rgb(26, 28, 33)",
+          "color": "rgb(233, 235, 241)",
+          "context": "content",
+          "height": 32
+        }
+      ],
+      "dark": true,
+      "overflow": false,
+      "viewport": [
+        1120,
+        800
+      ]
+    },
+    {
+      "buttons": [
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(89, 103, 119)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(89, 103, 119)",
+          "context": "toolbar",
+          "height": 34
+        },
+        {
+          "background": "rgb(41, 51, 69)",
+          "color": "rgb(255, 255, 255)",
+          "context": "content",
+          "height": 32
+        },
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(36, 43, 55)",
+          "context": "content",
+          "height": 32
+        }
+      ],
+      "dark": false,
+      "overflow": false,
+      "viewport": [
+        820,
+        734
+      ]
+    },
+    {
+      "buttons": [],
+      "dark": false,
+      "overflow": false,
+      "viewport": [
+        1120,
+        800
+      ]
+    },
+    {
+      "buttons": [],
+      "dark": true,
+      "overflow": false,
+      "viewport": [
+        1120,
+        800
+      ]
+    }
+  ],
+  "darkHover": {
+    "background": "oklab(0.879499 -0.0000604536 -0.0110238)",
+    "color": "rgb(32, 35, 43)",
+    "hover": true
+  },
+  "production": {
+    "card": [
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      },
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      },
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      },
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      },
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      },
+      {
+        "height": 76,
+        "position": "absolute",
+        "titleTop": 7
+      }
+    ],
+    "entry": "/assets/index-DyOnrwUl.js",
+    "warnings": []
+  }
+}

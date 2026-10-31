@@ -1,3 +1,4 @@
+import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { notify } from "../notifications/service";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -269,7 +270,7 @@ export default function LogsPage() {
         </h1>
         <div className="cb-log-levels">
         {LEVELS.map((lv) => (
-          <button
+          <ButtonBase
             key={lv}
             type="button"
             className="cb-log-level"
@@ -279,7 +280,7 @@ export default function LogsPage() {
           >
             <span className="cb-log-level-dot" aria-hidden="true" />
             {lv}
-          </button>
+          </ButtonBase>
         ))}
         </div>
         <div className="cb-log-actions">
@@ -293,10 +294,10 @@ export default function LogsPage() {
           className="cb-selectable"
         />
         </label>
-        <button type="button" onClick={() => { setLines([]); pendingRef.current.clear(); }} className="cb-log-clear" disabled={lines.length === 0}>
+        <Button type="button" onClick={() => { setLines([]); pendingRef.current.clear(); }} className="cb-log-clear" disabled={lines.length === 0}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg>
           {t("logs.clear")}
-        </button>
+        </Button>
         </div>
       </div>
 
@@ -322,8 +323,7 @@ export default function LogsPage() {
                   : t("logs.connecting")}
             </span>
             {(!coreRunning || !connected) && (
-              <button
-                className="cb-btn"
+              <Button
                 onClick={() =>
                   window.dispatchEvent(
                     new CustomEvent("cb:goto", { detail: "diagnostics" }),
@@ -331,7 +331,7 @@ export default function LogsPage() {
                 }
               >
                 {t("nav.diagnostics")}
-              </button>
+              </Button>
             )}
           </div>
         ) : (
