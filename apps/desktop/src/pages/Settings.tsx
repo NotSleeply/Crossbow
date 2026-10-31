@@ -1,3 +1,4 @@
+import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -254,7 +255,7 @@ export default function SettingsPage({
                 engine: selectedEngine,
               })}
             >
-              <button
+              <Button variant="primary" loading={installing !== null}
                 disabled={installing !== null}
                 onClick={async () => {
                   if (installing !== null) return;
@@ -289,18 +290,16 @@ export default function SettingsPage({
                     await load();
                   }
                 }}
-                className="cb-btn acc px-3 py-1.5"
               >
                 {installing ?? t("settings.downloadCore")}
-              </button>
+              </Button>
             </Row>
           ) : (
             selectedEngine !== (engine?.engine ?? "mihomo") && (
               <Row
                 label={t("settings.engineApply", { engine: selectedEngine })}
               >
-                <button
-                  className="cb-btn acc px-3 py-1.5"
+                <Button variant="primary"
                   onClick={async () => {
                     await saveSetting(
                       "engine",
@@ -313,7 +312,7 @@ export default function SettingsPage({
                   }}
                 >
                   启用
-                </button>
+                </Button>
               </Row>
             )
           )}
@@ -505,14 +504,13 @@ export default function SettingsPage({
             />
           </Row>
           <Row label={t("settings.logsOpen")} hint={t("settings.logsOpenHint")}>
-            <button
-              className="cb-btn"
+            <Button
               onClick={() =>
                 ipc.openLogsDir().catch((e) => notify.error(e, "open-logs"))
               }
             >
               {t("settings.logsOpenBtn")}
-            </button>
+            </Button>
           </Row>
         </Group>
       )}
@@ -621,34 +619,20 @@ export default function SettingsPage({
             <div className="flex max-w-[240px] flex-col items-end gap-1.5">
               <div className="flex items-center gap-2">
                 {(updateState === null || updateChecking) && (
-                  <button
-                    className="cb-btn inline-flex items-center gap-1.5 py-1.5"
+                  <Button
                     onClick={runUpdateCheck}
                     disabled={updateChecking || !capabilities?.app_update}
-                    aria-busy={updateChecking}
+                    loading={updateChecking}
                   >
-                    {updateChecking && (
-                      <svg
-                        className="h-3 w-3 animate-spin"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        aria-hidden="true"
-                      >
-                        <path d="M21 12a9 9 0 1 1-9-9" strokeLinecap="round" />
-                      </svg>
-                    )}
                     {t(
                       updateChecking
                         ? "settings.updateChecking"
                         : "settings.checkUpdateBtn",
                     )}
-                  </button>
+                  </Button>
                 )}
                 {updateState && !updateState.downloaded && !updateChecking && (
-                  <button
-                    className="cb-btn py-1.5"
+                  <Button
                     disabled={updateState.progress !== null}
                     onClick={() =>
                       ipc
@@ -657,12 +641,11 @@ export default function SettingsPage({
                     }
                   >
                     {t("settings.updateDownload")}
-                  </button>
+                  </Button>
                 )}
                 {updateState?.downloaded && !updateChecking && (
-                  <button
-                    className="cb-btn py-1.5"
-                    style={{ color: "var(--cb-accent)" }}
+                  <Button
+
                     onClick={() =>
                       notify.run(
                         "update-install",
@@ -672,7 +655,7 @@ export default function SettingsPage({
                     }
                   >
                     {t("settings.updateRestart")}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -747,7 +730,7 @@ function Switch({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <ButtonBase
       role="switch"
       aria-checked={checked}
       disabled={disabled}

@@ -1,3 +1,4 @@
+import { ButtonBase } from "./Button";
 import { fitGrid, fitRowHeight } from "./fitGrid";
 import "./FitItems.css";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -58,23 +59,23 @@ export default function FitItems<T>({
       </div>
       {pages > 1 && (
         <nav className="cb-fit-pager" aria-label={label}>
-          <button
+          <ButtonBase
             disabled={active === 0}
             onClick={() => setPage(active - 1)}
             aria-label={t("studio.previous")}
           >
             ‹
-          </button>
+          </ButtonBase>
           <span>
             {active + 1} / {pages}
           </span>
-          <button
+          <ButtonBase
             disabled={active + 1 >= pages}
             onClick={() => setPage(active + 1)}
             aria-label={t("studio.next")}
           >
             ›
-          </button>
+          </ButtonBase>
         </nav>
       )}
     </div>

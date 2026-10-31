@@ -1,3 +1,4 @@
+import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -148,10 +149,10 @@ export default function ProfilesPage({
         meta={t("studio.configHint")}
       >
         {tab === "sources" && (
-          <button className="cb-btn" onClick={() => setImporting(true)}>
+          <Button onClick={() => setImporting(true)}>
             <Icon name="download" />
             {t("studio.importSource")}
-          </button>
+          </Button>
         )}
       </PageHead>
       <input
@@ -179,9 +180,9 @@ export default function ProfilesPage({
           <Icon name="document" size={26} />
           <h2>{t("profiles.empty")}</h2>
           <p>{t("profiles.dropHint")}</p>
-          <button className="cb-btn mt-4" onClick={() => setImporting(true)}>
+          <Button className="mt-4" onClick={() => setImporting(true)}>
             {t("studio.importSource")}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="cb-context-layout">
@@ -192,7 +193,7 @@ export default function ProfilesPage({
               rowHeight={64}
               label={t("studio.sources")}
               render={(profile) => (
-                <button
+                <ButtonBase
                   key={profile.id}
                   className={`cb-profile-list-item ${profile.id === selected?.id ? "active" : ""}`}
                   aria-current={
@@ -209,7 +210,7 @@ export default function ProfilesPage({
                       ? ` · ${t("profiles.current")}`
                       : ""}
                   </small>
-                </button>
+                </ButtonBase>
               )}
             />
           </nav>
@@ -268,22 +269,20 @@ export default function ProfilesPage({
             className="cb-input cb-selectable"
           />
           <div className="actions">
-            <button
-              className="cb-btn"
+            <Button
               disabled={busy !== null}
               onClick={() => fileInputRef.current?.click()}
             >
               {t("profiles.importFile")}
-            </button>
-            <button
-              className="cb-btn primary"
+            </Button>
+            <Button variant="primary"
               disabled={!url.trim() || busy !== null}
               onClick={importUrl}
             >
               {busy === "import"
                 ? t("profiles.importing")
                 : t("profiles.import")}
-            </button>
+            </Button>
           </div>
         </Dialog>
       )}
@@ -368,8 +367,7 @@ function ProfileCard({
         ) : (
           <h2 className="text-xl font-medium cb-selectable">{profile.name}</h2>
         )}
-        <button
-          className="cb-btn"
+        <Button
           disabled={busy}
           onClick={() => {
             cancelRename.current = false;
@@ -378,7 +376,7 @@ function ProfileCard({
           }}
         >
           {t("profiles.rename")}
-        </button>
+        </Button>
         {active && <span className="cb-badge">{t("profiles.current")}</span>}
       </div>
       <dl className="cb-profile-facts">
@@ -442,27 +440,25 @@ function ProfileCard({
         </div>
         <div>
           {profile.kind === "remote" && (
-            <button className="cb-btn" disabled={busy} onClick={onUpdate}>
+            <Button disabled={busy} onClick={onUpdate}>
               {t("profiles.update")}
-            </button>
+            </Button>
           )}
           {!active && (
-            <button
-              className="cb-btn primary"
+            <Button variant="primary"
               disabled={busy}
               onClick={onActivate}
             >
               {t("profiles.setActive")}
-            </button>
+            </Button>
           )}
-          <button
-            className="cb-btn"
-            style={{ color: "var(--cb-bad)" }}
+          <Button
+            tone="danger"
             disabled={busy}
             onClick={onRemove}
           >
             {t("profiles.remove")}
-          </button>
+          </Button>
         </div>
       </div>
     </section>

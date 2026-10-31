@@ -1,3 +1,4 @@
+import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify } from "../notifications/service";
@@ -78,18 +79,18 @@ export default function ConnectionsPage() {
         meta={`${snapshot.truncated ? `${snapshot.truncated} 条（显示前 ${rows.length}）` : `${rows.length} 条`} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
       >
         <div className="cb-seg">
-          <button
+          <ButtonBase
             className={view === "list" ? "on" : ""}
             onClick={() => setView("list")}
           >
             {t("conn.viewList")}
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase
             className={view === "apps" ? "on" : ""}
             onClick={() => setView("apps")}
           >
             {t("conn.viewApps")}
-          </button>
+          </ButtonBase>
         </div>
         <input
           value={filter}
@@ -97,9 +98,9 @@ export default function ConnectionsPage() {
           placeholder={t("conn.filter")}
           className="cb-input cb-selectable w-64"
         />
-        <button className="cb-btn" onClick={togglePause}>
+        <Button onClick={togglePause}>
           {paused ? t("conn.paused") : t("conn.pause")}
-        </button>
+        </Button>
       </PageHead>
 
       <div className="cb-card cb-connection-table">
@@ -228,14 +229,13 @@ function Row({ row, onClose }: { row: ConnRow; onClose: () => void }) {
       <span className="text-right">{fmtBytes(row.up)}</span>
       <span className="text-right">{fmtBytes(row.down)}</span>
       <span className="text-right">{fmtDuration(row.elapsed_ms)}</span>
-      <button
+      <Button iconOnly size="small" tone="danger"
         onClick={onClose}
+        aria-label={t("conn.close")}
         title={t("conn.close")}
-        className="text-[13px] leading-none hover:opacity-80"
-        style={{ color: "var(--cb-bad)" }}
       >
         ✕
-      </button>
+      </Button>
     </div>
   );
 }
@@ -281,7 +281,7 @@ function AppRow({
 }) {
   const t = useT();
   return (
-    <button
+    <ButtonBase
       onClick={onInspect}
       title={t("conn.inspectHint")}
       className="cb-table-row w-full text-left"
@@ -318,7 +318,7 @@ function AppRow({
       >
         {fmtDuration(agg.maxElapsed)}
       </span>
-    </button>
+    </ButtonBase>
   );
 }
 

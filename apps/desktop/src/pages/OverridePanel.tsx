@@ -1,3 +1,4 @@
+import { Button, ButtonBase } from "../components/Button";
 import FitItems from "../components/FitItems";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useState } from "react";
@@ -128,20 +129,18 @@ export default function OverridePanel({
           placeholder={t("ov.namePlaceholder")}
           className="cb-input cb-selectable"
         />
-        <button
-          className="cb-btn"
+        <Button
           disabled={creating || !newName.trim()}
           onClick={() => create("script")}
         >
           {creating ? "…" : t("ov.newScript")}
-        </button>
-        <button
-          className="cb-btn"
+        </Button>
+        <Button
           disabled={creating || !newName.trim()}
           onClick={() => create("merge")}
         >
           {t("ov.newMerge")}
-        </button>
+        </Button>
       </div>
       {overrides.length === 0 ? (
         <div className="cb-empty">
@@ -156,7 +155,7 @@ export default function OverridePanel({
               rowHeight={58}
               label={t("ov.title")}
               render={(override) => (
-                <button
+                <ButtonBase
                   key={override.id}
                   className={selected?.id === override.id ? "active" : ""}
                   aria-current={
@@ -173,7 +172,7 @@ export default function OverridePanel({
                       ? t("ov.kindScript")
                       : t("ov.kindMerge")}
                   </small>
-                </button>
+                </ButtonBase>
               )}
             />
           </nav>
@@ -196,15 +195,14 @@ export default function OverridePanel({
                   ) : (
                     <h2 className="text-lg font-medium">{selected.name}</h2>
                   )}
-                  <button
-                    className="cb-btn"
+                  <Button
                     onClick={() => {
                       setNameDraft(selected.name);
                       setRenamingId(selected.id);
                     }}
                   >
                     {t("profiles.rename")}
-                  </button>
+                  </Button>
                 </div>
                 <label className="flex items-center gap-2 text-xs">
                   <input
@@ -268,17 +266,15 @@ export default function OverridePanel({
                 </p>
               )}
               <div className="cb-profile-actions">
-                <button
-                  className="cb-btn"
-                  style={{ color: "var(--cb-bad)" }}
+                <Button
+                  tone="danger"
                   onClick={() => remove(selected.id)}
                 >
                   {t("profiles.remove")}
-                </button>
-                <button
-                  className="cb-btn primary"
+                </Button>
+                <Button variant="primary"
                   disabled={savingId !== null}
-                  aria-busy={savingId === selected.id}
+                  loading={savingId === selected.id}
                   onClick={() =>
                     save(
                       selected.id,
@@ -287,7 +283,7 @@ export default function OverridePanel({
                   }
                 >
                   {savingId === selected.id ? "…" : t("ov.save")}
-                </button>
+                </Button>
               </div>
             </div>
           )}

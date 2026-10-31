@@ -1,0 +1,161 @@
+/* The default positioning must stay below layout utilities such as absolute/sticky. */
+@layer base { .cb-button { position:relative; } }
+.cb-button-base {
+  transition:
+    background-color 140ms ease-out,
+    border-color 140ms ease-out,
+    color 140ms ease-out,
+    opacity 140ms ease-out;
+}
+/* All action-button visuals live here. Pages may control placement, never paint. */
+.cb-button {
+  --button-height: 32px;
+  --button-bg: var(--cb-bg);
+  --button-ink: var(--cb-text);
+  --button-line: var(--cb-line-strong);
+  --button-hover: var(--cb-surface);
+  --button-hover-line: var(--cb-accent-line);
+  --button-pressed: var(--cb-surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 0;
+  height: var(--button-height);
+  min-height: var(--button-height);
+  padding: 0 11px;
+  gap: 7px;
+  border: 1px solid var(--button-line);
+  border-radius: 7px;
+  background: var(--button-bg);
+  color: var(--button-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+  user-select: none;
+  touch-action: manipulation;
+  transition:
+    background-color 140ms ease-out,
+    border-color 140ms ease-out,
+    color 140ms ease-out,
+    transform 100ms ease-out;
+}
+.cb-button[data-context="toolbar"] {
+  --button-height: 34px;
+  --button-bg: var(--cb-bg);
+  --button-ink: var(--cb-text-dim);
+  --button-hover: var(--cb-surface-2);
+  padding-inline: 12px;
+}
+.cb-button[data-size="small"] {
+  --button-height: 28px;
+  padding-inline: 9px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+.cb-button[data-icon-only] {
+  width: var(--button-height);
+  padding: 0;
+}
+.cb-button[data-variant="primary"] {
+  --button-bg: var(--cb-primary);
+  --button-ink: var(--cb-on-primary);
+  --button-line: var(--cb-primary);
+  --button-hover: color-mix(in srgb, var(--cb-primary) 88%, var(--cb-bg));
+  --button-hover-line: var(--cb-primary);
+  --button-pressed: color-mix(in srgb, var(--cb-primary) 80%, var(--cb-bg));
+}
+.cb-button[data-tone="danger"] {
+  --button-ink: var(--cb-bad);
+  --button-line: color-mix(in srgb, var(--cb-bad) 38%, var(--cb-line));
+  --button-hover: color-mix(in srgb, var(--cb-bad) 8%, var(--cb-bg));
+  --button-hover-line: var(--cb-bad);
+  --button-pressed: color-mix(in srgb, var(--cb-bad) 14%, var(--cb-bg));
+}
+.cb-button[data-tone="danger"][data-variant="primary"] {
+  --button-bg: var(--cb-bad);
+  --button-ink: var(--cb-bg);
+  --button-line: var(--cb-bad);
+  --button-hover: color-mix(in srgb, var(--cb-bad) 88%, var(--cb-text));
+  --button-pressed: color-mix(in srgb, var(--cb-bad) 80%, var(--cb-text));
+}
+.cb-button-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+.cb-button-label > svg {
+  flex: none;
+}
+.cb-button[data-loading] .cb-button-label {
+  opacity: 0;
+}
+.cb-button-spinner {
+  position: absolute;
+  top: calc(50% - 7.5px);
+  left: calc(50% - 7.5px);
+  animation: cb-button-spin 750ms linear infinite;
+}
+@keyframes cb-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cb-button:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--button-hover);
+    border-color: var(--button-hover-line);
+    color: var(--button-ink);
+  }
+}
+.cb-button:active:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--button-pressed);
+  transform: translateY(0.5px);
+}
+.cb-button:focus-visible {
+  outline: 2px solid var(--cb-accent);
+  outline-offset: 2px;
+}
+.cb-button-base:not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+.cb-button-base:disabled,
+.cb-button-base[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.cb-button:disabled,
+.cb-button[aria-disabled="true"] {
+  opacity: 0.45;
+}
+.cb-button[data-loading]:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-button-base,
+  .cb-button {
+    transition: none;
+  }
+  .cb-button:active:not(:disabled) {
+    transform: none;
+  }
+  .cb-button-spinner {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .cb-button:disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+  .cb-button:focus-visible {
+    outline-color: Highlight;
+  }
+}

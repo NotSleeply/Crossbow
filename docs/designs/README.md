@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-31 | 公共按钮：两种动作风格、顶部/内容区与全桌面迁移 | v01 | 已实现，待 PR 评审 | [规格](2026-10-31-buttons/v01/SPEC.md) · [状态稿](2026-10-31-buttons/v01/previews/gallery-light.jpg) · [节点回归](2026-10-31-buttons/v01/previews/production-nodes.jpg) · [源快照](2026-10-31-buttons/v01/source.zip) | #231 |
 | 2026-10-31 | 公共选择器：统一样式、键盘与浮层过渡 | v04 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v04/SPEC.md) · [生产预览](2026-10-30-node-toolbar/v04/previews/production-open.jpg) · [源快照](2026-10-30-node-toolbar/v04/source.zip) | #227 |
 | 2026-10-30 | 连接路径：信息组与传输轨迹居中 | v01 | 已实现，待 PR 评审 | [规格](2026-10-30-route-centering/v01/SPEC.md) · [预览](2026-10-30-route-centering/v01/previews/regular.jpg) | #227 |
 | 2026-10-30 | 节点搜索与筛选行：单层焦点、320px限宽 | v03 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v03/SPEC.md) · [实际预览](2026-10-30-node-toolbar/v03/previews/wide.jpg) · [源快照](2026-10-30-node-toolbar/v03/source.zip) | #227 |

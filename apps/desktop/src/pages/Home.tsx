@@ -1,3 +1,4 @@
+import { Button, ButtonBase } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify, notificationText } from "../notifications/service";
@@ -394,14 +395,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             </ConnectionFlow>
           </section>
           <div className="cb-home-actions">
-            <button className="cb-btn primary" onClick={() => go("proxies")}>
+            <Button variant="primary"  onClick={() => go("proxies")}>
               <Icon name="bolt" />
               {t("studio.chooseNode")}
-            </button>
-            <button className="cb-btn" onClick={() => go("connections")}>
+            </Button>
+            <Button onClick={() => go("connections")}>
               <Icon name="cube" />
               {t("studio.viewConnections")}
-            </button>
+            </Button>
           </div>
           <section className="cb-chart-only" aria-label={t("studio.trend")}>
             <div className="cb-chart-head">
@@ -457,7 +458,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <b>{proxyLabel}</b>
                   <p>{proxyHint}</p>
                 </div>
-                <button
+                <ButtonBase
                   className={`cb-toggle ${proxyOn ? "on" : ""}`}
                   role="switch"
                   aria-label={proxyLabel}
@@ -471,7 +472,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <b>{t("settings.tun")}</b>
                   <p>{t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}</p>
                 </div>
-                <button
+                <ButtonBase
                   className={`cb-toggle ${tun.enabled ? "on" : ""}`}
                   role="switch"
                   aria-label={t("settings.tun")}
@@ -488,7 +489,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={t("studio.mode")}
                 >
                   {CORE_MODES.map((m) => (
-                    <button
+                    <ButtonBase
                       key={m.id}
                       className={mode === m.id ? "on" : ""}
                       aria-pressed={mode === m.id}
@@ -503,12 +504,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                       }
                     >
                       {t(`mode.${m.id}`)}
-                    </button>
+                    </ButtonBase>
                   ))}
                 </div>
               </div>
             </section>
-            <button
+            <ButtonBase
               className="cb-source-strip"
               title={active?.name ?? t("studio.noSource")}
               onClick={() => go("profiles")}
@@ -524,7 +525,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 </p>
               </div>
               <Icon name="chevron" size={17} />
-            </button>
+            </ButtonBase>
             <section className="cb-rate-card" aria-label={t("home.rate")}>
               <div className="cb-home-card-title">
                 <h3>{t("home.rate")}</h3>
