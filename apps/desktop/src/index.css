@@ -1785,7 +1785,8 @@ summary:focus-visible {
   font-size: 14px;
 }
 .cb-empty svg {
-  margin: auto auto 16px;
+  /* flex 列里 auto margin 会吞掉全部剩余空间、把内容推到底部（#232），水平居中交给 align-items */
+  margin: 0 auto 16px;
 }
 .cb-empty h2 {
   font-size: 18px;
