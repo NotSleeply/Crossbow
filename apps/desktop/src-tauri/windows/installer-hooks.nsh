@@ -59,6 +59,17 @@
     Abort
   ${EndIf}
   nsExec::Exec '"$SYSDIR\sc.exe" delete CrossbowService'
+  ; 卸载器只处理主程序：内核子进程必须在此先杀，否则残留内核占着
+  ; 混合端口，重装后首次启动报 os error 10048（#233）。按镜像名清理，
+  ; 覆盖 sidecar 三元组命名与 data 目录下载命名。
+  nsExec::ExecToLog 'taskkill /F /IM "mihomo.exe" /T'
+  Pop $0
+  nsExec::ExecToLog 'taskkill /F /IM "mihomo-x86_64-pc-windows-msvc.exe" /T'
+  Pop $0
+  nsExec::ExecToLog 'taskkill /F /IM "sing-box.exe" /T'
+  Pop $0
+  nsExec::ExecToLog 'taskkill /F /IM "sing-box-x86_64-pc-windows-msvc.exe" /T'
+  Pop $0
   ; Service-owned config/cache must not survive an uninstall with user secrets.
   RMDir /r "$INSTDIR\service-runtime"
 !macroend
