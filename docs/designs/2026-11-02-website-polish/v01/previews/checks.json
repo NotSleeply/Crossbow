@@ -1,0 +1,68 @@
+[
+  {
+    "ctaCenter": 720,
+    "middleCenter": 720,
+    "overflow": false,
+    "packetDuration": "3.4s",
+    "width": 1440
+  },
+  {
+    "ctaCenter": 384,
+    "middleCenter": 384,
+    "overflow": false,
+    "width": 768
+  },
+  {
+    "ctaCenter": 195,
+    "middleCenter": 195,
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "hash": "#/guide#linux",
+    "linuxTop": 224.2265625,
+    "overflow": false
+  },
+  {
+    "buttonY": [
+      537.890625,
+      537.890625,
+      539.75
+    ],
+    "overflow": false,
+    "page": "download",
+    "width": 1440
+  },
+  {
+    "overflow": false,
+    "page": "features",
+    "width": 320
+  },
+  {
+    "ctaCenter": 160,
+    "middleCenter": 160,
+    "overflow": false,
+    "page": "home",
+    "width": 320
+  },
+  {
+    "columns": "560px",
+    "overflow": false,
+    "page": "download",
+    "width": 768
+  },
+  {
+    "buttonY": [
+      537.890625,
+      537.890625,
+      537.890625
+    ],
+    "links": [
+      "https://github.com/Richard-Zhang1019/Crossbow/releases/latest",
+      "https://github.com/Richard-Zhang1019/Crossbow/releases/latest",
+      "https://github.com/Richard-Zhang1019/Crossbow/releases/latest"
+    ],
+    "page": "download-final",
+    "width": 1440
+  }
+]

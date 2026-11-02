@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { DownloadIcon } from "../components";
 import { LATEST, REPO } from "../site-meta";
 
@@ -19,7 +20,7 @@ const CODE_FILTER = `function main(config) {
 const CODE_DEEPLINK = `crossbow://import?url=https%3A%2F%2Fexample.com%2Fsub`;
 
 function H2({ children }: { children: React.ReactNode }) { return <h2>{children}</h2>; }
-function Card({ children }: { children: React.ReactNode }) { return <section className="guide-card">{children}</section>; }
+function Card({ children, id }: { children: React.ReactNode; id?: string }) { return <section className="guide-card" id={id}>{children}</section>; }
 function Step({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
   return <div className="guide-step"><span>{n}</span><div><h3>{title}</h3><div>{children}</div></div></div>;
 }
@@ -103,10 +104,25 @@ export default function GuidePage() {
           </p>
         </Card>
 
+        <Card id="linux">
+          <H2>Linux 实验版：先确认支持范围</H2>
+          <p className="guide-intro">社区已提供 x86_64 归档，主要在 CachyOS + niri / Wayland 验证。感谢 <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a> 的适配与实机反馈。其他发行版和桌面环境尚未全面验收。</p>
+          {/* taste-skill-ignore: ordered installation procedure. */}<Step n="01" title="解压，以普通用户运行">
+            在<Link to="/download">下载页</Link>获取 TAR.GZ，核对 SHA256SUMS 后解压，运行 <code>./run.sh</code>。GUI 不需要以 root 身份启动；尚未提供 AppImage / DEB 或应用内自动更新。
+          </Step>
+          {/* taste-skill-ignore: ordered installation procedure. */}<Step n="02" title="手动设置应用代理">
+            导入订阅并选择可用节点，在浏览器或终端设置 HTTP / SOCKS 代理，地址为 127.0.0.1，端口以 Crossbow 设置为准。Linux 实验版不会自动更改桌面的系统代理；先用站点连通性测试检查内核链路。
+          </Step>
+          {/* taste-skill-ignore: ordered installation procedure. */}<Step n="03" title="需要 TUN，再安装服务">
+            需 systemd / polkit 与 mihomo，按仓库的 <a href={`${REPO}/blob/main/docs/LINUX-NETWORK.md`} target="_blank" rel="noopener noreferrer">Linux 网络说明</a>安装可选服务。完整宿主机 TUN、休眠恢复和其他桌面场景仍在验证，请先准备恢复方案；不要同时开启其他 VPN 的 TUN。
+          </Step>
+          <p className="release-scope">发布与开发进展分开看：Linux 关窗后的后台任务、冷启动深链接与原生系统通知改进已合入 main，是否包含在你下载的版本中请核对 <a href={LATEST} target="_blank" rel="noopener noreferrer">发布说明</a>。详细验收记录见 <a href={`${REPO}/blob/main/docs/LINUX-TESTING.md`} target="_blank" rel="noopener noreferrer">Linux 测试文档</a>。</p>
+        </Card>
+
         <Card>
           <H2>系统代理与 TUN 怎么选</H2>
           <p style={{ color: "var(--dim)", fontSize: 15, lineHeight: 1.75, margin: "10px 0 4px" }}>
-            日常浏览可先使用首页的系统代理；需要代理不读取系统代理设置的应用时，在设置中开启 TUN。
+            macOS / Windows 日常浏览可先使用首页的系统代理；需要代理不读取系统代理设置的应用时，在设置中开启 TUN。
             本应用的两种方式可同时开启、独立控制。关闭 TUN 后请检查系统代理状态和网络连接。
           </p>
           {/* taste-skill-ignore: ordered procedure, not decorative numbering. */}<Step n="01" title="开启前">
@@ -130,6 +146,12 @@ export default function GuidePage() {
         </Card>
 
         <Card>
+          <H2>用通知中心追踪需要处理的问题</H2>
+          <p className="guide-intro">点击顶部铃铛查看最近通知。未读与待处理是不同状态：全部已读不会解决故障；进入诊断或设置完成修复后，原记录会显示已恢复。</p>
+          <p className="guide-intro">主题、语言与普通设置成功时不再重复提醒。进度通知收起后任务继续，出错时可查看脱敏详情。记录仅在本次会话中保留，排查长期问题请同时查看日志。</p>
+        </Card>
+
+        <Card>
           <H2>配置与数据的位置</H2>
           <p style={{ color: "var(--dim)", fontSize: 15, lineHeight: 1.75, margin: "10px 0 4px" }}>
             macOS 数据在 <code style={{ font: "12px var(--mono)" }}>~/Library/Application Support/com.richard.crossbow/</code>：
@@ -146,7 +168,7 @@ export default function GuidePage() {
         }}
       >
         <h3 style={{ fontSize: 18, fontWeight: 700 }}>还没安装？</h3>
-        <p style={{ color: "var(--dim)", fontSize: 15, margin: "8px auto 20px" }}>免费开源，提供 macOS Apple Silicon 与 Windows x64 安装包。</p>
+        <p style={{ color: "var(--dim)", fontSize: 15, margin: "8px auto 20px" }}>免费开源，提供 macOS Apple Silicon、Windows x64 安装包与 Linux x86_64 实验版。</p>
         <a
           href={LATEST}
           target="_blank"

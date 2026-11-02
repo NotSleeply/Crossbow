@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
-import { Logo } from "./components";
+import { DownloadIcon, GitHubIcon, Logo } from "./components";
 import { REPO, RELEASES } from "./site-meta";
 import HomePage from "./pages/HomePage";
 import FeaturesPage from "./pages/FeaturesPage";
@@ -10,16 +10,18 @@ import Download from "./Download";
 const NAV = [{ to: "/", label: "首页" }, { to: "/features", label: "功能详解" }, { to: "/guide", label: "进阶指南" }];
 
 export default function App() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const main = useRef<HTMLElement>(null);
   const footer = useRef<HTMLElement>(null);
   useEffect(() => {
     setMenuOpen(false);
-    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    const anchor = hash ? document.getElementById(hash.slice(1)) : null;
+    if (anchor) anchor.scrollIntoView({ block: "start", behavior: "instant" });
+    else window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     document.title = `${pathname === "/features" ? "功能详解" : pathname === "/guide" ? "进阶指南" : pathname === "/download" ? "下载" : "让连接，清晰可见"} · Crossbow`;
-  }, [pathname]);
+  }, [pathname, hash]);
   useEffect(() => {
     if (main.current) main.current.inert = menuOpen;
     if (footer.current) footer.current.inert = menuOpen;
@@ -46,8 +48,8 @@ export default function App() {
         <button ref={menuButton} className="menu-button" aria-expanded={menuOpen} aria-controls="site-nav" onClick={() => setMenuOpen(!menuOpen)}>菜单 <span aria-hidden="true">{menuOpen ? "−" : "+"}</span></button>
         <nav id="site-nav" aria-label="主导航" className={menuOpen ? "nav-open" : ""}>
           {NAV.map(n => <Link key={n.to} to={n.to} onClick={() => window.scrollTo({ top: 0, behavior: "instant" })} aria-current={pathname === n.to ? "page" : undefined}>{n.label}</Link>)}
-          <a href={REPO} target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
-          <Link to="/download" aria-current={pathname === "/download" ? "page" : undefined}>下载</Link>
+          <a className="nav-github" href={REPO} target="_blank" rel="noopener noreferrer" aria-label="GitHub 源代码（在新标签页打开）" title="GitHub 源代码"><GitHubIcon /></a>
+          <Link className="nav-download" to="/download" aria-current={pathname === "/download" ? "page" : undefined}><DownloadIcon />下载</Link>
         </nav>
       </div>
     </header>

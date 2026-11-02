@@ -13,9 +13,9 @@ function Hero() {
     return () => document.removeEventListener("visibilitychange", change);
   }, []);
   return <section className="hero shell" aria-labelledby="hero-title">
-    <div className="hero-intro"><h1 id="hero-title">让连接，清晰可见。</h1><p>macOS 与 Windows 的开源代理客户端。<br className="mobile-break" />管理订阅与节点，也看清每一步连接。</p></div>
+    <div className="hero-intro"><h1 id="hero-title">让连接，清晰可见。</h1><p>macOS / Windows 开源代理客户端，Linux 实验版由社区共建。<br className="mobile-break" />管理订阅与节点，也看清每一步连接。</p></div>
     <div className="flow-stage" role="img" aria-label="你的设备，经规则分流，连接目标网络。连接路径示意。">
-      <div className="flow-node"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="1.5"/><path d="M12 17v4m-5 0h10"/></svg><b>你的设备</b><span className="desktop-copy">macOS / Windows</span><span className="mobile-copy">桌面设备</span></div>
+      <div className="flow-node"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="1.5"/><path d="M12 17v4m-5 0h10"/></svg><b>你的设备</b><span className="desktop-copy">macOS / Windows / Linux</span><span className="mobile-copy">桌面设备</span></div>
       <div className="flow-track" />
       <div className="flow-node"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18M7 2v6m10 1v6m-9 1v6"/></svg><b>规则分流</b><span>按需连接</span></div>
       <div className="flow-track" />
@@ -38,7 +38,7 @@ const FEATURES = [
     icon: <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />,
     icon2: <path d="M9 12l2 2 4-4" />,
     title: "系统代理与 TUN",
-    text: "系统代理适合日常使用；TUN 可接管更多应用流量。两者可同时开启、独立控制；TUN 需按平台完成管理员授权或服务安装。",
+    text: "系统代理适合日常使用；TUN 可接管更多应用流量。macOS / Windows 上两者可同时开启、独立控制；Linux 实验版使用手动代理或另装服务开启 TUN。",
   },
   {
     icon: <path d="M3 12h4l2-6 4 12 2-6h6" />,
@@ -70,15 +70,16 @@ function Features() {
       <h3>{f.title}</h3><p>{f.text}</p>
     </article>)}</div>
     <div className="feature-callout"><div><h3>双内核引擎 + 菜单栏实时速率</h3><p>mihomo ↔ sing-box 一键切换，配置自动转换、规则集自动更新；macOS 菜单栏双行速率，恒宽展示。</p></div><Link className="text-link" to="/features">查看功能详解 →</Link></div>
+    <p className="community-note">Linux 实验版由社区共同推进 · 感谢 <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a> 的适配与验证 · <Link to="/guide#linux">了解当前支持范围 →</Link></p>
   </section>;
 }
 function Steps() {
   return <section id="start" className="shell content-section">
     <div className="section-heading"><h2>三步上手</h2></div>
     <div className="steps-grid">
-      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">01</span><h3>下载并安装</h3><p>macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序。安装包均来自 GitHub Releases。</p></article>
+      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">01</span><h3>下载并安装</h3><p>macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序；Linux 实验版解压后运行。安装包均来自 GitHub Releases。</p></article>
       {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">02</span><h3>导入订阅</h3><p>粘贴订阅链接，或把 .yaml 配置文件拖进窗口。设置自动更新间隔，查看流量与到期信息。</p></article>
-      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">03</span><h3>一键开启</h3><p>选择节点，在概览开启系统代理。需要接管更多应用流量时，可按平台完成授权并开启 TUN。</p></article>
+      {/* taste-skill-ignore: retain user-requested three installation steps. */}<article className="step-card"><span className="step-number">03</span><h3>一键开启</h3><p>选择节点，macOS / Windows 在概览开启系统代理；Linux 需手动设置应用代理。TUN 按平台完成授权或服务安装后开启。</p></article>
     </div>
     <Link className="text-link section-more" to="/guide">继续阅读进阶指南 →</Link>
   </section>;
@@ -97,8 +98,8 @@ const FAQS = [
     a: <>macOS 与 Windows 可在设置中开启 TUN，首次需按平台完成管理员授权或服务安装。可与本应用的系统代理同时开启、独立控制；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。测试前请阅读 <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">离线恢复说明</a>。</>,
   },
   {
-    q: "有 Windows / iOS 版本吗？",
-    a: <>已提供 Windows x64 安装包，持续完善中；Windows 11 的外观、代理与日志修复需要实机验收，Windows 支持通过服务模式运行 TUN。iOS 正在真机开发验证中，尚未公开分发。</>,
+    q: "支持 Linux 和 iOS 吗？",
+    a: <>已提供 Linux x86_64 社区实验版归档，当前主要在 CachyOS + niri / Wayland 验证。需手动配置应用代理，TUN 需 systemd / polkit 服务；尚无 AppImage / DEB 或应用内自动更新。<Link to="/guide#linux">查看 Linux 支持范围</Link>。iOS 正在真机开发验证中，尚未公开分发。</>,
   },
   {
     q: "升级会丢配置吗？",
@@ -106,7 +107,7 @@ const FAQS = [
   },
   {
     q: "如何参与或反馈？",
-    a: <>项目开源于 GitHub，Issue 与 PR 欢迎提交。日常使用中的每一条不便都是最高优先级的输入。</>,
+    a: <>项目开源于 GitHub，欢迎提交 Issue 与 PR。感谢 <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a> 推进 Linux 适配与实机验证，也感谢所有贡献者。</>,
   },
 ];
 

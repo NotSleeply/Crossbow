@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-02",
+  "version": "v01",
+  "status": "implemented-pending-review",
+  "issue": 259,
+  "baseline": "d234ffb",
+  "source": "User homepage alignment screenshot and current main source/docs; no private configuration",
+  "implementation": "apps/site",
+  "files": [
+    "SPEC.md",
+    "previews/before-1440.jpg",
+    "previews/checks.json",
+    "previews/design-lint.json",
+    "previews/download-1440.jpg",
+    "previews/download-390.jpg",
+    "previews/guide-linux-1440.jpg",
+    "previews/guide-linux-390.jpg",
+    "previews/home-1440.jpg",
+    "previews/home-320.jpg",
+    "previews/home-390.jpg",
+    "previews/home-768.jpg",
+    "source.zip",
+    "manifest.json"
+  ]
+}
