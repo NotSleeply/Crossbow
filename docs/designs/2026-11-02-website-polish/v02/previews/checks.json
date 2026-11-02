@@ -1,0 +1,75 @@
+[
+  {
+    "headerOverflow": 0,
+    "lang": "en",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 1440
+  },
+  {
+    "headerOverflow": 0,
+    "lang": "en",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 1000
+  },
+  {
+    "headerOverflow": 0,
+    "lang": "en",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 768
+  },
+  {
+    "headerOverflow": 0,
+    "lang": "en",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "headerOverflow": 0,
+    "lang": "en",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 320
+  },
+  {
+    "lang": "en",
+    "overflow": 0,
+    "page": "download",
+    "theme": "dark",
+    "width": 320
+  },
+  {
+    "lang": "en",
+    "overflow": 0,
+    "page": "guide",
+    "theme": "dark",
+    "width": 320
+  },
+  {
+    "lang": "en",
+    "overflow": 0,
+    "page": "features",
+    "theme": "dark",
+    "width": 320
+  },
+  {
+    "check": "keyboardArrow",
+    "selected": "system",
+    "popupClosed": true
+  },
+  {
+    "lang": "zh-CN",
+    "overflow": 0,
+    "page": "home",
+    "theme": "light",
+    "width": 390
+  }
+]

@@ -1,0 +1,29 @@
+{
+ "files": 13,
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "file": "apps/site/src/site.css",
+   "line": 120,
+   "match": "border: 1px solid",
+   "message": "A 1px outlined box. Prefer a filled surface or no box."
+  },
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "file": "apps/site/src/site.css",
+   "line": 131,
+   "match": "border: 1px solid",
+   "message": "A 1px outlined box. Prefer a filled surface or no box."
+  },
+  {
+   "level": "WARN",
+   "id": "em-dash",
+   "file": "(all files)",
+   "line": 0,
+   "match": "34 em dashes",
+   "message": "Em-dash habit. Use a full stop or a comma; keep at most one or two on a page."
+  }
+ ]
+}
