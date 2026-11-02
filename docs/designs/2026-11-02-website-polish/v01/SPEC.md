@@ -39,4 +39,4 @@
 
 实际渲染图保存在 `previews/`，不是营销素材。`source.zip` 包含完整可编辑的官网源码、字体/品牌资产和构建配置；不含 node_modules/dist。动效的可播放原型即该完整网站源码。
 
-解压 source.zip 后，在 apps/site 运行 `npm ci`、`npm run dev -- --host 127.0.0.1 --port 5207`，打开 `http://127.0.0.1:5207/Crossbow/`。需要 Node 20.19+ 或 22.12+。
+解压 source.zip 后，在 apps/site 运行 `npm install --package-lock=false`、`npm run dev -- --host 127.0.0.1 --port 5207`，打开 `http://127.0.0.1:5207/Crossbow/`。需要 Node 20.19+ 或 22.12+。
