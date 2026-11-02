@@ -15,6 +15,8 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-02 | 官网 V2：紧凑导航、App 明暗主题与中英文 | v02 | 已实现，待 PR 评审 | [规格](2026-11-02-website-polish/v02/SPEC.md) · [浅色](2026-11-02-website-polish/v02/previews/home-zh-light.jpg) · [深色英文](2026-11-02-website-polish/v02/previews/home-en-dark.jpg) · [源稿/动效](2026-11-02-website-polish/v02/source.zip) | #261 / #260 |
+| 2026-11-02 | 官网首屏对齐、导航与 Linux 社区支持说明 | v01 | 已实现，待 PR 评审 | [规格](2026-11-02-website-polish/v01/SPEC.md) · [首屏](2026-11-02-website-polish/v01/previews/home-1440.jpg) · [手机](2026-11-02-website-polish/v01/previews/home-390.jpg) · [源稿/动效](2026-11-02-website-polish/v01/source.zip) | #259 |
 | 2026-10-31 | Dock Logo 色彩一致性：原生加载与 ICC 导出修复 | v01 | 已实现，原生验色与独立程序实际 Dock 验收通过 | [规格](2026-10-31-dock-color/v01/SPEC.md) · [原生对比](2026-10-31-dock-color/v01/previews/native-comparison.png) · [验色窗口](2026-10-31-dock-color/v01/previews/smoke-window.jpg) · [源快照](2026-10-31-dock-color/v01/source.zip) | #241 |
 | 2026-10-31 | 公共按钮：两种动作风格、顶部/内容区与全桌面迁移 | v01 | 已实现，待 PR 评审 | [规格](2026-10-31-buttons/v01/SPEC.md) · [状态稿](2026-10-31-buttons/v01/previews/gallery-light.jpg) · [节点回归](2026-10-31-buttons/v01/previews/production-nodes.jpg) · [源快照](2026-10-31-buttons/v01/source.zip) | #231 |
 | 2026-10-31 | 公共选择器：统一样式、键盘与浮层过渡 | v04 | 已实现，待 PR 评审 | [规格](2026-10-30-node-toolbar/v04/SPEC.md) · [生产预览](2026-10-30-node-toolbar/v04/previews/production-open.jpg) · [源快照](2026-10-30-node-toolbar/v04/source.zip) | #227 |

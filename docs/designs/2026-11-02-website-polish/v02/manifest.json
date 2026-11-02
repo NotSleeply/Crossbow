@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-02",
+  "version": "v02",
+  "status": "implemented-pending-review",
+  "issue": 261,
+  "pull_request": 260,
+  "baseline": "66197d2",
+  "request": "Compact navigation, application-matched appearance modes and complete Chinese/English switching",
+  "implementation": "apps/site",
+  "prototype": "source.zip",
+  "files": [
+    "SPEC.md",
+    "manifest.json",
+    "previews/appearance-en-320.jpg",
+    "previews/appearance-zh-light.jpg",
+    "previews/checks.json",
+    "previews/design-lint.json",
+    "previews/download-en-dark-320.jpg",
+    "previews/features-en-dark.jpg",
+    "previews/guide-en-dark-320.jpg",
+    "previews/guide-en-dark.jpg",
+    "previews/home-en-390.jpg",
+    "previews/home-en-dark-320.jpg",
+    "previews/home-en-dark.jpg",
+    "previews/home-en-light.jpg",
+    "previews/home-zh-390.jpg",
+    "previews/home-zh-dark.jpg",
+    "previews/home-zh-light.jpg",
+    "previews/language-zh-light.jpg",
+    "previews/menu-en-390.jpg",
+    "source.zip"
+  ]
+}
