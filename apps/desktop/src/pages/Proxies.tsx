@@ -89,6 +89,8 @@ export default function ProxiesPage() {
   const t = useT();
   const [groupName, setGroupName] = useState("");
   const [groups, setGroups] = useState<GroupView[]>([]);
+  const [phase, setPhase] = useState<"loading" | "error" | "noConfig" | "stopped" | "ready">("loading");
+  const [starting, setStarting] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
   const batchInFlight = useRef(false);
@@ -99,18 +101,28 @@ export default function ProxiesPage() {
 
   const load = useCallback(async (silent = false) => {
     const revision = ++snapshotRevision.current;
+    if (!silent) setPhase("loading");
     try {
+      const [profiles, core] = await Promise.all([ipc.listProfiles(), ipc.coreStatus()]);
+      if (revision !== snapshotRevision.current) return;
+      if (!profiles.length || core.state !== "Running") {
+        setGroups([]); setPhase(!profiles.length ? "noConfig" : "stopped"); return;
+      }
       const snapshot = await ipc.proxiesSnapshot();
-      if (revision === snapshotRevision.current) setGroups(snapshot);
+      if (revision === snapshotRevision.current) { setGroups(snapshot); setPhase("ready"); }
     } catch (e) {
-      if (!silent && revision === snapshotRevision.current) notify.error(e, "proxies-load");
+      if (revision === snapshotRevision.current) {
+        setPhase("error");
+        if (!silent) notify.error(e, "proxies-load");
+      }
     }
   }, []);
 
   useEffect(() => {
     load();
     const un = ipc.onCoreStatus((s) => {
-      if (s.state === "Running" && !selectionInFlight.current) load();
+      if (s.state === "Running" && !selectionInFlight.current) void load();
+      else if (s.state !== "Running") { ++snapshotRevision.current; setGroups([]); setPhase("stopped"); }
     });
     // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
     const timer = window.setInterval(() => {
@@ -274,17 +286,24 @@ export default function ProxiesPage() {
     : groups.find((group) => group.name === selectedGroup?.now && group.kind === "URLTest");
   return (
     <div className="cb-proxies-page cb-node-toolbar-page">
-      {groups.length === 0 && <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
-        <Button onClick={() => void load()}>
+      {(phase !== "ready" || groups.length === 0) && <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
+        <Button disabled={phase === "loading"} onClick={() => void load()}>
           <Icon name="refresh" />
           {t("proxies.refresh")}
         </Button>
       </PageHead>}
-      {groups.length === 0 ? (
-        <div className="cb-empty">
+      {phase !== "ready" || groups.length === 0 ? (
+        <div className="cb-empty" role="status" aria-busy={phase === "loading"}>
           <Icon name="bolt" size={24} />
-          <h2>{t("proxies.noCore")}</h2>
-          <p>{t("proxies.noCoreHint")}</p>
+          <h2>{t(`proxies.state.${phase === "ready" ? "noGroups" : phase}`)}</h2>
+          <p>{t(`proxies.hint.${phase === "ready" ? "noGroups" : phase}`)}</p>
+          {phase === "noConfig" && <Button onClick={() => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }))}>{t("studio.importSource")}</Button>}
+          {phase === "stopped" && <Button loading={starting} disabled={starting} onClick={async () => {
+            setStarting(true);
+            try { await notify.run("nodes-start-core", t("home.core"), () => ipc.coreStart(), undefined, { feedback: "error-only" }); }
+            finally { setStarting(false); await load(); }
+          }}>{t("proxies.startCore")}</Button>}
+          {phase === "error" && <Button onClick={() => void load()}>{t("home.retryState")}</Button>}
         </div>
       ) : (
         <div className="cb-context-layout">
