@@ -578,7 +578,7 @@ function GroupCard({
                       : "var(--cb-text-dim)",
                   }}
                 >
-                  {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms)}
+                  {nodeTesting ? t("proxies.testing") : delayText(n.delay_ms, t)}
                 </span>
               </div>
             </div>
@@ -595,9 +595,9 @@ function nodeTestKey(group: string, node: string): string {
   return `${group}\u0000${node}`;
 }
 
-function delayText(ms: number | null): string {
+function delayText(ms: number | null, t: ReturnType<typeof useT>): string {
   if (ms == null) return "—";
-  if (ms === 0) return "超时";
+  if (ms === 0) return t("proxies.timeout");
   return `${ms} ms`;
 }
 

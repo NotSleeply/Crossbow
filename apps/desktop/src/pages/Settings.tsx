@@ -318,7 +318,7 @@ export default function SettingsPage({
                     );
                   }}
                 >
-                  启用
+                  {t("settings.activateEngine")}
                 </Button>
               </Row>
             )
