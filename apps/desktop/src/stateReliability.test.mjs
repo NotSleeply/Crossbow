@@ -24,3 +24,10 @@ test('ports require explicit decimal integers within the supported range', () =>
  for(const value of ['', '1e4', '0x2000', '7898.1', '1023', '65536', '-1']) assert.equal(parsePort(value),null);
  assert.equal(parsePort(' 7898 '),7898); assert.equal(parsePort('65535'),65535);
 });
+
+import {fmtBytes,fmtDuration} from './format.ts';
+test('unknown data is distinct from zero and long durations use hours and days', () => {
+ assert.equal(fmtBytes(null),'—'); assert.equal(fmtBytes(0),'0 B'); assert.equal(fmtDuration(null),'—');
+ assert.equal(fmtDuration(NaN),'—'); assert.equal(fmtDuration(0),'0ms');
+ assert.equal(fmtDuration(3600000),'1h 0m'); assert.equal(fmtDuration(90000000),'1d 1h');
+});

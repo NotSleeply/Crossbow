@@ -21,7 +21,7 @@ export default function ConnectionsPage() {
     rows: [],
     upload_total: 0,
     download_total: 0,
-    memory: 0,
+    memory: null,
   });
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
@@ -247,7 +247,7 @@ interface ProcessAgg {
   count: number;
   up: number;
   down: number;
-  maxElapsed: number;
+  maxElapsed: number | null;
 }
 
 function aggregateByProcess(rows: ConnRow[]): ProcessAgg[] {
@@ -259,12 +259,12 @@ function aggregateByProcess(rows: ConnRow[]): ProcessAgg[] {
       count: 0,
       up: 0,
       down: 0,
-      maxElapsed: 0,
+      maxElapsed: null,
     };
     cur.count += 1;
     cur.up += r.up;
     cur.down += r.down;
-    cur.maxElapsed = Math.max(cur.maxElapsed, r.elapsed_ms);
+    if (r.elapsed_ms !== null) cur.maxElapsed = Math.max(cur.maxElapsed ?? 0, r.elapsed_ms);
     map.set(key, cur);
   }
   return Array.from(map.values()).sort(
