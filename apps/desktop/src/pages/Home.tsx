@@ -13,7 +13,6 @@ import {
   type SysProxyStatus,
   type UpdateState,
   type PlatformCapabilities,
-  type SiteResult,
 } from "../ipc";
 import { fmtBytes } from "../format";
 import { useT } from "../i18n";
@@ -44,9 +43,6 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
-  const [networkBusy, setNetworkBusy] = useState(false);
-  const networkInFlight = useRef(false);
-  const [networkResult, setNetworkResult] = useState<{ context: string; result: SiteResult } | null>(null);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
   const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
@@ -132,7 +128,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
-    const errors: string[] = [];
+    const errors: { key: string; version: number }[] = [];
     const read = async <T,>(key: string, task: () => Promise<T>, commit: (value: T) => void) => {
       const version = readGate.current.begin(key);
       try {
@@ -141,7 +137,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
         commit(value); confirm(key);
       } catch {
         if (!mounted.current || !readGate.current.current(key, version)) return;
-        errors.push(key);
+        errors.push({ key, version });
         setReadErrors(old => new Set([...old, key]));
       }
     };
@@ -155,7 +151,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       read("port", () => ipc.getEngineConfig().then(c => c.mixed_port), setMixedPort),
       read("outbound", ipc.currentOutbound, setOutbound),
     ]);
-    if (mounted.current && errors.length) notify.error(t("home.stateReadFailed"), "home-state-read");
+    if (mounted.current && errors.some(({key, version}) => readGate.current.current(key, version))) notify.error(t("home.stateReadFailed"), "home-state-read");
     else if (mounted.current) void notify.resolve("home-state-read");
   }, [confirm]);
 
@@ -168,11 +164,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       if (!active) return;
       eventReceived("core"); setCore(status);
       if (status.state !== "Running") setLastTrafficAt(0);
-      if (active)
-        ipc
-          .tunStatus()
-          .then(value => { if (active) { eventReceived("tun"); setTun(value); } })
-          .catch((e) => notify.error(e, "tun-state-read"));
+      const version = readGate.current.begin("tun");
+      void ipc.tunStatus().then(value => {
+        if (active && readGate.current.current("tun", version)) { setTun(value); confirm("tun"); }
+      }).catch(e => {
+        if (active && readGate.current.current("tun", version)) notify.error(e, "tun-state-read");
+      });
     });
     const un2 = ipc.onSysproxyStatus(value => { if (active) { eventReceived("proxy"); setProxy(value); } });
     const untun = ipc.onTunStatus((enabled) => {
@@ -313,8 +310,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   // 竞态下与副标题各说各话（#111）
   const statusTitle = !canControl
     ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
+    : core.state === "Starting"
+    ? t("home.coreStarting")
+    : !running && routingEnabled
+    ? t("home.takeoverCoreStopped")
     : explicitOnly
-    ? t(core.state === "Starting" ? "home.coreStarting" : core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
+    ? t(core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
     : tun.enabled
     ? running
       ? proxy.enabled
@@ -325,7 +326,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       ? t("home.sysproxyOn")
       : t("home.sysproxyOff");
 
-  const statusHint = readErrors.size ? t("home.stateReadHint") : !canControl ? t("home.statePendingHint") : !activeId
+  const statusHint = readErrors.size ? t("home.stateReadHint") : !canControl ? t("home.statePendingHint") : !active
     ? t("studio.noSource")
     : explicitOnly
       ? t("linux.explicitHint", { port: mixedPort ?? "—" })
@@ -338,27 +339,6 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
           : proxy.enabled
             ? t("studio.proxyHint")
             : t("studio.enableHint");
-
-  const networkContext = `${core.state}:${activeId}:${mode}:${outbound?.node}:${proxy.enabled}:${tun.enabled}`;
-  const result = networkResult?.context === networkContext ? networkResult.result : null;
-  const checkNetwork = async () => {
-    if (networkInFlight.current || core.state !== "Running") return;
-    networkInFlight.current = true; setNetworkBusy(true);
-    const context = networkContext;
-    try {
-      const result = await ipc.testSite("github");
-      if (mounted.current) setNetworkResult({ context, result });
-    } catch (error) {
-      if (mounted.current) notify.error(error, "home-connectivity");
-    } finally {
-      networkInFlight.current = false;
-      if (mounted.current) setNetworkBusy(false);
-    }
-  };
-  const networkText = !result ? t("home.networkUntested")
-    : result.status === "ok" ? t("home.networkReachable")
-    : result.http_status ? t("home.networkHttp", { status: result.http_status })
-    : t("home.networkFailed");
 
   const go = (page: string) =>
     window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
@@ -376,16 +356,10 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 />
                 {known.has("core") ? coreText(t, core) : t("home.statePending")}
               </div>
-              <span className="cb-home-mode">{t(`mode.${mode}`)}</span>
+              <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
             </div>
             <h2>{statusTitle}</h2>
             <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>
-            <dl className="cb-health-summary">
-              <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
-              <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
-              <div title={t("home.networkScope")}><dt>{t("home.healthNetwork")}</dt><dd aria-live="polite">{networkBusy ? t("sites.testing") : networkText}</dd></div>
-              <Button size="small" loading={networkBusy} disabled={!canControl || core.state !== "Running" || networkBusy} onClick={() => void checkNetwork()}>{t("home.checkNetwork")}</Button>
-            </dl>
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
@@ -522,7 +496,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={proxyLabel}
                   aria-checked={proxyOn}
                   onClick={explicitProxy ? toggleCore : toggleProxy}
-                  disabled={!canControl || busy || !activeId || (explicitProxy ? core.state === "Starting" || tun.enabled : !capabilities?.system_proxy)}
+                  disabled={!canControl || busy || core.state === "Starting" || !active || (explicitProxy ? tun.enabled : !capabilities?.system_proxy)}
                 />
               </div>
               <div className="cb-takeover-row" title={t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}>
@@ -536,7 +510,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={t("settings.tun")}
                   aria-checked={tun.enabled}
                   onClick={toggleTun}
-                  disabled={!canControl || busy || !activeId || !capabilities?.tun}
+                  disabled={!canControl || busy || core.state === "Starting" || !active || !capabilities?.tun}
                 />
               </div>
               <div className="cb-mode-control">
@@ -568,23 +542,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 </div>
               </div>
             </section>
-            <ButtonBase
-              className="cb-source-strip"
-              title={active?.name ?? t("studio.noSource")}
-              onClick={() => go("profiles")}
-            >
-              <Icon name="document" size={26} />
-              <div>
-                <b>{active?.name ?? t("home.none")}</b>
-                <p>
-                  {t("studio.currentSource")} ·{" "}
-                  {active?.kind === "remote"
-                    ? t("profiles.remote")
-                    : t("profiles.local")}
-                </p>
-              </div>
-              <Icon name="chevron" size={17} />
-            </ButtonBase>
+            <section className="cb-connection-state" aria-label={t("home.healthSummary")}>
+              <div className="cb-home-card-title"><h3>{t("home.healthSummary")}</h3></div>
+            <dl className="cb-health-summary" aria-label={t("home.healthSummary")}>
+              <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
+              <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
+              <div title={t("home.networkScope")}><dt>{t("home.healthNetwork")}</dt><dd className="cb-health-unverified">{t("home.networkDiagnosis")}</dd></div>
+            </dl>
+            </section>
             <section className="cb-rate-card" aria-label={t("home.rate")}>
               <div className="cb-home-card-title">
                 <h3>{t("home.rate")}</h3>
@@ -730,7 +695,7 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   );
 }
 
-function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
+export function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
   switch (s.state) {
     case "Running":
       return t("home.coreRunning");
