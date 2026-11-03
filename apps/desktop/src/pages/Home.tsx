@@ -20,7 +20,7 @@ import { Icon } from "../components/Icon";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { ConnectionFlow } from "../components/ConnectionFlow";
 
-import { cumulativeTotals } from "../stateReliability";
+import { cumulativeTotals, createReadGate } from "../stateReliability";
 
 const POINTS = 120;
 
@@ -51,6 +51,15 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
+
+  const readGate = useRef(createReadGate());
+  const [known, setKnown] = useState<Set<string>>(new Set());
+  const [readErrors, setReadErrors] = useState<Set<string>>(new Set());
+  const confirm = useCallback((key: string) => {
+    setKnown(old => new Set([...old, key]));
+    setReadErrors(old => { const next = new Set(old); next.delete(key); return next; });
+  }, []);
+  const eventReceived = (key: string) => { readGate.current.invalidate(key); confirm(key); };
 
   useEffect(() => {
     let active = true;
@@ -119,25 +128,32 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
-    setProfiles(await ipc.listProfiles().catch(() => []));
-    setActiveId(await ipc.activeProfileId().catch(() => null));
-    setCore(
-      await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })),
-    );
-    setProxy(
-      await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })),
-    );
-    setTun(
-      await ipc.tunStatus().catch(() => ({
-        enabled: false,
-        ready: false,
-        coreRunning: false,
-      })),
-    );
-    setMode(await ipc.coreMode().catch(() => "rule" as const));
-    setMixedPort(await ipc.getEngineConfig().then((config) => config.mixed_port).catch(() => null));
-    setOutbound(await ipc.currentOutbound().catch(() => null));
-  }, []);
+    const errors: string[] = [];
+    const read = async <T,>(key: string, task: () => Promise<T>, commit: (value: T) => void) => {
+      const version = readGate.current.begin(key);
+      try {
+        const value = await task();
+        if (!mounted.current || !readGate.current.current(key, version)) return;
+        commit(value); confirm(key);
+      } catch {
+        if (!mounted.current || !readGate.current.current(key, version)) return;
+        errors.push(key);
+        setReadErrors(old => new Set([...old, key]));
+      }
+    };
+    await Promise.all([
+      read("profiles", ipc.listProfiles, setProfiles),
+      read("active", ipc.activeProfileId, setActiveId),
+      read("core", ipc.coreStatus, setCore),
+      read("proxy", ipc.sysproxyStatus, setProxy),
+      read("tun", ipc.tunStatus, setTun),
+      read("mode", ipc.coreMode, setMode),
+      read("port", () => ipc.getEngineConfig().then(c => c.mixed_port), setMixedPort),
+      read("outbound", ipc.currentOutbound, setOutbound),
+    ]);
+    if (mounted.current && errors.length) notify.error(t("home.stateReadFailed"), "home-state-read");
+    else if (mounted.current) void notify.resolve("home-state-read");
+  }, [confirm]);
 
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
@@ -145,19 +161,20 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     mounted.current = true;
     refresh();
     const un1 = ipc.onCoreStatus((status) => {
-      setCore(status);
+      if (!active) return;
+      eventReceived("core"); setCore(status);
       if (status.state !== "Running") setLastTrafficAt(0);
       if (active)
         ipc
           .tunStatus()
-          .then(setTun)
+          .then(value => { if (active) { eventReceived("tun"); setTun(value); } })
           .catch((e) => notify.error(e, "tun-state-read"));
     });
-    const un2 = ipc.onSysproxyStatus(setProxy);
+    const un2 = ipc.onSysproxyStatus(value => { if (active) { eventReceived("proxy"); setProxy(value); } });
     const untun = ipc.onTunStatus((enabled) => {
-      if (active) setTun((current) => ({ ...current, enabled }));
+      if (active) { eventReceived("tun"); setTun((current) => ({ ...current, enabled })); }
     });
-    const un3 = ipc.onCoreMode(setMode);
+    const un3 = ipc.onCoreMode(value => { if (active) { eventReceived("mode"); setMode(value); } });
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!active || !mounted.current) return;
       if (
@@ -231,6 +248,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   }, [refresh]);
 
   const toggleProxy = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       await ipc.sysproxyToggle();
@@ -276,6 +294,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     }
   };
 
+  const canControl = ["profiles", "active", "core", "proxy", "tun"].every(key => known.has(key) && !readErrors.has(key));
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
@@ -288,7 +307,9 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const proxyOn = explicitProxy ? core.state === "Running" : proxy.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
-  const statusTitle = explicitOnly
+  const statusTitle = !canControl
+    ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
+    : explicitOnly
     ? t(core.state === "Starting" ? "home.coreStarting" : core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
     : tun.enabled
     ? running
@@ -300,7 +321,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       ? t("home.sysproxyOn")
       : t("home.sysproxyOff");
 
-  const statusHint = !activeId
+  const statusHint = readErrors.size ? t("home.stateReadHint") : !canControl ? t("home.statePendingHint") : !activeId
     ? t("studio.noSource")
     : explicitOnly
       ? t("linux.explicitHint", { port: mixedPort ?? "—" })
@@ -328,12 +349,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 <i
                   className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
                 />
-                {coreText(t, core)}
+                {known.has("core") ? coreText(t, core) : t("home.statePending")}
               </div>
               <span className="cb-home-mode">{t(`mode.${mode}`)}</span>
             </div>
             <h2>{statusTitle}</h2>
-            <p>{statusHint}</p>
+            <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>
+            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
@@ -469,7 +491,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={proxyLabel}
                   aria-checked={proxyOn}
                   onClick={explicitProxy ? toggleCore : toggleProxy}
-                  disabled={busy || !activeId || (explicitProxy ? core.state === "Starting" || tun.enabled : !capabilities?.system_proxy)}
+                  disabled={!canControl || busy || !activeId || (explicitProxy ? core.state === "Starting" || tun.enabled : !capabilities?.system_proxy)}
                 />
               </div>
               <div className="cb-takeover-row" title={t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}>
@@ -483,7 +505,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={t("settings.tun")}
                   aria-checked={tun.enabled}
                   onClick={toggleTun}
-                  disabled={busy || !activeId || !capabilities?.tun}
+                  disabled={!canControl || busy || !activeId || !capabilities?.tun}
                 />
               </div>
               <div className="cb-mode-control">
@@ -497,7 +519,8 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                     <ButtonBase
                       key={m.id}
                       className={mode === m.id ? "on" : ""}
-                      aria-pressed={mode === m.id}
+                      aria-pressed={known.has("mode") ? mode === m.id : undefined}
+                      disabled={busy || !known.has("mode") || readErrors.has("mode")}
                       onClick={() =>
                         notify.run(
                           "core-mode",
@@ -538,7 +561,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <i
                     className={`cb-dot ${core.state === "Running" ? "ok" : "idle"}`}
                   />
-                  {coreText(t, core)}
+                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
                 </span>
               </div>
               <div className="cb-rate-pair">
