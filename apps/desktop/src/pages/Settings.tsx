@@ -20,9 +20,11 @@ const SettingLabel = createContext<{ label: string; hint?: string } | null>(null
 export default function SettingsPage({
   section = "network",
   capabilities,
+  focusControl,
 }: {
   section?: "network" | "appearance" | "logs" | "app";
   capabilities: PlatformCapabilities | null;
+  focusControl?:string;
 }) {
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
@@ -67,6 +69,11 @@ export default function SettingsPage({
   const requiredSettings = { network: ["engine", "tun", "binary"], appearance: ["ui"], logs: ["logs"], app: ["ui", "autostart", "updates"] }[section];
   const settingsReady = requiredSettings.every(key => settingsKnown.has(key) && !settingsErrors.has(key));
   const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
+  useEffect(()=>{
+    if(!focusControl||!settingsReady)return;
+    const frame=requestAnimationFrame(()=>{const el=document.getElementById(focusControl);el?.scrollIntoView({block:"center"});el?.focus({preventScroll:true})});
+    return()=>cancelAnimationFrame(frame);
+  },[focusControl,settingsReady,section]);
   const [savingCount, setSavingCount] = useState(0);
   const settingsGate = useRef(createReadGate());
   const dirtyPort = useRef(false);
@@ -400,6 +407,7 @@ export default function SettingsPage({
                 </span>
               )}
               <Switch
+                id="cb-tun-control"
                 checked={tun?.enabled ?? false}
                 disabled={tunBusy || !capabilities?.tun}
                 onChange={async (v) => {
@@ -627,7 +635,7 @@ export default function SettingsPage({
               }}
             />
           </Row>
-          <Row
+          <Row id="cb-update-status"
             label={t("settings.updateNow")}
             hint={
               !capabilities?.app_update ? t("linux.updateUnavailable") : updateState
@@ -718,10 +726,12 @@ function Group({
 }
 
 function Row({
+  id,
   label,
   hint,
   children,
 }: {
+  id?: string;
   label: string;
   hint?: string;
   children?: React.ReactNode;
@@ -731,6 +741,7 @@ function Row({
   return (
     <SettingLabel.Provider value={{ label: labelId, hint: hint ? hintId : undefined }}>
     <div
+      id={id} tabIndex={id ? -1 : undefined}
       className="cb-setting-row flex items-center justify-between"
       role="group"
       title={hint}
@@ -756,10 +767,12 @@ function Row({
 }
 
 function Switch({
+  id,
   checked,
   onChange,
   disabled = false,
 }: {
+  id?:string;
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
@@ -767,6 +780,7 @@ function Switch({
   const field = useContext(SettingLabel);
   return (
     <ButtonBase
+      id={id}
       role="switch"
       aria-labelledby={field?.label}
       aria-describedby={field?.hint}

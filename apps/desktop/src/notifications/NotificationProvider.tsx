@@ -318,7 +318,7 @@ function NotificationCard({
               key={action}
               tabIndex={inert ? -1 : undefined}
               onClick={() =>
-                void invoke("notification_action", { action }).catch(
+                void invoke("notification_action", { action, id: notice.id }).catch(
                   console.error,
                 )
               }
@@ -422,7 +422,7 @@ function HistoryRow({
   const act = (action: string) => {
     read();
     onAction();
-    void invoke("notification_action", { action }).catch(console.error);
+    void invoke("notification_action", { action, id: notice.id }).catch(console.error);
   };
   const actions = resolved ? [] : notice.actions;
   const detailsId = `history-details-${notice.id}`;

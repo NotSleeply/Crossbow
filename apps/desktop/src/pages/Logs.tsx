@@ -160,6 +160,10 @@ export default function LogsPage() {
   const pageActive = useRef(false);
   const statusGeneration = useRef(0);
   const pinned = useRef(true);
+  const [following,setFollowing]=useState(true);
+  const [exporting,setExporting]=useState(false);
+  const exportFlight=useRef(false);
+  const [copiedLine,setCopiedLine]=useState<number|null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
   // sing-box 同连接多行聚合的中间态（跨批次保留，#57）
@@ -304,13 +308,18 @@ export default function LogsPage() {
     }
   }, [lines]);
 
-  const shown = useMemo(() => {
+  const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
     return lines
       .filter((l) => enabled[(l.type as Level) ?? "info"] ?? true)
-      .filter((l) => !kw || l.payload.toLowerCase().includes(kw))
-      .slice(-RENDER_TAIL);
+      .filter((l) => !kw || l.payload.toLowerCase().includes(kw));
   }, [lines, enabled, keyword]);
+
+  const shown=filtered.slice(-RENDER_TAIL);
+  const copyLine=async(line:LogEntry,index:number)=>{try {const clean=await ipc.redactLogLines([`[${line.type}] ${line.payload}`]);await navigator.clipboard.writeText(clean);setCopiedLine(index);window.setTimeout(()=>setCopiedLine(null),1500);}catch(e){notify.error(e,"logs-copy");}};
+  const exportLogs=async()=>{if(exportFlight.current)return;exportFlight.current=true;setExporting(true);try{const saved=await ipc.exportLogLines(filtered.map(l=>`[${l.type}] ${l.payload}`));if(saved)notify.success(t("logs.exported"),"logs-export");}catch(e){notify.error(e,"logs-export");}finally{exportFlight.current=false;setExporting(false);}};
+  const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
+  const copyButton=(line:LogEntry,index:number)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line,index)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===index?"✓":t("workflow.copy")}</ButtonBase>;
 
   return (
     <div className="cb-logs-page">
@@ -341,7 +350,7 @@ export default function LogsPage() {
           onChange={(e) => setKeyword(e.target.value)}
           placeholder={t("logs.keyword")}
           aria-label={t("logs.keyword")}
-          className="cb-selectable"
+          className="cb-selectable" id="cb-log-search"
         />
         </label>
         <Button type="button" onClick={clear} className="cb-log-clear" disabled={lines.length === 0 || loading} loading={clearing}>
@@ -351,12 +360,16 @@ export default function LogsPage() {
         </div>
       </div>
 
+      <div className="cb-log-reading-tools">
+        <div><Button size="small" aria-pressed={following} onClick={()=>{if(following){pinned.current=false;setFollowing(false);}else resume();}}>{t(following?"logs.pauseFollow":"logs.follow")}</Button>{!following&&<Button size="small" onClick={resume}>{t("logs.bottom")}</Button>}<span role="status">{!following?t("logs.followPaused"):""}</span></div>
+        <Button size="small" title={t("logs.exportHint",{n:filtered.length})} disabled={!filtered.length||exporting} loading={exporting} onClick={()=>void exportLogs()}>{t("logs.export")}</Button>
+      </div>
       <div
         ref={boxRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          pinned.current =
-            el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
+          if(!atBottom){pinned.current=false;setFollowing(false);}
         }}
         className="cb-card cb-log-scroll cb-selectable cb-mono text-[13px] leading-5"
       >
@@ -409,6 +422,7 @@ export default function LogsPage() {
                     }}
                   >
                     {l.payload}
+                    {copyButton(l,i)}
                   </div>
                 );
               }
@@ -476,6 +490,7 @@ export default function LogsPage() {
                       <NodeName name={parsed.outbound} />
                     </span>
                   </span>
+                  {copyButton(l,i)}
                 </div>
               );
             })}

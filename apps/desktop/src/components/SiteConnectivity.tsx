@@ -21,7 +21,7 @@ export default function SiteConnectivity({
   const t = useT();
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<Record<string, SiteResult>>({});
+  const [results, setResults] = useState<Record<string, SiteResult & {testedAt:number;outbound:string;stamp:number;pathChanged?:boolean}>>({});
   const inFlight = useRef(false);
   const mounted = useRef(false);
   const generation = useRef(0);
@@ -30,7 +30,7 @@ export default function SiteConnectivity({
     generation.current++;
     inFlight.current = false;
     setBusy(new Set());
-    setResults({});
+    // Keep previous observations with their context; never present them as a fresh test.
   };
   useEffect(invalidate, [contextKey]);
   useEffect(() => {
@@ -75,6 +75,8 @@ export default function SiteConnectivity({
     );
     const currentGeneration = generation.current;
     const failures: unknown[] = [];
+    const outbound=await ipc.currentOutbound().catch(()=>null);
+    const outboundLabel=outbound?.chain.join(" → ")||outbound?.node||"—";
     try {
       await Promise.all(
         ids.map(async (id) => {
@@ -92,7 +94,7 @@ export default function SiteConnectivity({
             };
           }
           if (mounted.current && generation.current === currentGeneration) {
-            setResults((current) => ({ ...current, [id]: result }));
+            setResults((current) => ({ ...current, [id]: {...result,testedAt:Date.now(),outbound:outboundLabel,stamp:currentGeneration} }));
             setBusy((current) => {
               const next = new Set(current);
               next.delete(id);
@@ -103,6 +105,9 @@ export default function SiteConnectivity({
         }),
       );
       if (generation.current !== currentGeneration) return;
+      const after=await ipc.currentOutbound().catch(()=>null);
+      if(generation.current!==currentGeneration)return;
+      if(outbound&&after&&JSON.stringify(outbound.chain)!==JSON.stringify(after.chain))setResults(current=>Object.fromEntries(Object.entries(current).map(([id,row])=>[id,ids.includes(id)?{...row,pathChanged:true}:row])));
       // 结果原位刷新即反馈（#140）；仅命令级失败按约定保留 error
       if (failures.length) {
         const operation = `site-test-${crypto.randomUUID()}`;
@@ -139,6 +144,7 @@ export default function SiteConnectivity({
           {busy.size ? t("sites.testing") : t("sites.testAll")}
         </Button>
       </div>
+      {Object.values(results).some(r=>r.stamp!==generation.current||r.pathChanged)&&<p className="cb-control-note" role="status">{t("workflow.contextChanged")}</p>}
       <div className="cb-site-grid">
         {SITES.map((site) => {
           const result = results[site.id];
@@ -170,6 +176,7 @@ export default function SiteConnectivity({
               disabled={!running || busy.size > 0}
               aria-label={`${t("sites.test")} ${site.name}`}
               onClick={() => void test([site.id])}
+              title={result?.status==="restricted"?t("workflow.httpRestricted"):result?.status==="http_error"?t("workflow.httpError"):undefined}
             >
               <span className="text-xs font-medium">{site.name}</span>
               <span
@@ -178,6 +185,7 @@ export default function SiteConnectivity({
               >
                 {site.host}
               </span>
+              {!pending&&result&&<span className="cb-site-context"><span>{t("workflow.measuredAt",{time:new Date(result.testedAt).toLocaleTimeString()})}</span><span title={result.outbound}>{t("workflow.outbound")}: {result.outbound}</span></span>}
               <span
                 className="flex items-center gap-1.5 text-[11px] mt-2"
                 style={{ color }}
@@ -194,7 +202,7 @@ export default function SiteConnectivity({
                     style={{ backgroundColor: color }}
                   />
                 )}
-                {text}
+                <span title={result?.status==="restricted"?t("workflow.httpRestricted"):result?.status==="http_error"?t("workflow.httpError"):undefined}>{text}</span>
                 <span className="ml-auto tabular-nums">
                   {!pending &&
                   result?.latency_ms !== null &&
@@ -207,6 +215,7 @@ export default function SiteConnectivity({
           );
         })}
       </div>
+      {Object.values(results).some(r=>r.status==="restricted")&&<p className="cb-control-note">{t("workflow.httpRestricted")}</p>}
       <p className="text-[10px] mt-3" style={{ color: "var(--cb-faint)" }}>
         {running ? t("sites.scope") : t("sites.stopped")}
       </p>

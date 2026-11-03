@@ -1,8 +1,10 @@
+import type { NavigationTarget } from "../workflow";
+import ConfigRecovery from "../components/ConfigRecovery";
 import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ipc, type Profile } from "../ipc";
+import { ipc, type Profile, type ProfileStatus } from "../ipc";
 import Select from "../components/Select";
 import OverridePanel from "./OverridePanel";
 import { useT } from "../i18n";
@@ -40,11 +42,16 @@ function fmtTime(
 
 /** 配置页：订阅导入（URL）、更新、激活、删除；覆写链在 M0-S3 接入。 */
 export default function ProfilesPage({
-  tab = "sources",
+  tab = "sources", focusProfileId, navigationRequest,
 }: {
   tab?: "sources" | "overrides";
+  focusProfileId?:string;
+  navigationRequest?:NavigationTarget|null;
 }) {
   const t = useT();
+  const [recovering,setRecovering]=useState(false);
+  const [statuses,setStatuses]=useState<ProfileStatus[]>([]);
+  useEffect(()=>{if(focusProfileId)setSelectedId(focusProfileId);if(navigationRequest?.control==="cb-config-recovery")setRecovering(true)},[focusProfileId,navigationRequest]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -55,8 +62,12 @@ export default function ProfilesPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
-    setProfiles(await ipc.listProfiles().catch(() => []));
-    setActiveId(await ipc.activeProfileId().catch(() => null));
+    const results=await Promise.allSettled([ipc.listProfiles(),ipc.activeProfileId(),ipc.profileStatuses()]);
+    const [profiles,active,statuses]=results;
+    if(profiles.status==='fulfilled')setProfiles(profiles.value);
+    if(active.status==='fulfilled')setActiveId(active.value);
+    if(statuses.status==='fulfilled')setStatuses(statuses.value);
+    if(results.some(r=>r.status==='rejected'))notify.error(results.filter(r=>r.status==='rejected').map(r=>(r as PromiseRejectedResult).reason).join("; "),"profiles-read");
   }, []);
 
   useEffect(() => {
@@ -136,6 +147,9 @@ export default function ProfilesPage({
     profiles.find((p) => p.id === selectedId) ??
     profiles.find((p) => p.id === activeId) ??
     profiles[0];
+  useEffect(()=>{
+    if(focusProfileId&&selected?.id===focusProfileId){const frame=requestAnimationFrame(()=>document.getElementById("cb-profile-detail")?.focus());return()=>cancelAnimationFrame(frame);}
+  },[focusProfileId,selected?.id]);
   const importUrl = () =>
     run("import", async () => {
       await ipc.importProfileUrl(url.trim());
@@ -148,6 +162,7 @@ export default function ProfilesPage({
         title={t(tab === "overrides" ? "studio.overrides" : "studio.sources")}
         meta={t("studio.configHint")}
       >
+        <Button onClick={()=>setRecovering(true)}>{t("backup.title")}</Button>
         {tab === "sources" && (
           <Button onClick={() => setImporting(true)}>
             <Icon name="download" />
@@ -155,6 +170,7 @@ export default function ProfilesPage({
           </Button>
         )}
       </PageHead>
+      {recovering&&<ConfigRecovery onClose={()=>setRecovering(false)} onRestored={()=>void refresh()}/>}
       <input
         ref={fileInputRef}
         type="file"
@@ -214,11 +230,12 @@ export default function ProfilesPage({
               )}
             />
           </nav>
-          <div className="cb-profile-detail">
+          <div className="cb-profile-detail" id="cb-profile-detail" tabIndex={-1}>
             {selected && (
               <ProfileCard
                 key={selected.id}
                 profile={selected}
+                status={statuses.find(s=>s.id===selected.id)}
                 active={selected.id === activeId}
                 busy={busy !== null}
                 onUpdate={() =>
@@ -290,25 +307,10 @@ export default function ProfilesPage({
   );
 }
 
-function nextUpdateText(profile: Profile, t: ReturnType<typeof useT>): string {
-  const lu = profile.last_update;
-  if (lu && !lu.ok) {
-    return t("profiles.updateFailedAt", {
-      detail: (lu.detail ?? "?").slice(0, 80),
-    });
-  }
-  const interval = profile.update_interval_min * 60;
-  const last = profile.last_updated ?? 0;
-  const next = last + interval;
-  const time = new Date(next * 1000).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return t("profiles.nextAt", { time });
-}
 
 function ProfileCard({
   profile,
+  status,
   active,
   busy,
   onUpdate,
@@ -318,6 +320,7 @@ function ProfileCard({
   onRename,
 }: {
   profile: Profile;
+  status?:ProfileStatus;
   active: boolean;
   busy: boolean;
   onUpdate: () => void;
@@ -401,13 +404,16 @@ function ProfileCard({
           <dd>{active ? t("profiles.current") : "—"}</dd>
         </div>
       </dl>
+      {profile.kind === "remote" && <section className="cb-subscription-status" aria-label={t("profiles.lastSuccess")}>
+        <dl><div><dt>{t("profiles.lastSuccess")}</dt><dd>{status?.last_success?new Date(status.last_success*1000).toLocaleString():"—"}</dd></div><div><dt>{t(status?.retry?"profiles.retryAt":"profiles.nextUpdate")}</dt><dd>{!profile.update_interval_min?t("profiles.autoDisabled"):!status?.next_update?t("profiles.due"):status.next_update*1000<=Date.now()?t("profiles.due"):new Date(status.next_update*1000).toLocaleString()}</dd></div></dl>
+        {status?.failure&&<div className="cb-workflow-callout"><h3>{t("profiles.previousConfig")}</h3><p className="cb-selectable">{status.failure}</p>{status.failure_at&&<small>{new Date(status.failure_at*1000).toLocaleString()}</small>}</div>}
+        <p><b>{t("profiles.changes")}</b><span>{status?.changes?t("profiles.changeCounts",status.changes):t("profiles.changesUnknown")}</span></p>
+      </section>}
       {profile.kind === "remote" && (
         <div className="cb-setting-row flex items-center justify-between">
           <div>
             <div className="text-sm">{t("profiles.remote")}</div>
-            {profile.update_interval_min > 0 && (
-              <p className="cb-control-note">{nextUpdateText(profile, t)}</p>
-            )}
+
           </div>
           <Select
             label={t("profiles.autoUpdate")}
