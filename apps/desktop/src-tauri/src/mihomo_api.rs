@@ -510,6 +510,9 @@ pub(crate) mod tests {
                         Err(e) => panic!("missing {method} {path}: {e}"),
                     }
                 };
+                // macOS/BSD 的 accept 会让连接继承 listener 的 O_NONBLOCK，
+                // 不清掉的话数据未到达时 read 立即返回 WouldBlock（Linux 会清）。
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
@@ -808,6 +811,9 @@ pub(crate) mod tests {
             let server = std::thread::spawn(move || {
                 for _ in 0..2 {
                 let (mut stream, _) = listener.accept().unwrap();
+                // macOS/BSD 的 accept 会让连接继承 listener 的 O_NONBLOCK，
+                // 不清掉的话数据未到达时 read 立即返回 WouldBlock（Linux 会清）。
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
