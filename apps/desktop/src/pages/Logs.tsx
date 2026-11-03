@@ -1,10 +1,11 @@
 import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { notify } from "../notifications/service";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
 import "./Logs.css";
+import { LogHistory } from "./logHistory";
 
 const MAX_LINES = 2000;
 const RENDER_TAIL = 500;
@@ -153,17 +154,67 @@ export default function LogsPage() {
   const [keyword, setKeyword] = useState("");
   const [connected, setConnected] = useState(false);
   const [coreRunning, setCoreRunning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+  const historyRef = useRef(new LogHistory());
+  const pageActive = useRef(false);
+  const statusGeneration = useRef(0);
   const pinned = useRef(true);
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
   // sing-box 同连接多行聚合的中间态（跨批次保留，#57）
   const pendingRef = useRef(new Map<string, SbPending>());
 
+  const consumeEntries = useCallback((entries: LogEntry[]) => {
+    const out: LogEntry[] = [];
+    for (const e of entries) {
+      // sing-box（clash_api）日志：同连接多行聚合后再进表（#57）
+      if (!consumeSingBox(e.payload, pendingRef.current, out)) out.push(e);
+    }
+    // 超时成行：挂起超过 3s 的连接（outbound 先到/日志乱序等场景）
+    // 以已有部分信息强制成行，避免静默丢失；无目标也无出口的行
+    // （孤立 router 行等）不含连接信息，直接丢弃
+    const now = Date.now();
+    for (const [id, e] of [...pendingRef.current]) {
+      if (now - e.seen <= 3000) continue;
+      pendingRef.current.delete(id);
+      if (!e.target && !e.outbound) continue;
+      const left = e.source ? `${e.source}(${e.process})` : `(${e.process})`;
+      out.push({
+        type: "info",
+        payload: `[${e.type || "TCP"}] ${left} --> ${e.target || "?"} match Match using ${
+          e.outbound || "?"
+        }`,
+      });
+    }
+    // 防御：未凑齐 outbound 的连接积压过多时丢弃最旧的中间态
+    if (pendingRef.current.size > MAX_PENDING) {
+      const drop = pendingRef.current.size - MAX_PENDING;
+      for (const k of [...pendingRef.current.keys()].slice(0, drop)) {
+        pendingRef.current.delete(k);
+      }
+    }
+    setLines((prev) => {
+      const next = [...prev, ...out];
+      return next.length > MAX_LINES
+        ? next.slice(next.length - MAX_LINES)
+        : next;
+    });
+  }, []);
+
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
     let active = true;
+    pageActive.current = true;
+    const subscriber = crypto.randomUUID();
+    const history = new LogHistory();
+    historyRef.current = history;
+    setLoading(true);
     const unstatus = ipc.onLogsStatus((status) => {
-      if (active) setConnected(status.connected);
+      if (active && status.generation >= statusGeneration.current) {
+        statusGeneration.current = status.generation;
+        setConnected(status.connected);
+      }
     });
     let receivedCoreEvent = false;
     const uncore = ipc.onCoreStatus((status) => {
@@ -179,42 +230,9 @@ export default function LogsPage() {
           setCoreRunning(status.state === "Running");
       })
       .catch(() => {});
-    // Register the Tauri event handler before the backend can emit its first batch.
+    // Listen first, then join the cache snapshot and in-flight events by sequence.
     const unlisten = ipc.onLogs((entries) => {
-      const out: LogEntry[] = [];
-      for (const e of entries) {
-        // sing-box（clash_api）日志：同连接多行聚合后再进表（#57）
-        if (!consumeSingBox(e.payload, pendingRef.current, out)) out.push(e);
-      }
-      // 超时成行：挂起超过 3s 的连接（outbound 先到/日志乱序等场景）
-      // 以已有部分信息强制成行，避免静默丢失；无目标也无出口的行
-      // （孤立 router 行等）不含连接信息，直接丢弃
-      const now = Date.now();
-      for (const [id, e] of [...pendingRef.current]) {
-        if (now - e.seen <= 3000) continue;
-        pendingRef.current.delete(id);
-        if (!e.target && !e.outbound) continue;
-        const left = e.source ? `${e.source}(${e.process})` : `(${e.process})`;
-        out.push({
-          type: "info",
-          payload: `[${e.type || "TCP"}] ${left} --> ${e.target || "?"} match Match using ${
-            e.outbound || "?"
-          }`,
-        });
-      }
-      // 防御：未凑齐 outbound 的连接积压过多时丢弃最旧的中间态
-      if (pendingRef.current.size > MAX_PENDING) {
-        const drop = pendingRef.current.size - MAX_PENDING;
-        for (const k of [...pendingRef.current.keys()].slice(0, drop)) {
-          pendingRef.current.delete(k);
-        }
-      }
-      setLines((prev) => {
-        const next = [...prev, ...out];
-        return next.length > MAX_LINES
-          ? next.slice(next.length - MAX_LINES)
-          : next;
-      });
+      if (active) consumeEntries(history.accept(entries));
     });
 
     // StrictMode runs setup → cleanup → setup in development. Waiting for the
@@ -222,13 +240,27 @@ export default function LogsPage() {
     // stale setup from subscribing after the page has already been replaced.
     const subscribe = Promise.all([unlisten, unstatus, uncore]).then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
-      return ipc
-        .subscribeLogs()
-        .catch((error) => notify.error(error, "logs-stream"));
+      return ipc.subscribeLogs(subscriber).then((snapshot) => {
+        if (!active) return;
+        pendingRef.current.clear();
+        setLines([]);
+        consumeEntries(history.hydrate(snapshot));
+        if (snapshot.generation >= statusGeneration.current) {
+          statusGeneration.current = snapshot.generation;
+          setConnected(snapshot.connected);
+        }
+        setLoading(false);
+      });
+    }).catch((error) => {
+      if (!active) return;
+      consumeEntries(history.resume());
+      setLoading(false);
+      notify.error(error, "logs-stream");
     });
 
     return () => {
       active = false;
+      pageActive.current = false;
       setConnected(false);
       for (const pending of [unlisten, unstatus, uncore])
         void pending.then((remove) => remove());
@@ -240,12 +272,30 @@ export default function LogsPage() {
         .finally(() => {
           queueMicrotask(() => {
             if (subscriptionGeneration.current === generation) {
-              ipc.unsubscribeLogs().catch(() => {});
+              ipc.unsubscribeLogs(subscriber).catch(() => {});
             }
           });
         });
     };
-  }, []);
+  }, [consumeEntries]);
+
+  const clear = async () => {
+    if (clearing || loading) return;
+    const history = historyRef.current;
+    history.pause();
+    setClearing(true);
+    const result = await notify.run("logs-clear", t("logs.clear"), () => ipc.clearLogs(), undefined,
+      { feedback: "error-only", titleKey: "logs.clear" });
+    if (!pageActive.current || historyRef.current !== history) return;
+    if (result.ok) {
+      pendingRef.current.clear();
+      setLines([]);
+      consumeEntries(history.hydrate(result.value));
+    } else {
+      consumeEntries(history.resume());
+    }
+    setClearing(false);
+  };
 
   // 自动滚动：用户上滚超过 40px 即暂停跟随
   useEffect(() => {
@@ -294,7 +344,7 @@ export default function LogsPage() {
           className="cb-selectable"
         />
         </label>
-        <Button type="button" onClick={() => { setLines([]); pendingRef.current.clear(); }} className="cb-log-clear" disabled={lines.length === 0}>
+        <Button type="button" onClick={clear} className="cb-log-clear" disabled={lines.length === 0 || loading} loading={clearing}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg>
           {t("logs.clear")}
         </Button>
@@ -316,13 +366,17 @@ export default function LogsPage() {
             style={{ color: "var(--cb-text-dim)" }}
           >
             <span>
-              {!coreRunning
-                ? t("logs.stopped")
-                : connected
-                  ? t("logs.empty")
-                  : t("logs.connecting")}
+              {loading
+                ? t("logs.loading")
+                : lines.length > 0
+                  ? t("logs.filteredEmpty")
+                  : !coreRunning
+                    ? t("logs.stopped")
+                    : connected
+                      ? t("logs.empty")
+                      : t("logs.connecting")}
             </span>
-            {(!coreRunning || !connected) && (
+            {!loading && lines.length === 0 && (!coreRunning || !connected) && (
               <Button
                 onClick={() =>
                   window.dispatchEvent(

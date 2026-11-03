@@ -243,6 +243,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "logs.keyword": "关键字过滤",
     "logs.clear": "清空",
     "logs.empty": "暂时没有日志，访问网页后将在这里显示连接记录",
+    "logs.loading": "正在读取最近日志…",
+    "logs.filteredEmpty": "没有符合当前筛选条件的日志",
     "logs.stopped": "内核未运行，请先开启系统代理或启动内核",
     "logs.connecting": "连接内核中…",
     "logs.col.type": "类型",
@@ -588,6 +590,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "logs.keyword": "Keyword filter",
     "logs.clear": "Clear",
     "logs.empty": "No logs yet. Open a website to generate connection logs",
+    "logs.loading": "Loading recent logs…",
+    "logs.filteredEmpty": "No logs match the current filters",
     "logs.stopped":
       "Core is stopped. Enable the system proxy or start the core",
     "logs.connecting": "Connecting to core…",
