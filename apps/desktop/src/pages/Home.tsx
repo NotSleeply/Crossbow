@@ -20,6 +20,8 @@ import { Icon } from "../components/Icon";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { ConnectionFlow } from "../components/ConnectionFlow";
 
+import { cumulativeTotals, createReadGate } from "../stateReliability";
+
 const POINTS = 120;
 
 /** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
@@ -43,12 +45,21 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const [busy, setBusy] = useState(false);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
-  const [totals, setTotals] = useState({ up: 0, down: 0 });
+  const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
+
+  const readGate = useRef(createReadGate());
+  const [known, setKnown] = useState<Set<string>>(new Set());
+  const [readErrors, setReadErrors] = useState<Set<string>>(new Set());
+  const confirm = useCallback((key: string) => {
+    setKnown(old => new Set([...old, key]));
+    setReadErrors(old => { const next = new Set(old); next.delete(key); return next; });
+  }, []);
+  const eventReceived = (key: string) => { readGate.current.invalidate(key); confirm(key); };
 
   useEffect(() => {
     let active = true;
@@ -117,25 +128,32 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
-    setProfiles(await ipc.listProfiles().catch(() => []));
-    setActiveId(await ipc.activeProfileId().catch(() => null));
-    setCore(
-      await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })),
-    );
-    setProxy(
-      await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })),
-    );
-    setTun(
-      await ipc.tunStatus().catch(() => ({
-        enabled: false,
-        ready: false,
-        coreRunning: false,
-      })),
-    );
-    setMode(await ipc.coreMode().catch(() => "rule" as const));
-    setMixedPort(await ipc.getEngineConfig().then((config) => config.mixed_port).catch(() => null));
-    setOutbound(await ipc.currentOutbound().catch(() => null));
-  }, []);
+    const errors: { key: string; version: number }[] = [];
+    const read = async <T,>(key: string, task: () => Promise<T>, commit: (value: T) => void) => {
+      const version = readGate.current.begin(key);
+      try {
+        const value = await task();
+        if (!mounted.current || !readGate.current.current(key, version)) return;
+        commit(value); confirm(key);
+      } catch {
+        if (!mounted.current || !readGate.current.current(key, version)) return;
+        errors.push({ key, version });
+        setReadErrors(old => new Set([...old, key]));
+      }
+    };
+    await Promise.all([
+      read("profiles", ipc.listProfiles, setProfiles),
+      read("active", ipc.activeProfileId, setActiveId),
+      read("core", ipc.coreStatus, setCore),
+      read("proxy", ipc.sysproxyStatus, setProxy),
+      read("tun", ipc.tunStatus, setTun),
+      read("mode", ipc.coreMode, setMode),
+      read("port", () => ipc.getEngineConfig().then(c => c.mixed_port), setMixedPort),
+      read("outbound", ipc.currentOutbound, setOutbound),
+    ]);
+    if (mounted.current && errors.some(({key, version}) => readGate.current.current(key, version))) notify.error(t("home.stateReadFailed"), "home-state-read");
+    else if (mounted.current) void notify.resolve("home-state-read");
+  }, [confirm]);
 
   useEffect(() => {
     const generation = ++subscriptionGeneration.current;
@@ -143,19 +161,21 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     mounted.current = true;
     refresh();
     const un1 = ipc.onCoreStatus((status) => {
-      setCore(status);
+      if (!active) return;
+      eventReceived("core"); setCore(status);
       if (status.state !== "Running") setLastTrafficAt(0);
-      if (active)
-        ipc
-          .tunStatus()
-          .then(setTun)
-          .catch((e) => notify.error(e, "tun-state-read"));
+      const version = readGate.current.begin("tun");
+      void ipc.tunStatus().then(value => {
+        if (active && readGate.current.current("tun", version)) { setTun(value); confirm("tun"); }
+      }).catch(e => {
+        if (active && readGate.current.current("tun", version)) notify.error(e, "tun-state-read");
+      });
     });
-    const un2 = ipc.onSysproxyStatus(setProxy);
+    const un2 = ipc.onSysproxyStatus(value => { if (active) { eventReceived("proxy"); setProxy(value); } });
     const untun = ipc.onTunStatus((enabled) => {
-      if (active) setTun((current) => ({ ...current, enabled }));
+      if (active) { eventReceived("tun"); setTun((current) => ({ ...current, enabled })); }
     });
-    const un3 = ipc.onCoreMode(setMode);
+    const un3 = ipc.onCoreMode(value => { if (active) { eventReceived("mode"); setMode(value); } });
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!active || !mounted.current) return;
       if (
@@ -165,10 +185,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
         setLastTrafficAt(Date.now());
       }
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
-      setTotals((t0) => ({ up: t0.up + up, down: t0.down + down }));
+
     });
     const un5 = ipc.onConnections((s) => {
-      if (active && mounted.current) setConnCount(s.rows.length);
+      if (active && mounted.current) {
+        setConnCount(s.truncated ?? s.rows.length);
+        setTotals(cumulativeTotals(s));
+      }
     });
 
     // 速率历史预填（#181）：后端环形缓冲由托盘通道每秒喂入，与页面
@@ -226,6 +249,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   }, [refresh]);
 
   const toggleProxy = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       await ipc.sysproxyToggle();
@@ -271,6 +295,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     }
   };
 
+  const canControl = ["profiles", "active", "core", "proxy", "tun"].every(key => known.has(key) && !readErrors.has(key));
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
@@ -283,8 +308,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const proxyOn = explicitProxy ? core.state === "Running" : proxy.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
-  const statusTitle = explicitOnly
-    ? t(core.state === "Starting" ? "home.coreStarting" : core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
+  const statusTitle = !canControl
+    ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
+    : core.state === "Starting"
+    ? t("home.coreStarting")
+    : !running && routingEnabled
+    ? t("home.takeoverCoreStopped")
+    : explicitOnly
+    ? t(core.state === "Running" ? "linux.explicitOn" : "linux.explicitOff")
     : tun.enabled
     ? running
       ? proxy.enabled
@@ -295,7 +326,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       ? t("home.sysproxyOn")
       : t("home.sysproxyOff");
 
-  const statusHint = !activeId
+  const statusHint = readErrors.size ? t("home.stateReadHint") : !canControl ? t("home.statePendingHint") : !active
     ? t("studio.noSource")
     : explicitOnly
       ? t("linux.explicitHint", { port: mixedPort ?? "—" })
@@ -323,12 +354,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 <i
                   className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
                 />
-                {coreText(t, core)}
+                {known.has("core") ? coreText(t, core) : t("home.statePending")}
               </div>
-              <span className="cb-home-mode">{t(`mode.${mode}`)}</span>
+              <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
             </div>
             <h2>{statusTitle}</h2>
-            <p>{statusHint}</p>
+            <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>
+            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
@@ -464,7 +496,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={proxyLabel}
                   aria-checked={proxyOn}
                   onClick={explicitProxy ? toggleCore : toggleProxy}
-                  disabled={busy || !activeId || (explicitProxy ? core.state === "Starting" || tun.enabled : !capabilities?.system_proxy)}
+                  disabled={!canControl || busy || core.state === "Starting" || !active || (explicitProxy ? tun.enabled : !capabilities?.system_proxy)}
                 />
               </div>
               <div className="cb-takeover-row" title={t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}>
@@ -478,7 +510,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   aria-label={t("settings.tun")}
                   aria-checked={tun.enabled}
                   onClick={toggleTun}
-                  disabled={busy || !activeId || !capabilities?.tun}
+                  disabled={!canControl || busy || core.state === "Starting" || !active || !capabilities?.tun}
                 />
               </div>
               <div className="cb-mode-control">
@@ -492,7 +524,8 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                     <ButtonBase
                       key={m.id}
                       className={mode === m.id ? "on" : ""}
-                      aria-pressed={mode === m.id}
+                      aria-pressed={known.has("mode") ? mode === m.id : undefined}
+                      disabled={busy || !known.has("mode") || readErrors.has("mode")}
                       onClick={() =>
                         notify.run(
                           "core-mode",
@@ -509,23 +542,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                 </div>
               </div>
             </section>
-            <ButtonBase
-              className="cb-source-strip"
-              title={active?.name ?? t("studio.noSource")}
-              onClick={() => go("profiles")}
-            >
-              <Icon name="document" size={26} />
-              <div>
-                <b>{active?.name ?? t("home.none")}</b>
-                <p>
-                  {t("studio.currentSource")} ·{" "}
-                  {active?.kind === "remote"
-                    ? t("profiles.remote")
-                    : t("profiles.local")}
-                </p>
-              </div>
-              <Icon name="chevron" size={17} />
-            </ButtonBase>
+            <section className="cb-connection-state" aria-label={t("home.healthSummary")}>
+              <div className="cb-home-card-title"><h3>{t("home.healthSummary")}</h3></div>
+            <dl className="cb-health-summary" aria-label={t("home.healthSummary")}>
+              <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
+              <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
+              <div title={t("home.networkScope")}><dt>{t("home.healthNetwork")}</dt><dd className="cb-health-unverified">{t("home.networkDiagnosis")}</dd></div>
+            </dl>
+            </section>
             <section className="cb-rate-card" aria-label={t("home.rate")}>
               <div className="cb-home-card-title">
                 <h3>{t("home.rate")}</h3>
@@ -533,7 +557,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <i
                     className={`cb-dot ${core.state === "Running" ? "ok" : "idle"}`}
                   />
-                  {coreText(t, core)}
+                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
                 </span>
               </div>
               <div className="cb-rate-pair">
@@ -546,14 +570,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <RateValue bytes={latest?.up ?? 0} />
                 </div>
               </div>
-              <div className="cb-session-strip">
+              <div className="cb-session-strip" title={t("home.coreTotalsHint")}>
                 <div>
-                  <span>{t("studio.totalDown")}</span>
-                  <b>{fmtBytes(totals.down)}</b>
+                  <span>{t("home.coreTotalDown")}</span>
+                  <b>{totals.down === null ? "—" : fmtBytes(totals.down)}</b>
                 </div>
                 <div>
-                  <span>{t("studio.totalUp")}</span>
-                  <b>{fmtBytes(totals.up)}</b>
+                  <span>{t("home.coreTotalUp")}</span>
+                  <b>{totals.up === null ? "—" : fmtBytes(totals.up)}</b>
                 </div>
                 <div>
                   <span>{t("home.connections")}</span>
@@ -671,7 +695,7 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   );
 }
 
-function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
+export function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
   switch (s.state) {
     case "Running":
       return t("home.coreRunning");

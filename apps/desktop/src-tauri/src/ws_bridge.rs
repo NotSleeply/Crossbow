@@ -454,15 +454,15 @@ struct ConnRow {
     network: String,
     kind: String,
     process: String,
-    elapsed_ms: u64,
+    elapsed_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
 struct ConnPayload {
     rows: Vec<ConnRow>,
-    upload_total: u64,
-    download_total: u64,
-    memory: u64,
+    upload_total: Option<u64>,
+    download_total: Option<u64>,
+    memory: Option<u64>,
     /// 超过 CONN_MAX_ROWS 被截断时的原始总行数。
     #[serde(skip_serializing_if = "Option::is_none")]
     truncated: Option<usize>,
@@ -520,21 +520,17 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                     .next()
                     .unwrap_or("")
                     .to_string(),
-                elapsed_ms: now_ms.saturating_sub(
-                    c.get("start")
-                        .and_then(|x| x.as_str())
-                        .and_then(parse_rfc3339_ms)
-                        .unwrap_or(0),
-                ),
+                elapsed_ms: c.get("start").and_then(|x| x.as_str())
+                    .and_then(parse_rfc3339_ms).and_then(|start| now_ms.checked_sub(start)),
             });
         }
     }
     let total_rows = rows.len();
     rows.truncate(CONN_MAX_ROWS);
     let payload = ConnPayload {
-        upload_total: v.get("uploadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
-        download_total: v.get("downloadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
-        memory: v.get("memory").and_then(|x| x.as_u64()).unwrap_or(0),
+        upload_total: v.get("uploadTotal").and_then(|x| x.as_u64()),
+        download_total: v.get("downloadTotal").and_then(|x| x.as_u64()),
+        memory: v.get("memory").and_then(|x| x.as_u64()),
         truncated: if total_rows > CONN_MAX_ROWS {
             Some(total_rows)
         } else {
@@ -552,47 +548,71 @@ fn now_unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 解析 mihomo 的 RFC3339 时间戳为 Unix 毫秒（忽略小数秒与时区偏移外的精度）。
+/// Parse RFC3339 without dropping the timezone after fractional seconds.
 fn parse_rfc3339_ms(s: &str) -> Option<u64> {
-    // 2026-10-04T12:00:00.123456+08:00 / …Z
-    let (sec_part, _frac) = s.split_once('.').unwrap_or((s, ""));
-    let sec_part = sec_part.trim_end_matches('Z');
-    let (dt, offset_min) = match sec_part.rsplit_once(['+', '-']) {
-        Some((dt, off)) if off.len() == 5 => {
-            let sign = if sec_part.contains('+') { 1 } else { -1 };
-            let h: i64 = off[..2].parse().ok()?;
-            let m: i64 = off[3..].parse().ok()?;
-            (dt.to_string(), sign * (h * 60 + m))
-        }
-        _ => (sec_part.to_string(), 0),
+    if !s.is_ascii() || s.len() < 20 { return None; }
+    if &s[4..5] != "-" || &s[7..8] != "-" || !matches!(&s[10..11], "T" | "t")
+        || &s[13..14] != ":" || &s[16..17] != ":" { return None; }
+    let number = |a: usize, b: usize| -> Option<i64> {
+        let part = s.get(a..b)?;
+        if !part.bytes().all(|v| v.is_ascii_digit()) { return None; }
+        part.parse().ok()
     };
-    let mut it = dt.split(&['T', ' '][..]);
-    let date = it.next()?.split('-').collect::<Vec<_>>();
-    let time = it.next()?.split(':').collect::<Vec<_>>();
-    if date.len() != 3 || time.len() != 3 {
-        return None;
+    let year = number(0,4)?; let mo = number(5,7)?; let day = number(8,10)?;
+    let hour = number(11,13)?; let minute = number(14,16)?; let second = number(17,19)?;
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match mo { 1|3|5|7|8|10|12 => 31, 4|6|9|11 => 30, 2 => if leap {29} else {28}, _ => return None };
+    if !(1..=days_in_month).contains(&day) || hour > 23 || minute > 59 || second > 59 { return None; }
+    let mut suffix = &s[19..]; let mut millis = 0i64;
+    if let Some(fraction) = suffix.strip_prefix('.') {
+        let digits = fraction.bytes().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 { return None; }
+        let first = &fraction[..digits.min(3)];
+        millis = first.parse::<i64>().ok()? * 10i64.pow(3 - first.len() as u32);
+        suffix = &fraction[digits..];
     }
-    let y: i64 = date[0].parse().ok()?;
-    let mo: i64 = date[1].parse().ok()?;
-    let d: i64 = date[2].parse().ok()?;
-    let h: i64 = time[0].parse().ok()?;
-    let mi: i64 = time[1].parse().ok()?;
-    let sec: i64 = time[2].parse().ok()?;
-    // days from civil（Howard Hinnant 算法）
-    let y = if mo <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (mo + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    let secs = days * 86400 + h * 3600 + mi * 60 + sec - offset_min * 60;
-    Some((secs.max(0)) as u64 * 1000)
+    let offset = if suffix == "Z" || suffix == "z" { 0 } else {
+        if suffix.len() != 6 || !matches!(&suffix[..1], "+" | "-") || &suffix[3..4] != ":" { return None; }
+        if !suffix[1..3].bytes().chain(suffix[4..6].bytes()).all(|b| b.is_ascii_digit()) { return None; }
+        let h = suffix[1..3].parse::<i64>().ok()?; let m = suffix[4..6].parse::<i64>().ok()?;
+        if h > 23 || m > 59 { return None; }
+        (h * 60 + m) * if suffix.starts_with('-') {-1} else {1}
+    };
+    let y = year - if mo <= 2 {1} else {0};
+    let era = y.div_euclid(400); let yoe = y - era * 400;
+    let mp = mo + if mo > 2 {-3} else {9};
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let days = era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+    let timestamp = (days * 86400 + hour * 3600 + minute * 60 + second - offset * 60) * 1000 + millis;
+    u64::try_from(timestamp).ok()
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn connection_times_keep_fractional_timezone_and_reject_invalid_dates() {
+        let utc = parse_rfc3339_ms("2026-11-03T04:00:00.123Z").unwrap();
+        assert_eq!(parse_rfc3339_ms("2026-11-03T12:00:00.123456+08:00"), Some(utc));
+        assert_eq!(parse_rfc3339_ms("2026-11-02T23:00:00.123-05:00"), Some(utc));
+        assert_eq!(parse_rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_rfc3339_ms("2024-02-29T00:00:00Z"), Some(1709164800000));
+        for bad in ["", "broken", "2025-02-29T00:00:00Z", "2026-13-01T00:00:00Z", "2026-11-03T25:00:00Z", "2026-11-03T00:00:00", "2026-11-03T00:00:00.Z"] {
+            assert_eq!(parse_rfc3339_ms(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn missing_connection_metrics_stay_null_and_zero_stays_zero() {
+        let data = compact_connections(r#"{"connections":[{"id":"missing"},{"id":"future","start":"9999-01-01T00:00:00Z"}],"memory":0}"#).unwrap();
+        assert_eq!(data["memory"], 0);
+        assert!(data["upload_total"].is_null());
+        assert!(data["rows"][0]["elapsed_ms"].is_null());
+        assert!(data["rows"][1]["elapsed_ms"].is_null());
+        assert!(compact_connections(r#"{"connections":[]}"#).unwrap()["memory"].is_null());
+    }
+
 
     #[test]
     fn single_log_is_flushed_while_stream_is_quiet_and_unsubscribes() {

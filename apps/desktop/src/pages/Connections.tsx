@@ -19,9 +19,9 @@ export default function ConnectionsPage() {
   const t = useT();
   const [snapshot, setSnapshot] = useState<ConnSnapshot>({
     rows: [],
-    upload_total: 0,
-    download_total: 0,
-    memory: 0,
+    upload_total: null,
+    download_total: null,
+    memory: null,
   });
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
@@ -76,7 +76,7 @@ export default function ConnectionsPage() {
     <div className="cb-connections-page">
       <PageHead
         title={t("conn.title")}
-        meta={`${snapshot.truncated ? `${snapshot.truncated} 条（显示前 ${rows.length}）` : `${rows.length} 条`} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
+        meta={`${snapshot.truncated ? t("conn.rowCountTruncated", {n: snapshot.truncated, shown: rows.length}) : t("conn.rowCount", {n: rows.length})} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
       >
         <div className="cb-seg">
           <ButtonBase
@@ -247,7 +247,7 @@ interface ProcessAgg {
   count: number;
   up: number;
   down: number;
-  maxElapsed: number;
+  maxElapsed: number | null;
 }
 
 function aggregateByProcess(rows: ConnRow[]): ProcessAgg[] {
@@ -259,12 +259,12 @@ function aggregateByProcess(rows: ConnRow[]): ProcessAgg[] {
       count: 0,
       up: 0,
       down: 0,
-      maxElapsed: 0,
+      maxElapsed: null,
     };
     cur.count += 1;
     cur.up += r.up;
     cur.down += r.down;
-    cur.maxElapsed = Math.max(cur.maxElapsed, r.elapsed_ms);
+    if (r.elapsed_ms !== null) cur.maxElapsed = Math.max(cur.maxElapsed ?? 0, r.elapsed_ms);
     map.set(key, cur);
   }
   return Array.from(map.values()).sort(

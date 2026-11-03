@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-03",
+  "frontendTests": {
+    "passed": 19
+  },
+  "backendTests": {
+    "passed": 122,
+    "ignored": 1,
+    "liveCore": "not configured; self-skipping test cases"
+  },
+  "visualViewports": [
+    "1120x734 light zh",
+    "880x620 dark en",
+    "1120x800 connections en"
+  ],
+  "checks": [
+    "No button in connection status card",
+    "No duplicate profile card in sidebar",
+    "Port blur writes=0, explicit apply writes=1",
+    "Filter reset and single empty state",
+    "Cumulative totals restored from core snapshot after navigation",
+    "Four distinct node empty states",
+    "Read error disables takeover and retains true values",
+    "Unrelated settings group remains enabled",
+    "Switches have accessible names",
+    "Unknown duration/memory show dash and long duration uses days"
+  ],
+  "excluded": [
+    "Node latency measurement timestamps",
+    "Installed app network mutation",
+    "Windows native verification"
+  ]
+}

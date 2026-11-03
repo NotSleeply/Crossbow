@@ -1,6 +1,7 @@
+import { createReadGate, parsePort } from "../stateReliability";
 import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useId, useEffect, useRef, useState } from "react";
 import {
   ipc,
   type CoreBinaryInfo,
@@ -13,6 +14,8 @@ import Select from "../components/Select";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
 
+const SettingLabel = createContext<{ label: string; hint?: string } | null>(null);
+
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage({
   section = "network",
@@ -24,6 +27,9 @@ export default function SettingsPage({
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
   const [portDraft, setPortDraft] = useState<string>("");
+  const [portBusy, setPortBusy] = useState(false);
+  const portInFlight = useRef(false);
+  const [portInvalid, setPortInvalid] = useState(false);
   const [theme, setTheme] = useState<UiSettings["theme"]>("system");
   const [autostart, setAutostart] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("…");
@@ -56,48 +62,51 @@ export default function SettingsPage({
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
 
+  const [settingsKnown, setSettingsKnown] = useState<Set<string>>(new Set());
+  const [settingsErrors, setSettingsErrors] = useState<Set<string>>(new Set());
+  const requiredSettings = { network: ["engine", "tun", "binary"], appearance: ["ui"], logs: ["logs"], app: ["ui", "autostart", "updates"] }[section];
+  const settingsReady = requiredSettings.every(key => settingsKnown.has(key) && !settingsErrors.has(key));
+  const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
+  const [savingCount, setSavingCount] = useState(0);
+  const settingsGate = useRef(createReadGate());
+  const dirtyPort = useRef(false);
+  const latestTunEvent = useRef<boolean | null>(null);
   const load = async () => {
-    const e = await ipc.getEngineConfig().catch(() => null);
-    setEngine(e);
-    setPortDraft(e ? String(e.mixed_port) : "");
-    const ui = await ipc.getUiSettings().catch(() => null);
-    if (ui) {
-      setLangState((ui.lang as "zh" | "en") ?? "zh");
-      setLightweight(ui.lightweight_close);
-    }
-    setTheme(
-      await ipc
-        .getUiSettings()
-        .then((u) => u.theme)
-        .catch(() => "system" as const),
-    );
-    setAutostart(await ipc.autostartStatus().catch(() => false));
-    if (e) setFlags(e.flag_emoji);
-    setTun(await ipc.tunStatus().catch(() => null));
-    const lg = await ipc.logsSettings().catch(() => null);
-    if (lg) {
-      setLogsSave(lg.save_enabled);
-      setLogsRetention(lg.retention_days);
-    }
-    const u = await ipc.updateSettingsGet().catch(() => null);
-    if (u) {
-      setAutoCheck(u.auto_check);
-      setAutoDownload(u.auto_download);
-    }
-    ipc
-      .updateStateGet()
-      .then(setUpdateState)
-      .catch((e) => notify.error(e, "update-state-read"));
-    // engineBin 始终跟随目标引擎（失败/成功状态归一）；
-    // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
-    const target = engineTouched.current
-      ? selectedEngineRef.current
-      : ((e?.engine as "mihomo" | "singbox") ?? "mihomo");
-    setSelectedEngine(target);
-    selectedEngineRef.current = target;
-    const info = await ipc.coreBinaryInfoFor(target).catch(() => null);
-    setEngineBin(info);
-    setVersion(info?.version || t("settings.notInstalled"));
+    const revision = settingsGate.current.begin("load");
+    latestTunEvent.current = null;
+    let failed = false;
+    const read = async <T,>(key: string, task: () => Promise<T>, commit: (value: T) => void) => {
+      const fieldRevision = settingsGate.current.begin(key);
+      const current = () => settingsGate.current.current("load", revision) && settingsGate.current.current(key, fieldRevision);
+      try {
+        const value = await task();
+        if (!current()) return;
+        commit(value);
+        setSettingsKnown(old => new Set([...old, key]));
+        setSettingsErrors(old => { const next = new Set(old); next.delete(key); return next; });
+      } catch {
+        if (!current()) return;
+        failed = true;
+        setSettingsErrors(old => new Set([...old, key]));
+      }
+    };
+    await Promise.all([
+      read("engine", ipc.getEngineConfig, e => {
+        setEngine(e); setFlags(e.flag_emoji);
+        if (!dirtyPort.current) setPortDraft(String(e.mixed_port));
+        if (!engineTouched.current) { setSelectedEngine(e.engine); selectedEngineRef.current = e.engine; }
+      }),
+      read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setTheme(ui.theme); }),
+      read("autostart", ipc.autostartStatus, setAutostart),
+      read("tun", ipc.tunStatus, value => setTun({ ...value, enabled: latestTunEvent.current ?? value.enabled })),
+      read("logs", ipc.logsSettings, lg => { setLogsSave(lg.save_enabled); setLogsRetention(lg.retention_days); }),
+      read("updates", ipc.updateSettingsGet, u => { setAutoCheck(u.auto_check); setAutoDownload(u.auto_download); }),
+    ]);
+    await read("binary", () => ipc.coreBinaryInfoFor(selectedEngineRef.current), info => { setEngineBin(info); setVersion(info.version || t("settings.notInstalled")); });
+    if (!settingsGate.current.current("load", revision)) return;
+    if (failed) notify.error(t("settings.readFailed"), "settings-read");
+    else void notify.resolve("settings-read");
+    void ipc.updateStateGet().then(setUpdateState).catch(e => notify.error(e, "update-state-read"));
   };
 
   useEffect(() => {
@@ -116,14 +125,19 @@ export default function SettingsPage({
       });
     return () => {
       alive = false;
+      settingsGate.current.invalidate("load");
     };
   }, []);
 
   useEffect(() => {
-    const un = ipc.onTunStatus((enabled) =>
-      setTun((current) => ({ enabled, ready: current?.ready ?? false })),
-    );
+    let alive = true;
+    const un = ipc.onTunStatus((enabled) => {
+      if (!alive) return;
+      latestTunEvent.current = enabled;
+      setTun(current => ({ enabled, ready: current?.ready ?? false }));
+    });
     return () => {
+      alive = false;
       void un.then((off) => off());
     };
   }, []);
@@ -147,6 +161,7 @@ export default function SettingsPage({
   ) => {
     if (saving.current.has(key)) return;
     saving.current.add(key);
+    setSavingCount(count => count + 1);
     try {
       const result = await notify.run(`setting-${key}`, title, task, success, {
         feedback: "error-only",
@@ -164,6 +179,7 @@ export default function SettingsPage({
       else await load();
     } finally {
       saving.current.delete(key);
+      setSavingCount(count => Math.max(0, count - 1));
     }
   };
 
@@ -198,8 +214,10 @@ export default function SettingsPage({
   };
 
   const applyPort = async () => {
-    const port = Number(portDraft);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    if (portInFlight.current || !engine) return;
+    const port = parsePort(portDraft);
+    if (port === null) {
+      setPortInvalid(true);
       notify.error(
         t("settings.invalidPort"),
         "setting-port",
@@ -208,20 +226,25 @@ export default function SettingsPage({
       return;
     }
     if (port === engine?.mixed_port) return;
-    await saveSetting(
+    portInFlight.current = true; setPortBusy(true); setPortInvalid(false);
+    try { await saveSetting(
       "port",
       t("settings.port"),
       () => ipc.setMixedPort(port),
       () => {
         setEngine((old) => (old ? { ...old, mixed_port: port } : old));
+        dirtyPort.current = false;
       },
       `${t("settings.port")}: ${port}`,
-    );
+    ); } finally { portInFlight.current = false; setPortBusy(false); }
   };
 
   return (
     <div className={`cb-settings-page cb-settings-${section}`}>
-      <PageHead title={t("settings.title")} />
+      <PageHead title={t("settings.title")} meta={!settingsReady ? t(settingsReadFailed ? "settings.readFailed" : "home.statePendingHint") : undefined}>
+        {settingsReadFailed && <Button onClick={() => void load()}>{t("home.retryState")}</Button>}
+      </PageHead>
+      <fieldset className="cb-settings-fields" disabled={!settingsReady || savingCount > 0} aria-busy={savingCount > 0 || (!settingsReady && !settingsReadFailed)}>
 
       {section === "network" && (
         <Group title={t("settings.coreSection")}>
@@ -311,7 +334,7 @@ export default function SettingsPage({
                     );
                   }}
                 >
-                  启用
+                  {t("settings.activateEngine")}
                 </Button>
               </Row>
             )
@@ -327,13 +350,19 @@ export default function SettingsPage({
             </span>
           </Row>
           <Row label={t("settings.port")} hint={t("settings.portHint")}>
-            <input
-              value={portDraft}
-              onChange={(e) => setPortDraft(e.target.value)}
-              onBlur={applyPort}
-              onKeyDown={(e) => e.key === "Enter" && applyPort()}
-              className="cb-input cb-selectable w-24 px-2 py-1"
-            />
+            <div className="cb-port-editor">
+              <div className="flex items-center gap-2">
+                <input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
+                  value={portDraft} onChange={e => { dirtyPort.current = true; setPortDraft(e.target.value); setPortInvalid(false); }}
+                  aria-invalid={portInvalid} aria-describedby="mixed-port-help"
+                  disabled={portBusy || !engine}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void applyPort(); } }}
+                  className="cb-input cb-selectable w-24 px-2 py-1" />
+                <Button size="small" loading={portBusy} disabled={portBusy || !engine || portDraft === String(engine.mixed_port)} onClick={() => void applyPort()}>{t("settings.applyPort")}</Button>
+                {engine && portDraft !== String(engine.mixed_port) && <Button size="small" disabled={portBusy} onClick={() => { dirtyPort.current = false; setPortDraft(String(engine.mixed_port)); setPortInvalid(false); }}>{t("settings.cancelPort")}</Button>}
+              </div>
+              <p id="mixed-port-help" className="cb-control-note" role={portInvalid ? "status" : undefined}>{t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint")}</p>
+            </div>
           </Row>
           <Row label={t("settings.flags")} hint={t("settings.flagsHint")}>
             <Switch
@@ -662,6 +691,7 @@ export default function SettingsPage({
           </Row>
         </Group>
       )}
+      </fieldset>
     </div>
   );
 }
@@ -696,7 +726,10 @@ function Row({
   hint?: string;
   children?: React.ReactNode;
 }) {
+  const labelId = useId();
+  const hintId = useId();
   return (
+    <SettingLabel.Provider value={{ label: labelId, hint: hint ? hintId : undefined }}>
     <div
       className="cb-setting-row flex items-center justify-between"
       role="group"
@@ -704,9 +737,10 @@ function Row({
       aria-label={label}
     >
       <div>
-        <div className="text-sm">{label}</div>
+        <div id={labelId} className="text-sm">{label}</div>
         {hint && (
           <div
+            id={hintId}
             className="cb-setting-hint mt-0.5 text-xs"
             title={hint}
             style={{ color: "var(--cb-text-dim)" }}
@@ -717,6 +751,7 @@ function Row({
       </div>
       {children}
     </div>
+    </SettingLabel.Provider>
   );
 }
 
@@ -729,9 +764,12 @@ function Switch({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
+  const field = useContext(SettingLabel);
   return (
     <ButtonBase
       role="switch"
+      aria-labelledby={field?.label}
+      aria-describedby={field?.hint}
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}

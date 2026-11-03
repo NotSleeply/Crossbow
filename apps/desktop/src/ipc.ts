@@ -83,14 +83,14 @@ export interface ConnRow {
   network: string;
   kind: string;
   process: string;
-  elapsed_ms: number;
+  elapsed_ms: number | null;
 }
 
 export interface ConnSnapshot {
   rows: ConnRow[];
-  upload_total: number;
-  download_total: number;
-  memory: number;
+  upload_total: number | null;
+  download_total: number | null;
+  memory: number | null;
   truncated?: number;
 }
 

@@ -1,7 +1,7 @@
 import { ButtonBase, Button } from "./components/Button";
 import { notify } from "./notifications/service";
 import { useEffect, useState } from "react";
-import HomePage from "./pages/Home";
+import HomePage, { coreText } from "./pages/Home";
 import ProxiesPage from "./pages/Proxies";
 import ProfilesPage from "./pages/Profiles";
 import ConnectionsPage from "./pages/Connections";
@@ -21,7 +21,7 @@ export function dragWindow(e: React.MouseEvent) {
     getCurrentWindow().startDragging();
   }
 }
-import { ipc, type UiSettings, type PlatformCapabilities } from "./ipc";
+import { ipc, type UiSettings, type PlatformCapabilities, type CoreStatus } from "./ipc";
 import {
   NotificationHistory,
   useNotificationNavigation,
@@ -37,8 +37,7 @@ const PAGES = [
   "settings",
 ] as const;
 type PageId = (typeof PAGES)[number];
-const isPage = (value: string): value is PageId =>
-  PAGES.includes(value as PageId);
+const isPage = (value: string): value is PageId => PAGES.includes(value as PageId);
 
 /// 从版本串提取短版本：mihomo「… v1.19.32 …」→ v1.19.32；sing-box「sing-box version 1.14.2」→ 1.14.2
 function shortVersion(version: string | undefined): string {
@@ -59,8 +58,7 @@ function shortVersion(version: string | undefined): string {
 function applyTheme(theme: UiSettings["theme"]) {
   const dark =
     theme === "dark" ||
-    (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
 }
 
@@ -69,24 +67,27 @@ export default function App() {
   const isWindows = navigator.userAgent.includes("Windows");
   const isMacos = navigator.userAgent.includes("Macintosh");
   const [page, setPage] = useState<PageId>("home");
-  const [settingSection, setSettingSection] = useState<
-    "network" | "appearance" | "logs" | "app"
-  >("network");
-  const [configTab, setConfigTab] = useState<"sources" | "overrides">(
-    "sources",
+  const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
+    "network",
   );
+  const [configTab, setConfigTab] = useState<"sources" | "overrides">("sources");
   const [profileName, setProfileName] = useState("");
   const [appVersion, setAppVersion] = useState("");
-  const [coreRunning, setCoreRunning] = useState(false);
+  const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
   const [coreLabel, setCoreLabel] = useState<string>("");
   const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null);
 
   useEffect(() => {
     let active = true;
-    ipc.platformCapabilities()
-      .then((value) => { if (active) setCapabilities(value); })
+    ipc
+      .platformCapabilities()
+      .then((value) => {
+        if (active) setCapabilities(value);
+      })
       .catch((error) => notify.error(error, "platform-capabilities"));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -94,13 +95,12 @@ export default function App() {
     let receivedStatus = false;
     const un = ipc.onCoreStatus((status) => {
       receivedStatus = true;
-      if (active) setCoreRunning(status.state === "Running");
+      if (active) setCoreStatus(status);
     });
     void un
       .then(() => ipc.coreStatus())
       .then((status) => {
-        if (active && !receivedStatus)
-          setCoreRunning(status.state === "Running");
+        if (active && !receivedStatus) setCoreStatus(status);
       })
       .catch(() => {});
     void ipc
@@ -119,10 +119,7 @@ export default function App() {
     let alive = true;
     void Promise.all([ipc.listProfiles(), ipc.activeProfileId()])
       .then(([profiles, id]) => {
-        if (alive)
-          setProfileName(
-            profiles.find((profile) => profile.id === id)?.name ?? "",
-          );
+        if (alive) setProfileName(profiles.find((profile) => profile.id === id)?.name ?? "");
       })
       .catch(() => {});
     return () => {
@@ -215,9 +212,7 @@ export default function App() {
     }
   });
 
-  const workspace = ["connections", "logs", "diagnostics"].includes(page)
-    ? "monitor"
-    : page;
+  const workspace = ["connections", "logs", "diagnostics"].includes(page) ? "monitor" : page;
   const go = (next: PageId) => {
     setPage(next);
   };
@@ -232,11 +227,7 @@ export default function App() {
         />
       )}
       <header className="cb-global-nav">
-        <ButtonBase
-          className="cb-wordmark"
-          onClick={() => go("home")}
-          aria-label="Crossbow"
-        >
+        <ButtonBase className="cb-wordmark" onClick={() => go("home")} aria-label="Crossbow">
           <span
             className="cb-logo-glyph"
             aria-hidden="true"
@@ -268,7 +259,8 @@ export default function App() {
           ))}
         </nav>
         <div className="cb-global-tools">
-          <Button context="toolbar"
+          <Button
+            context="toolbar"
             className="cb-source-pick"
             title={profileName || t("studio.sources")}
             onClick={() => {
@@ -279,7 +271,11 @@ export default function App() {
             <span>{profileName || t("studio.sources")}</span>
             <span aria-hidden="true">›</span>
           </Button>
-          <Button context="toolbar" className="cb-diagnostics-button" onClick={() => go("diagnostics")}>
+          <Button
+            context="toolbar"
+            className="cb-diagnostics-button"
+            onClick={() => go("diagnostics")}
+          >
             <Icon name="pulse" />
             {t("nav.diagnostics")}
           </Button>
@@ -359,9 +355,10 @@ export default function App() {
       </main>
       <footer className="cb-system-foot">
         <span>
-          <i className={`cb-dot ${coreRunning ? "ok" : "idle"}`} />
-          {coreRunning ? t("home.coreRunning") : t("home.coreStopped")} ·{" "}
-          {coreLabel || t("settings.notInstalled")}
+          <i
+            className={`cb-dot ${coreStatus?.state === "Running" ? "ok" : coreStatus?.state === "Crashed" ? "bad" : "idle"}`}
+          />
+          {coreStatus ? coreText(t, coreStatus) : t("home.statePending")} · {coreLabel || "—"}
         </span>
         <span>Crossbow {appVersion && `v${appVersion}`}</span>
       </footer>
