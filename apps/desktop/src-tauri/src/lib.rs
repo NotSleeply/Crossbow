@@ -70,6 +70,8 @@ pub struct AppState {
     /// start_core（连接开关 vs 引擎切换）会交错出「A 换好的核被 B 换走，
     /// A 拿 B 的管理器启动 A 的配置」——即 mihomo 进程配 sing-box JSON。
     core_op: Mutex<()>,
+    /// 页面与托盘的选节点/恢复自动事务串行，避免解除固定与选择互相覆盖。
+    proxy_op: Mutex<()>,
     sysproxy: SysProxyManager,
     /// 内核运行模式：direct / rule / global。
     mode: Mutex<String>,
@@ -1733,8 +1735,28 @@ fn proxies_snapshot(state: State<AppState>) -> Result<Vec<mihomo_api::GroupView>
 }
 
 #[tauri::command]
-async fn select_proxy(state: State<'_, AppState>, group: String, name: String) -> Result<(), String> {
-    controller_client(&state)?.select_proxy(&group, &name)
+async fn select_proxy(app: AppHandle, group: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        select_proxy_inner(&app.state::<AppState>(), &group, &name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn select_proxy_inner(state: &AppState, group: &str, name: &str) -> Result<(), String> {
+    let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
+    controller_client(state)?.select_proxy(group, name)
+}
+
+#[tauri::command]
+async fn reset_proxy_selection(app: AppHandle, group: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
+        controller_client(&state)?.reset_proxy_selection(&group)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -3436,8 +3458,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 let h = app.clone();
                 let name = name.to_string();
                 std::thread::spawn(move || {
-                    let result = controller_client(&h.state::<AppState>())
-                        .and_then(|c| c.select_proxy(&group, &name));
+                    let result = select_proxy_inner(&h.state::<AppState>(), &group, &name);
                     if let Err(error) = result {
                         show_tray_toggle_error(&h, "tray-node", "tray.node", error);
                     } else {
@@ -3649,6 +3670,7 @@ pub fn run() {
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 core_op: Mutex::new(()),
+                proxy_op: Mutex::new(()),
                 sysproxy,
                 mode: Mutex::new("rule".to_string()),
                 tray: Mutex::new(None),
@@ -3836,6 +3858,7 @@ pub fn run() {
             close_connection,
             proxies_snapshot,
             select_proxy,
+            reset_proxy_selection,
             test_group_delay,
             test_node_delay,
         ])

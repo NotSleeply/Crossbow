@@ -94,22 +94,29 @@ export default function ProxiesPage() {
   const batchInFlight = useRef(false);
   const singleInFlight = useRef(new Set<string>());
   const [selecting, setSelecting] = useState<string | null>(null);
+  const selectionInFlight = useRef(false);
+  const snapshotRevision = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
+    const revision = ++snapshotRevision.current;
     try {
-      setGroups(await ipc.proxiesSnapshot());
+      const snapshot = await ipc.proxiesSnapshot();
+      if (revision === snapshotRevision.current) setGroups(snapshot);
     } catch (e) {
-      setGroups([]);
-      notify.error(e, "proxies-load");
+      if (!silent && revision === snapshotRevision.current) notify.error(e, "proxies-load");
     }
   }, []);
 
   useEffect(() => {
     load();
     const un = ipc.onCoreStatus((s) => {
-      if (s.state === "Running") load();
+      if (s.state === "Running" && !selectionInFlight.current) load();
     });
-    return () => void un.then((f) => f());
+    // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
+    const timer = window.setInterval(() => {
+      if (!document.hidden && !selectionInFlight.current) void load(true);
+    }, 5000);
+    return () => { window.clearInterval(timer); ++snapshotRevision.current; void un.then((f) => f()); };
   }, [load]);
 
   const testGroup = async (name: string) => {
@@ -230,26 +237,45 @@ export default function ProxiesPage() {
   };
 
   const select = async (group: string, node: string) => {
+    if (selectionInFlight.current) return;
+    selectionInFlight.current = true;
+    ++snapshotRevision.current;
     setSelecting(`${group}:${node}`);
     try {
-      await ipc.selectProxy(group, node);
-      setGroups((gs) =>
-        gs.map((g) => (g.name === group ? { ...g, now: node } : g)),
-      );
-    } catch (e) {
-      notify.error(e, `proxy-select-${group}`);
-      load();
+      await notify.run(`proxy-select-${group}`, t("proxies.selectNode"),
+        () => ipc.selectProxy(group, node), undefined,
+        { feedback: "error-only", titleKey: "proxies.selectNode" });
     } finally {
+      await load();
+      selectionInFlight.current = false;
+      setSelecting(null);
+    }
+  };
+
+  const restoreAutomatic = async (group: string) => {
+    if (selectionInFlight.current) return;
+    selectionInFlight.current = true;
+    ++snapshotRevision.current;
+    setSelecting(`${group}:restore`);
+    try {
+      await notify.run(`proxy-restore-${group}`, t("proxies.restoreAutomatic"),
+        () => ipc.resetProxySelection(group), undefined,
+        { feedback: "error-only", titleKey: "proxies.restoreAutomatic" });
+    } finally {
+      await load();
+      selectionInFlight.current = false;
       setSelecting(null);
     }
   };
 
   const selectedGroup =
     groups.find((group) => group.name === groupName) ?? groups[0];
+  const automaticGroup = selectedGroup?.kind === "URLTest" ? selectedGroup
+    : groups.find((group) => group.name === selectedGroup?.now && group.kind === "URLTest");
   return (
     <div className="cb-proxies-page cb-node-toolbar-page">
       {groups.length === 0 && <PageHead title={t("studio.nodes")} meta={t("studio.nodesHint")}>
-        <Button onClick={load}>
+        <Button onClick={() => void load()}>
           <Icon name="refresh" />
           {t("proxies.refresh")}
         </Button>
@@ -276,7 +302,7 @@ export default function ProxiesPage() {
                   onClick={() => setGroupName(group.name)}
                 >
                   <span><NodeName name={group.name} /></span>
-                  <small>{group.kind}</small>
+                  <small>{group.kind === "URLTest" && group.fixed ? t("proxies.manuallyFixed") : group.kind}</small>
                 </ButtonBase>
               ))}
             </div>
@@ -286,11 +312,13 @@ export default function ProxiesPage() {
               <GroupCard
                 key={selectedGroup.name}
                 group={selectedGroup}
+                automaticGroup={automaticGroup}
                 testing={testing === selectedGroup.name}
                 busy={testing !== null}
                 testingNodes={testingNodes}
                 selecting={selecting}
-                onRefresh={load}
+                onRefresh={() => void load()}
+                onRestoreAutomatic={() => automaticGroup && restoreAutomatic(automaticGroup.name)}
                 onTest={() => testGroup(selectedGroup.name)}
                 onTestNode={(node) => testNode(selectedGroup.name, node)}
                 onSelect={(node) => select(selectedGroup.name, node)}
@@ -310,6 +338,7 @@ export default function ProxiesPage() {
 
 function GroupCard({
   group,
+  automaticGroup,
   testing,
   busy,
   testingNodes,
@@ -318,8 +347,10 @@ function GroupCard({
   onRefresh,
   onTestNode,
   onSelect,
+  onRestoreAutomatic,
 }: {
   group: GroupView;
+  automaticGroup?: GroupView;
   testing: boolean;
   busy: boolean;
   testingNodes: Set<string>;
@@ -328,6 +359,7 @@ function GroupCard({
   onRefresh: () => void;
   onTestNode: (node: string) => void;
   onSelect: (node: string) => void;
+  onRestoreAutomatic: () => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
@@ -409,12 +441,24 @@ function GroupCard({
             <summary>{t("proxies.subscriptionInfo")}</summary>
             <div className="cb-node-info-panel">{infoNodes.map((node) => <p key={node.name}><NodeName name={node.name} /></p>)}</div>
           </details>}
-          <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy}><Icon name="refresh" /></Button>
+          <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
           <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy} loading={testing}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
           </Button>
         </div>
       </div>
+      {automaticGroup && <div className="cb-node-automatic" data-fixed={!!automaticGroup.fixed} role="status">
+        <div className="cb-node-automatic-copy">
+          <strong>{t(automaticGroup.fixed ? "proxies.manuallyFixed" : "proxies.automaticSelection")}</strong>
+          <span>{automaticGroup.fixed
+            ? <><NodeName name={automaticGroup.fixed} /> · {t("proxies.fixedHint")}</>
+            : t("proxies.automaticHint")}</span>
+        </div>
+        {automaticGroup.fixed && <Button size="small" onClick={onRestoreAutomatic}
+          disabled={selecting !== null} loading={selecting === `${automaticGroup.name}:restore`}>
+          {t("proxies.restoreAutomatic")}
+        </Button>}
+      </div>}
       {realNodes.length > 0 && <div className="cb-node-filters">
         <label className="cb-node-search"><Icon name="search" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("proxies.search")} aria-label={t("proxies.search")} /></label>
         <Select className="cb-node-filter-select" size="compact" label={t("proxies.regionFilter")} value={region} onChange={setRegion}
@@ -445,17 +489,17 @@ function GroupCard({
               key={n.name}
               role="button"
               tabIndex={0}
-              onClick={() => onSelect(n.name)}
+              onClick={() => { if (selecting === null) onSelect(n.name); }}
               onKeyDown={(e) => {
                 if (
                   e.target === e.currentTarget &&
                   (e.key === "Enter" || e.key === " ")
                 ) {
                   e.preventDefault();
-                  onSelect(n.name);
+                  if (selecting === null) onSelect(n.name);
                 }
               }}
-              aria-disabled={selecting === `${group.name}:${n.name}`}
+              aria-disabled={selecting !== null}
               className={`cb-node-card group relative rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
                 selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
               }`}
@@ -465,7 +509,7 @@ function GroupCard({
                   ? "var(--cb-accent-soft)"
                   : "var(--cb-node-surface)",
               }}
-              title={n.kind}
+              title={group.kind === "URLTest" ? t("proxies.pinHint") : n.kind}
             >
               {sel && !nodeTesting && (
                 <span className="cb-node-selected">

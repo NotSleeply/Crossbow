@@ -27,6 +27,8 @@ pub struct GroupView {
     pub kind: String,
     /// 当前选中节点（Selector/URLTest 等）。
     pub now: Option<String>,
+    /// URLTest 手动固定节点；空值表示由内核自动选择。
+    pub fixed: Option<String>,
     pub nodes: Vec<NodeView>,
 }
 
@@ -211,6 +213,11 @@ impl Controller {
                 continue;
             }
             let now = node.get("now").and_then(|n| n.as_str()).map(String::from);
+            let fixed = node
+                .get("fixed")
+                .and_then(|n| n.as_str())
+                .filter(|n| !n.is_empty())
+                .map(String::from);
             let nodes = members
                 .iter()
                 .filter_map(|m| m.as_str())
@@ -243,6 +250,7 @@ impl Controller {
                 name: name.clone(),
                 kind,
                 now,
+                fixed,
                 nodes,
             });
         }
@@ -255,8 +263,24 @@ impl Controller {
         Ok(groups)
     }
 
-    /// 选择组内节点（Selector）。组名/节点名按路径段自动百分号编码。
+    /// 所有页面/托盘选择共用此入口。切回 URLTest 子组时先解除旧固定，
+    /// 在 URLTest 本身选择成员则保留内核的手动固定语义。
     pub fn select_proxy(&self, group: &str, name: &str) -> Result<(), String> {
+        let source = self.get_json(&build_path(&["/proxies", group]))?;
+        if !source["all"]
+            .as_array()
+            .is_some_and(|members| members.iter().any(|n| n.as_str() == Some(name)))
+        {
+            return Err("node is not a member of this group".into());
+        }
+        if source["type"].as_str() == Some("Selector") {
+            let target = self.get_json(&build_path(&["/proxies", name]))?;
+            if target["type"].as_str() == Some("URLTest")
+                && target["fixed"].as_str().is_some_and(|n| !n.is_empty())
+            {
+                self.reset_proxy_selection(name)?;
+            }
+        }
         let path = build_path(&["/proxies", group]);
         let body =
             serde_json::to_vec(&serde_json::json!({ "name": name })).map_err(|e| e.to_string())?;
@@ -269,6 +293,23 @@ impl Controller {
         } else {
             Err(format!("select {group}: HTTP {}", resp.status()))
         }
+    }
+
+    /// mihomo DELETE 清除固定（同时清理内核缓存）；不能用 PUT "" 代替。
+    /// 非自动组、未提供 fixed 的兼容内核不发送 DELETE。
+    pub fn reset_proxy_selection(&self, group: &str) -> Result<(), String> {
+        let path = build_path(&["/proxies", group]);
+        let current = self.get_json(&path)?;
+        if current["type"].as_str() != Some("URLTest") || !current["fixed"].is_string() {
+            return Err("this group does not support restoring automatic selection".into());
+        }
+        if current["fixed"].as_str() == Some("") {
+            return Ok(());
+        }
+        self.req("DELETE", &path)
+            .call()
+            .map_err(|e| format!("restore automatic selection: {e}"))?;
+        Ok(())
     }
 
     /// 组测速：mihomo 内部并发探测组内全部节点，返回 {节点: 延迟ms}（失败者缺席）。
@@ -441,6 +482,299 @@ fn build_path(segments: &[&str]) -> String {
 pub(crate) mod tests {
     use super::*;
 
+    /// A scripted controller checks the actual HTTP contract and request order.
+    fn scripted_controller(
+        steps: Vec<(&str, String, u16, String)>,
+    ) -> (Controller, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        listener.set_nonblocking(true).unwrap();
+        let steps: Vec<_> = steps
+            .into_iter()
+            .map(|(m, p, s, b)| (m.to_owned(), p, s, b))
+            .collect();
+        let server = std::thread::spawn(move || {
+            for (method, path, status, body) in steps {
+                let deadline = std::time::Instant::now() + Duration::from_secs(8);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::WouldBlock
+                                && std::time::Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(Duration::from_millis(5))
+                        }
+                        Err(e) => panic!("missing {method} {path}: {e}"),
+                    }
+                };
+                // macOS/BSD 的 accept 会让连接继承 listener 的 O_NONBLOCK，
+                // 不清掉的话数据未到达时 read 立即返回 WouldBlock（Linux 会清）。
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 1024];
+                loop {
+                    let n = stream.read(&mut buf).unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&buf[..n]);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                        let length = headers
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length: "))
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .unwrap_or(0);
+                        if request.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(
+                    request.starts_with(&format!("{method} {path} HTTP/1.1")),
+                    "{request}"
+                );
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer test-secret"));
+                if method == "PUT" {
+                    assert!(serde_json::from_str::<serde_json::Value>(
+                        request.split("\r\n\r\n").nth(1).unwrap()
+                    )
+                    .unwrap()["name"]
+                        .is_string());
+                }
+                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        (
+            Controller {
+                port,
+                secret: "test-secret".into(),
+            },
+            server,
+        )
+    }
+
+    #[test]
+    fn selecting_automatic_child_unpins_before_selecting_parent() {
+        let parent = build_path(&["/proxies", "节点选择"]);
+        let child = build_path(&["/proxies", "♻️ 自动选择"]);
+        let source = r#"{"type":"Selector","all":["♻️ 自动选择"]}"#.to_string();
+        let target = r#"{"type":"URLTest","fixed":"JP"}"#.to_string();
+        let (c, server) = scripted_controller(vec![
+            ("GET", parent.clone(), 200, source),
+            ("GET", child.clone(), 200, target.clone()),
+            ("GET", child.clone(), 200, target),
+            ("DELETE", child, 204, "".into()),
+            ("PUT", parent, 204, "".into()),
+        ]);
+        c.select_proxy("节点选择", "♻️ 自动选择").unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn selecting_automatic_child_propagates_reset_failure() {
+        let (c, server) = scripted_controller(vec![
+            (
+                "GET",
+                "/proxies/main".into(),
+                200,
+                r#"{"type":"Selector","all":["auto"]}"#.into(),
+            ),
+            (
+                "GET",
+                "/proxies/auto".into(),
+                200,
+                r#"{"type":"URLTest","fixed":"JP"}"#.into(),
+            ),
+            (
+                "GET",
+                "/proxies/auto".into(),
+                200,
+                r#"{"type":"URLTest","fixed":"JP"}"#.into(),
+            ),
+            ("DELETE", "/proxies/auto".into(), 500, "{}".into()),
+        ]);
+        assert!(c
+            .select_proxy("main", "auto")
+            .unwrap_err()
+            .contains("restore automatic selection"));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn automatic_child_without_fixed_support_is_not_deleted() {
+        // sing-box Clash API does not expose mihomo's fixed contract.
+        let (c, server) = scripted_controller(vec![
+            (
+                "GET",
+                "/proxies/main".into(),
+                200,
+                r#"{"type":"Selector","all":["auto"]}"#.into(),
+            ),
+            (
+                "GET",
+                "/proxies/auto".into(),
+                200,
+                r#"{"type":"URLTest"}"#.into(),
+            ),
+            ("PUT", "/proxies/main".into(), 204, "".into()),
+        ]);
+        c.select_proxy("main", "auto").unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn pinning_inside_urltest_does_not_restore_automatic() {
+        let (c, server) = scripted_controller(vec![
+            (
+                "GET",
+                "/proxies/auto".into(),
+                200,
+                r#"{"type":"URLTest","all":["JP"],"fixed":""}"#.into(),
+            ),
+            ("PUT", "/proxies/auto".into(), 204, "".into()),
+        ]);
+        c.select_proxy("auto", "JP").unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reset_is_idempotent_and_rejects_unsupported_groups() {
+        for (raw, ok) in [
+            (r#"{"type":"URLTest","fixed":""}"#, true),
+            (r#"{"type":"URLTest"}"#, false),
+            (r#"{"type":"Selector","fixed":"JP"}"#, false),
+        ] {
+            let (c, server) =
+                scripted_controller(vec![("GET", "/proxies/auto".into(), 200, raw.into())]);
+            assert_eq!(c.reset_proxy_selection("auto").is_ok(), ok);
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn snapshot_preserves_fixed_separately_from_current_outbound() {
+        let (c, server) = scripted_controller(vec![(
+            "GET",
+            "/proxies".into(),
+            200,
+            r#"{"proxies":{
+            "auto":{"type":"URLTest","all":["JP","SG"],"now":"SG","fixed":"JP"},
+            "free":{"type":"URLTest","all":["JP"],"now":"JP","fixed":""},
+            "JP":{"type":"Direct"},"SG":{"type":"Direct"}}}"#
+                .into(),
+        )]);
+        let groups = c.groups().unwrap();
+        let auto = groups.iter().find(|g| g.name == "auto").unwrap();
+        assert_eq!(auto.now.as_deref(), Some("SG"));
+        assert_eq!(auto.fixed.as_deref(), Some("JP"));
+        assert!(groups
+            .iter()
+            .find(|g| g.name == "free")
+            .unwrap()
+            .fixed
+            .is_none());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn real_core_urltest_pin_and_restore() {
+        let _serial = crate::core_manager::tests::REAL_CORE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = crate::core_manager::CoreManager::new(bin.into(), dir.path().to_path_buf());
+        mgr.set_options(crate::core_manager::CoreOptions {
+            ensure_geo_files: false,
+            ..Default::default()
+        });
+        let config = "proxies:\n  - {name: OUT-DIRECT, type: direct}\nproxy-groups:\n  - {name: main, type: select, proxies: [auto, OUT-DIRECT]}\n  - {name: auto, type: url-test, proxies: [OUT-DIRECT], url: 'http://127.0.0.1:9', interval: 0}\nrules:\n  - MATCH,DIRECT\n";
+        mgr.start(
+            config,
+            &crossbow_core::RuntimeConfig {
+                mixed_port: crate::core_manager::tests::tests_free_port(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for _ in 0..100 {
+            if mgr.status() == crate::core_manager::CoreStatus::Running {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let (port, secret) = mgr.controller().unwrap();
+        let c = Controller { port, secret };
+        c.select_proxy("auto", "OUT-DIRECT").unwrap();
+        assert_eq!(
+            c.groups()
+                .unwrap()
+                .iter()
+                .find(|g| g.name == "auto")
+                .unwrap()
+                .fixed
+                .as_deref(),
+            Some("OUT-DIRECT")
+        );
+        c.select_proxy("main", "auto").unwrap();
+        assert!(c
+            .groups()
+            .unwrap()
+            .iter()
+            .find(|g| g.name == "auto")
+            .unwrap()
+            .fixed
+            .is_none());
+        c.select_proxy("auto", "OUT-DIRECT").unwrap();
+        c.reset_proxy_selection("auto").unwrap();
+        c.reset_proxy_selection("auto").unwrap();
+        assert!(c
+            .groups()
+            .unwrap()
+            .iter()
+            .find(|g| g.name == "auto")
+            .unwrap()
+            .fixed
+            .is_none());
+        mgr.stop();
+        // DELETE must clear persistent selection too; a restart must not pin it again.
+        mgr.start(
+            config,
+            &crossbow_core::RuntimeConfig {
+                mixed_port: crate::core_manager::tests::tests_free_port(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for _ in 0..100 {
+            if mgr.status() == crate::core_manager::CoreStatus::Running {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let (port, secret) = mgr.controller().unwrap();
+        let restarted = Controller { port, secret };
+        assert!(restarted
+            .groups()
+            .unwrap()
+            .iter()
+            .find(|g| g.name == "auto")
+            .unwrap()
+            .fixed
+            .is_none());
+        mgr.stop();
+    }
+
     #[test]
     fn tun_device_requires_enabled_live_interface() {
         use std::io::{Read, Write};
@@ -477,6 +811,9 @@ pub(crate) mod tests {
             let server = std::thread::spawn(move || {
                 for _ in 0..2 {
                 let (mut stream, _) = listener.accept().unwrap();
+                // macOS/BSD 的 accept 会让连接继承 listener 的 O_NONBLOCK，
+                // 不清掉的话数据未到达时 read 立即返回 WouldBlock（Linux 会清）。
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();

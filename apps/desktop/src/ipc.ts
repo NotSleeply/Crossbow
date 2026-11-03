@@ -136,6 +136,7 @@ export interface GroupView {
   name: string;
   kind: string;
   now: string | null;
+  fixed?: string | null;
   nodes: NodeView[];
 }
 
@@ -299,6 +300,8 @@ export const ipc = {
   proxiesSnapshot: () => invoke<GroupView[]>("proxies_snapshot"),
   selectProxy: (group: string, name: string) =>
     invoke<void>("select_proxy", { group, name }),
+  resetProxySelection: (group: string) =>
+    invoke<void>("reset_proxy_selection", { group }),
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
