@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-03",
+  "frontend": {
+    "passed": 22
+  },
+  "core": {
+    "passed": 50
+  },
+  "desktop": {
+    "passed": 128,
+    "ignored": 1
+  },
+  "ui": [
+    "real component diagnosis events represented by isolated mock",
+    "long process path copied and clipboard restored",
+    "explicit paused following",
+    "recovery confirmation and mock restore",
+    "notification focused mixed-port",
+    "site HTTP403 explanation/time/outbound"
+  ],
+  "nativeNotVerified": [
+    "installed proxy",
+    "actual snapshot restore",
+    "native export save dialog"
+  ]
+}
