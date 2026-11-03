@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | 桌面十一项界面整理、节点密度与共享控件 | v01 | 已实现，待 PR 评审 | [规格](2026-11-04-layout/v01/SPEC.md) · [概览](2026-11-04-layout/v01/previews/overview-light-1440.png) · [节点](2026-11-04-layout/v01/previews/nodes-list-light-1120.png) · [源稿](2026-11-04-layout/v01/source.zip) | #275 / 前置 #276 |
 | 2026-11-03 | 诊断、连接、日志、订阅与恢复工作流 | v01 | 已实现，待 PR 评审 | [规格](2026-11-03-workflows/v01/SPEC.md) · [诊断](2026-11-03-workflows/v01/previews/diagnosis.jpg) · [恢复](2026-11-03-workflows/v01/previews/recovery-confirm.jpg) · [源稿](2026-11-03-workflows/v01/source.zip) | #274 |
 | 2026-11-03 | 桌面基础交互九项修复与连接状态卡片 | v01 | 已实现，待 PR 评审 | [规格](2026-11-03-ui-reliability/v01/SPEC.md) · [浅色](2026-11-03-ui-reliability/v01/previews/overview-light.jpg) · [深色英文](2026-11-03-ui-reliability/v01/previews/overview-dark-880.jpg) · [源稿](2026-11-03-ui-reliability/v01/source.zip) | #271 |
 | 2026-11-02 | 官网 V2：紧凑导航、App 明暗主题与中英文 | v02 | 已实现，待 PR 评审 | [规格](2026-11-02-website-polish/v02/SPEC.md) · [浅色](2026-11-02-website-polish/v02/previews/home-zh-light.jpg) · [深色英文](2026-11-02-website-polish/v02/previews/home-en-dark.jpg) · [源稿/动效](2026-11-02-website-polish/v02/source.zip) | #261 / #260 |
