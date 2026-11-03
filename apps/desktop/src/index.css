@@ -2803,3 +2803,10 @@ textarea:focus-visible,
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
 }
+
+/* Health dimensions describe different facts: core, configured takeover and a scoped probe. */
+.cb-health-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; margin-top:12px; font-size:11px; }
+.cb-health-summary div { min-width:0; }
+.cb-health-summary dt { color:var(--cb-text-dim); font-size:10px; }
+.cb-health-summary dd { margin:2px 0 0; color:var(--cb-text); }
+@media(max-height:740px) { .cb-health-summary { margin-top:6px; gap:4px 12px; } }

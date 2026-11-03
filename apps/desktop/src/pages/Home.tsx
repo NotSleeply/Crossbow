@@ -13,6 +13,7 @@ import {
   type SysProxyStatus,
   type UpdateState,
   type PlatformCapabilities,
+  type SiteResult,
 } from "../ipc";
 import { fmtBytes } from "../format";
 import { useT } from "../i18n";
@@ -43,6 +44,9 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
+  const [networkBusy, setNetworkBusy] = useState(false);
+  const networkInFlight = useRef(false);
+  const [networkResult, setNetworkResult] = useState<{ context: string; result: SiteResult } | null>(null);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
   const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
@@ -335,6 +339,27 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             ? t("studio.proxyHint")
             : t("studio.enableHint");
 
+  const networkContext = `${core.state}:${activeId}:${mode}:${outbound?.node}:${proxy.enabled}:${tun.enabled}`;
+  const result = networkResult?.context === networkContext ? networkResult.result : null;
+  const checkNetwork = async () => {
+    if (networkInFlight.current || core.state !== "Running") return;
+    networkInFlight.current = true; setNetworkBusy(true);
+    const context = networkContext;
+    try {
+      const result = await ipc.testSite("github");
+      if (mounted.current) setNetworkResult({ context, result });
+    } catch (error) {
+      if (mounted.current) notify.error(error, "home-connectivity");
+    } finally {
+      networkInFlight.current = false;
+      if (mounted.current) setNetworkBusy(false);
+    }
+  };
+  const networkText = !result ? t("home.networkUntested")
+    : result.status === "ok" ? t("home.networkReachable")
+    : result.http_status ? t("home.networkHttp", { status: result.http_status })
+    : t("home.networkFailed");
+
   const go = (page: string) =>
     window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
   return (
@@ -355,6 +380,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             </div>
             <h2>{statusTitle}</h2>
             <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>
+            <dl className="cb-health-summary">
+              <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
+              <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
+              <div title={t("home.networkScope")}><dt>{t("home.healthNetwork")}</dt><dd aria-live="polite">{networkBusy ? t("sites.testing") : networkText}</dd></div>
+              <Button size="small" loading={networkBusy} disabled={!canControl || core.state !== "Running" || networkBusy} onClick={() => void checkNetwork()}>{t("home.checkNetwork")}</Button>
+            </dl>
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
