@@ -20,6 +20,8 @@ import { Icon } from "../components/Icon";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { ConnectionFlow } from "../components/ConnectionFlow";
 
+import { cumulativeTotals } from "../stateReliability";
+
 const POINTS = 120;
 
 /** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
@@ -43,7 +45,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const [busy, setBusy] = useState(false);
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
-  const [totals, setTotals] = useState({ up: 0, down: 0 });
+  const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const [update, setUpdate] = useState<UpdateState | null>(null);
@@ -165,10 +167,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
         setLastTrafficAt(Date.now());
       }
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
-      setTotals((t0) => ({ up: t0.up + up, down: t0.down + down }));
+
     });
     const un5 = ipc.onConnections((s) => {
-      if (active && mounted.current) setConnCount(s.rows.length);
+      if (active && mounted.current) {
+        setConnCount(s.truncated ?? s.rows.length);
+        setTotals(cumulativeTotals(s));
+      }
     });
 
     // 速率历史预填（#181）：后端环形缓冲由托盘通道每秒喂入，与页面
@@ -546,14 +551,14 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <RateValue bytes={latest?.up ?? 0} />
                 </div>
               </div>
-              <div className="cb-session-strip">
+              <div className="cb-session-strip" title={t("home.coreTotalsHint")}>
                 <div>
-                  <span>{t("studio.totalDown")}</span>
-                  <b>{fmtBytes(totals.down)}</b>
+                  <span>{t("home.coreTotalDown")}</span>
+                  <b>{totals.down === null ? "—" : fmtBytes(totals.down)}</b>
                 </div>
                 <div>
-                  <span>{t("studio.totalUp")}</span>
-                  <b>{fmtBytes(totals.up)}</b>
+                  <span>{t("home.coreTotalUp")}</span>
+                  <b>{totals.up === null ? "—" : fmtBytes(totals.up)}</b>
                 </div>
                 <div>
                   <span>{t("home.connections")}</span>
