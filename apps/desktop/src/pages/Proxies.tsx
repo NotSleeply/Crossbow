@@ -489,7 +489,8 @@ function GroupCard({
         </ButtonBase>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
-      {visible.length === 0 ? <div className="cb-node-filter-empty">{t("proxies.noMatch")}</div> :
+      {visible.length === 0 ? <div className="cb-node-filter-empty" role="status"><p>{t("proxies.noMatch")}</p>
+        <Button size="small" onClick={() => { setQuery(""); setRegion("all"); setOnlyAlive(false); setSortByLatency(false); }}>{t("proxies.resetFilters")}</Button></div> :
       <FitItems
         key={`${query}:${region}:${onlyAlive}:${sortByLatency}`}
         items={visible}
@@ -585,14 +586,7 @@ function GroupCard({
         }}
       />}
 
-      {visible.length === 0 && realNodes.length > 0 && (
-        <div
-          className="py-6 text-center text-xs"
-          style={{ color: "var(--cb-faint)" }}
-        >
-          {t("proxies.noMatch")}
-        </div>
-      )}
+
     </section>
   );
 }
