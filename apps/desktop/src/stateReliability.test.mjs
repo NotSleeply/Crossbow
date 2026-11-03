@@ -18,3 +18,9 @@ test('late reads cannot replace a newer event, and unrelated fields remain reada
  const next=gate.begin('proxy'); assert.equal(gate.current('proxy',proxy),false);
  assert.equal(gate.current('proxy',next),true);
 });
+
+import {parsePort} from './stateReliability.ts';
+test('ports require explicit decimal integers within the supported range', () => {
+ for(const value of ['', '1e4', '0x2000', '7898.1', '1023', '65536', '-1']) assert.equal(parsePort(value),null);
+ assert.equal(parsePort(' 7898 '),7898); assert.equal(parsePort('65535'),65535);
+});

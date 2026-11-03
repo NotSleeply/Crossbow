@@ -10,3 +10,10 @@ export function createReadGate() {
   const begin = (key: string) => { const next = (versions.get(key) ?? 0) + 1; versions.set(key, next); return next; };
   return { begin, invalidate: begin, current: (key: string, version: number) => versions.get(key) === version };
 }
+
+export function parsePort(value: string): number | null {
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const port = Number(text);
+  return Number.isSafeInteger(port) && port >= 1024 && port <= 65535 ? port : null;
+}

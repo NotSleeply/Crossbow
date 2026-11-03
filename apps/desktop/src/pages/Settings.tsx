@@ -1,3 +1,4 @@
+import { parsePort } from "../stateReliability";
 import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useEffect, useRef, useState } from "react";
@@ -24,6 +25,9 @@ export default function SettingsPage({
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
   const [portDraft, setPortDraft] = useState<string>("");
+  const [portBusy, setPortBusy] = useState(false);
+  const portInFlight = useRef(false);
+  const [portInvalid, setPortInvalid] = useState(false);
   const [theme, setTheme] = useState<UiSettings["theme"]>("system");
   const [autostart, setAutostart] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("…");
@@ -198,8 +202,10 @@ export default function SettingsPage({
   };
 
   const applyPort = async () => {
-    const port = Number(portDraft);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    if (portInFlight.current || !engine) return;
+    const port = parsePort(portDraft);
+    if (port === null) {
+      setPortInvalid(true);
       notify.error(
         t("settings.invalidPort"),
         "setting-port",
@@ -208,7 +214,8 @@ export default function SettingsPage({
       return;
     }
     if (port === engine?.mixed_port) return;
-    await saveSetting(
+    portInFlight.current = true; setPortBusy(true); setPortInvalid(false);
+    try { await saveSetting(
       "port",
       t("settings.port"),
       () => ipc.setMixedPort(port),
@@ -216,7 +223,7 @@ export default function SettingsPage({
         setEngine((old) => (old ? { ...old, mixed_port: port } : old));
       },
       `${t("settings.port")}: ${port}`,
-    );
+    ); } finally { portInFlight.current = false; setPortBusy(false); }
   };
 
   return (
@@ -327,13 +334,19 @@ export default function SettingsPage({
             </span>
           </Row>
           <Row label={t("settings.port")} hint={t("settings.portHint")}>
-            <input
-              value={portDraft}
-              onChange={(e) => setPortDraft(e.target.value)}
-              onBlur={applyPort}
-              onKeyDown={(e) => e.key === "Enter" && applyPort()}
-              className="cb-input cb-selectable w-24 px-2 py-1"
-            />
+            <div className="cb-port-editor">
+              <div className="flex items-center gap-2">
+                <input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
+                  value={portDraft} onChange={e => { setPortDraft(e.target.value); setPortInvalid(false); }}
+                  aria-invalid={portInvalid} aria-describedby="mixed-port-help"
+                  disabled={portBusy || !engine}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void applyPort(); } }}
+                  className="cb-input cb-selectable w-24 px-2 py-1" />
+                <Button size="small" loading={portBusy} disabled={portBusy || !engine || portDraft === String(engine.mixed_port)} onClick={() => void applyPort()}>{t("settings.applyPort")}</Button>
+                {engine && portDraft !== String(engine.mixed_port) && <Button size="small" disabled={portBusy} onClick={() => { setPortDraft(String(engine.mixed_port)); setPortInvalid(false); }}>{t("settings.cancelPort")}</Button>}
+              </div>
+              <p id="mixed-port-help" className="cb-control-note" role={portInvalid ? "status" : undefined}>{t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint")}</p>
+            </div>
           </Row>
           <Row label={t("settings.flags")} hint={t("settings.flagsHint")}>
             <Switch
