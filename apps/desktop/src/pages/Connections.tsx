@@ -1,3 +1,4 @@
+import {SearchField} from "../components/Controls";
 import Dialog from "../components/Dialog";
 import Select from "../components/Select";
 import { sortConnections, connectionDetails } from "../workflow";
@@ -100,11 +101,11 @@ export default function ConnectionsPage() {
             {t("conn.viewApps")}
           </ButtonBase>
         </div>
-        <input
+        <SearchField label={t("conn.filter")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t("conn.filter")}
-          className="cb-input cb-selectable w-64"
+          className="cb-connection-search"
         />
         <Select label={t("conn.sort")} value={sort} onChange={setSort} options={["default","down","up","age"].map(value=>({value,label:t(`conn.sort.${value}`)}))} />
         <Button onClick={togglePause}>

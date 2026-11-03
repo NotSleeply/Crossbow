@@ -1,3 +1,4 @@
+import {SearchField} from "../components/Controls";
 import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { notify } from "../notifications/service";
@@ -343,16 +344,7 @@ export default function LogsPage() {
         ))}
         </div>
         <div className="cb-log-actions">
-        <label className="cb-log-search">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-        <input
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder={t("logs.keyword")}
-          aria-label={t("logs.keyword")}
-          className="cb-selectable" id="cb-log-search"
-        />
-        </label>
+        <SearchField className="cb-log-search" id="cb-log-search" label={t("logs.keyword")} value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder={t("logs.keyword")}/>
         <Button type="button" onClick={clear} className="cb-log-clear" disabled={lines.length === 0 || loading} loading={clearing}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg>
           {t("logs.clear")}

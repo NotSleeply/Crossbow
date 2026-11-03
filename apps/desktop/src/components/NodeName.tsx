@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { nodeNameParts } from "./nodeFlags";
 import "./NodeName.css";
 
@@ -7,7 +8,9 @@ const flags = import.meta.glob<string>("../assets/flags/*.svg", {
 });
 
 export default function NodeName({ name }: { name: string }) {
-  return <>{nodeNameParts(name).map((part, index) => {
+  const automatic = /^\s*♻\uFE0F?/.test(name);
+  const display = automatic ? name.replace(/^\s*♻\uFE0F?\s*/, "") : name;
+  return <>{automatic && <span className="cb-node-auto-mark"><Icon name="automatic" size={15}/></span>}{nodeNameParts(display).map((part, index) => {
     if ("text" in part) return <span key={index}>{part.text}</span>;
     const source = flags[`../assets/flags/${part.region.toLowerCase()}.svg`];
     return source

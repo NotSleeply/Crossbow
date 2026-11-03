@@ -1,3 +1,4 @@
+import {Input, Switch} from "../components/Controls";
 import { Button, ButtonBase } from "../components/Button";
 import FitItems from "../components/FitItems";
 import { notify } from "../notifications/service";
@@ -119,7 +120,7 @@ export default function OverridePanel({
   return (
     <section className="cb-overrides-workspace">
       <div className="cb-override-create">
-        <input
+        <Input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
@@ -181,7 +182,7 @@ export default function OverridePanel({
               <div className="cb-editor-tools">
                 <div className="flex flex-wrap items-center gap-3">
                   {renamingId === selected.id ? (
-                    <input
+                    <Input
                       autoFocus
                       value={nameDraft}
                       onChange={(e) => setNameDraft(e.target.value)}
@@ -205,12 +206,11 @@ export default function OverridePanel({
                   </Button>
                 </div>
                 <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                  <Switch aria-label={t("ov.enabled")}
                     checked={selected.enabled}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       ipc
-                        .setOverrideEnabled(selected.id, e.target.checked)
+                        .setOverrideEnabled(selected.id, value)
                         .then(async () => {
                           await refresh();
                           onChanged();
@@ -235,12 +235,11 @@ export default function OverridePanel({
                     {selected.kind === "script" ? "JavaScript" : "YAML"}
                   </span>
                   <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                    <Switch size="compact" aria-label={t("ov.bind")}
                       checked={activeId ? bound(selected.id) : false}
                       disabled={!activeId}
-                      onChange={(e) =>
-                        toggleBind(selected.id, e.target.checked)
+                      onChange={(value) =>
+                        toggleBind(selected.id, value)
                       }
                     />
                     {t("ov.bind")}

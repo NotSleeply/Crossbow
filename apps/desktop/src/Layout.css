@@ -1,0 +1,294 @@
+/* Framed sheet: keep the established palette; put density where work happens. */
+.cb-home-main {
+  flex: none;
+  align-self: start;
+  width: 100%;
+  max-height: 720px;
+}
+.cb-home-path {
+  flex: 0 0 clamp(110px, 28cqh, 216px);
+  max-height: 216px;
+}
+.cb-home-lead h2 {
+  margin-top: 8px;
+}
+.cb-profile-switcher header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 10px;
+  font-size: 12px;
+}
+.cb-profile-switcher header > span {
+  color: var(--cb-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.cb-profile-switch-list {
+  padding: 0 6px 6px;
+  max-height: 300px;
+  overflow: auto;
+}
+.cb-profile-switch-list > p {
+  padding: 14px 10px;
+  color: var(--cb-text-dim);
+  font-size: 12px;
+}
+.cb-profile-switch-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 50px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-align: left;
+  transition: background-color 130ms ease;
+}
+.cb-profile-switch-option > span {
+  min-width: 0;
+}
+.cb-profile-switch-option b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 12px;
+}
+.cb-profile-switch-option small {
+  display: block;
+  font-size: 11px;
+  color: var(--cb-text-dim);
+  margin-top: 3px;
+}
+.cb-profile-switch-option[aria-pressed="true"],
+.cb-profile-switch-option:hover {
+  background: var(--cb-surface-2);
+}
+.cb-profile-switcher footer {
+  border-top: 1px solid var(--cb-line);
+  padding: 10px;
+}
+.cb-profile-switcher footer .cb-button {
+  width: 100%;
+}
+.cb-source-pick .cb-button-label > svg {
+  transform: rotate(90deg);
+  transition: transform 160ms ease;
+}
+.cb-source-pick[data-popup-open] .cb-button-label > svg {
+  transform: rotate(-90deg);
+}
+.cb-node-toolbar-page .cb-node-page-title {
+  margin: 0 10px 14px;
+}
+.cb-node-toolbar-page .cb-node-nav-caption {
+  margin-bottom: 8px;
+}
+.cb-group-search {
+  margin: 0 4px 10px;
+  flex: none;
+}
+.cb-node-toolbar-page .cb-context-scroll > button {
+  height: 48px;
+  min-height: 48px;
+  padding: 8px 10px;
+  line-height: 16px;
+  margin-bottom: 3px;
+}
+.cb-node-toolbar-page .cb-context-scroll > button > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+.cb-node-toolbar-page .cb-context-scroll > button small {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-group-empty {
+  padding: 16px 10px;
+  font-size: 12px;
+  color: var(--cb-text-dim);
+}
+.cb-node-toolbar-page .cb-nodes-workspace {
+  overflow: auto;
+  padding-right: 2px;
+  gap: 18px;
+}
+.cb-node-toolbar-page .cb-node-group {
+  flex: none;
+}
+.cb-node-results {
+  flex: none;
+  max-height: max(116px, 36vh);
+  min-height: 76px;
+  display: flex;
+}
+.cb-node-toolbar-page .cb-node-results .cb-fit-items {
+  height: 100%;
+  min-height: 0;
+}
+.cb-node-filter-empty {
+  min-height: 76px;
+  gap: 8px;
+  align-content: center;
+}
+.cb-node-density {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--cb-line);
+  border-radius: 7px;
+}
+.cb-node-density button {
+  width: 28px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--cb-text-dim);
+  transition: background-color 130ms ease;
+}
+.cb-node-density button[aria-pressed="true"] {
+  color: var(--cb-text);
+  background: var(--cb-surface-2);
+}
+.cb-node-alive-label {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--cb-text-dim);
+}
+.cb-node-toolbar-page .cb-node-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.cb-node-toolbar-page .cb-node-selected {
+  right: 38px;
+  top: 8px;
+}
+.cb-node-toolbar-page .cb-node-title {
+  padding-right: 50px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cb-node-toolbar-page .cb-node-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-node-toolbar-page [data-density="list"] .cb-node-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 42px 0 12px;
+}
+.cb-node-toolbar-page [data-density="list"] .cb-node-title {
+  min-width: 0;
+  padding-right: 0;
+  flex: 1;
+}
+.cb-node-toolbar-page [data-density="list"] .cb-node-bottom {
+  flex: 0 1 220px;
+  min-width: 160px;
+  margin-top: 0;
+}
+.cb-node-toolbar-page [data-density="list"] .cb-node-selected {
+  position: static;
+  order: 2;
+  flex: none;
+  display: flex;
+}
+.cb-node-toolbar-page [data-density="list"] .cb-node-test {
+  top: 7px;
+}
+.cb-site-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cb-site-section > [hidden] {
+  display: none;
+}
+.cb-connection-search {
+  flex: 0 1 280px;
+  max-width: 280px;
+  width: 100%;
+}
+.cb-log-search.cb-input-shell {
+  height: 32px;
+  width: auto;
+  flex: 0 1 240px;
+}
+.cb-log-search.cb-input-shell:focus-within {
+  outline: 0;
+}
+.cb-settings-group + .cb-settings-group {
+  margin-top: 20px;
+}
+@container home-layout (max-height:479px) {
+  .cb-home-main {
+    gap: 10px;
+  }
+  .cb-home-path {
+    flex-basis: 110px;
+  }
+}
+@container node-group (max-width:600px) {
+  .cb-node-alive-label {
+    gap: 4px;
+    font-size: 11px;
+  }
+  .cb-node-heading h1 {
+    font-size: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-source-pick .cb-button-label > svg,
+  .cb-profile-switch-option,
+  .cb-node-density button {
+    transition: none;
+  }
+}
+
+@media (max-width: 950px) {
+  .cb-global-nav .cb-source-pick {
+    display: inline-flex;
+    max-width: 108px;
+    padding-inline: 8px;
+  }
+}
+
+@container home-controls (max-height:419px) {
+  .cb-takeover-panel,
+  .cb-rate-card {
+    padding-block: 8px;
+  }
+  .cb-home-card-title .cb-help-button {
+    width: 20px;
+    height: 20px;
+  }
+  .cb-connection-state {
+    padding-block: 8px;
+    gap: 4px;
+  }
+  .cb-home-side .cb-health-summary {
+    gap: 2px;
+    line-height: 14px;
+  }
+  .cb-connection-state h3 {
+    line-height: 18px;
+  }
+}
+.cb-settings-page { overflow-y:auto; padding-right:2px; }
+.cb-port-editor { flex:0 1 auto; }

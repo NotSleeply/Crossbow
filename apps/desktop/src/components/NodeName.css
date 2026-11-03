@@ -3,3 +3,5 @@
 
 /* The outline belongs to the image box, preserving white regions in light mode. */
 .cb-node-flag { outline: 1px solid var(--cb-line-strong); outline-offset: 0; border-radius: 1px; }
+
+.cb-node-auto-mark { display:inline-flex; vertical-align:-2px; margin-right:4px; flex:none; }
