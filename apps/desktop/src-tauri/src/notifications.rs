@@ -828,11 +828,29 @@ pub fn notification_pause(
         entry.paused = paused;
     }
 }
+fn navigation_target(page:&str,source:&str)->String {
+    let mut target=serde_json::json!({"page":page});
+    if page=="profiles" {
+        if source.starts_with("snapshot") { target["control"]="cb-config-recovery".into(); }
+        for prefix in ["profile-auto-update-","profile-update-","profile-activate-","profile-rename-","profile-interval-"] {
+            if let Some(id)=source.strip_prefix(prefix) { if !id.is_empty() {target["profileId"]=id.into();target["control"]="cb-profile-detail".into();}break; }
+        }
+    } else if page=="settings" {
+        target["settingSection"]=if source.contains("port")||source.contains("tun")||source.contains("engine") {"network"} else if source.contains("theme")||source.contains("lang") {"appearance"} else if source.contains("logs")||source.contains("retention") {"logs"} else {"app"}.into();
+        if source.contains("port"){target["control"]="mixed-port".into();}
+        else if source.contains("tun"){target["control"]="cb-tun-control".into();}
+        else if (source.contains("update")||source.contains("download")){target["control"]="cb-update-status".into();}
+    } else if page=="diagnostics" { target["checkId"]="first-problem".into(); }
+    else if page=="logs" {target["control"]="cb-log-search".into();}
+    target.to_string()
+}
+
 #[tauri::command]
 pub async fn notification_action(
     app: AppHandle,
     service: State<'_, Notifications>,
     action: Action,
+    id: Option<String>,
 ) -> Result<(), String> {
     if matches!(action, Action::RetryDownload) {
         std::thread::spawn(move || {
@@ -849,7 +867,8 @@ pub async fn notification_action(
     };
     {
         let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
-        queue.navigate_to = Some(page.into());
+        let source = id.as_ref().and_then(|id|queue.entries.iter().find(|n|&n.id==id)).map(|n|n.source.clone()).unwrap_or_default();
+        queue.navigate_to = Some(navigation_target(page, &source));
         queue.revision += 1;
     }
     crate::show_main_window(&app);
@@ -1194,5 +1213,16 @@ mod tests {
         assert_eq!(q.entries[0].id, id);
         assert_eq!(q.entries[0].details, "original sanitized diagnostic");
         assert!(q.entries[0].resolved_at.is_some());
+    }
+}
+
+#[cfg(test)]
+mod workflow_navigation_tests {
+    #[test] fn notification_target_uses_resource_and_known_settings_anchor(){
+        let profile:serde_json::Value=serde_json::from_str(&super::navigation_target("profiles","profile-auto-update-test-profile")).unwrap();
+        assert_eq!(profile["profileId"],"test-profile");assert_eq!(profile["control"],"cb-profile-detail");
+        let settings:serde_json::Value=serde_json::from_str(&super::navigation_target("settings","setting-port")).unwrap();
+        assert_eq!(settings["control"],"mixed-port");assert_eq!(settings["settingSection"],"network");
+        let unknown:serde_json::Value=serde_json::from_str(&super::navigation_target("profiles","unrelated")).unwrap();assert!(unknown.get("profileId").is_none());
     }
 }

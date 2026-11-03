@@ -16,6 +16,7 @@ export interface OverrideDef {
 
 export interface UpdateOutcome {
   ok: boolean;
+  changes?: { added: number; removed: number; changed: number } | null;
   detail?: string | null;
   at: number;
 }
@@ -83,6 +84,7 @@ export interface ConnRow {
   network: string;
   kind: string;
   process: string;
+  process_path?: string;
   elapsed_ms: number | null;
 }
 
@@ -117,6 +119,10 @@ export interface CheckResult {
   detail: string;
   fix: string | null;
 }
+
+export interface DiagnosisProgress { run_id: string; id: string; result: CheckResult | null }
+export interface ProfileStatus { id:string; last_success:number|null; next_update:number|null; retry:boolean; failure:string|null; failure_at?:number|null; using_previous:boolean; changes:{added:number;removed:number;changed:number}|null }
+export interface ConfigSnapshot {id:string;at:number;profiles:number;overrides:number;active:string|null}
 
 export interface OutboundInfo {
   mode: string;
@@ -316,7 +322,13 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
-  runDiagnosis: () => invoke<CheckResult[]>("run_diagnosis"),
+  runDiagnosis: (runId: string) => invoke<CheckResult[]>("run_diagnosis", { runId }),
+  onDiagnosisProgress: (cb:(p:DiagnosisProgress)=>void) => listen<DiagnosisProgress>("diagnosis://progress", e=>cb(parsePayload<DiagnosisProgress>(e.payload))),
+  profileStatuses: () => invoke<ProfileStatus[]>("profile_statuses"),
+  configSnapshots: () => invoke<ConfigSnapshot[]>("config_snapshots"),
+  restoreConfigSnapshot: (id:string) => invoke<void>("restore_config_snapshot",{id}),
+  redactLogLines: (lines:string[]) => invoke<string>("redact_log_lines",{lines}),
+  exportLogLines: (lines:string[]) => invoke<boolean>("export_log_lines",{lines}),
   currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
   subscribeTraffic: () => invoke<void>("subscribe_traffic"),

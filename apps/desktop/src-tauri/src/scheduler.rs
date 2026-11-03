@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -31,6 +32,11 @@ pub fn backoff_delay_secs(consecutive_fails: u32) -> u64 {
 struct RetryState {
     fails: HashMap<String, (u32, u64)>,
 }
+
+fn shared_retry() -> &'static Mutex<RetryState> { static VALUE: OnceLock<Mutex<RetryState>> = OnceLock::new(); VALUE.get_or_init(|| Mutex::new(RetryState::default())) }
+pub fn retry_at(id: &str) -> Option<u64> { shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.get(id).map(|v|v.1) }
+pub fn clear_all_retries() {shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.clear();}
+pub fn clear_retry(id: &str) { shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.remove(id); }
 
 /// 判定某 Profile 本次 tick 是否到期。
 fn is_due(profile: &crossbow_core::Profile, retry: Option<&(u32, u64)>, now: u64) -> bool {
@@ -66,17 +72,17 @@ impl NonZeroInterval {
 /// 后台线程入口：随应用启动，随进程退出结束。
 pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut retry: RetryState = RetryState::default();
         loop {
             std::thread::sleep(Duration::from_secs(TICK_SECS));
-            tick(&app, &mut retry);
+            tick(&app);
         }
     });
 }
 
-fn tick(app: &AppHandle, retry: &mut RetryState) {
+fn tick(app: &AppHandle) {
     let state = app.state::<crate::AppState>();
     let now = now_secs();
+    let retry = shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.clone();
 
     // 1) 快照到期列表（短锁，不做网络）
     let due: Vec<String> = {
@@ -86,7 +92,7 @@ fn tick(app: &AppHandle, retry: &mut RetryState) {
             .profiles
             .iter()
             .filter(|p| p.kind == crossbow_core::ProfileKind::Remote)
-            .filter(|p| is_due(p, retry.fails.get(&p.id), now))
+            .filter(|p| is_due(p, retry.get(&p.id), now))
             .map(|p| p.id.clone())
             .collect()
     };
@@ -99,14 +105,16 @@ fn tick(app: &AppHandle, retry: &mut RetryState) {
         let result = crate::refresh_profile_blocking(&state, &id);
         match result {
             Ok(_) => {
-                retry.fails.remove(&id);
+                clear_retry(&id);
                 crate::notifications::resolve(app, &format!("profile-auto-update-{id}"));
             }
             Err(e) => {
-                let entry = retry.fails.entry(id.clone()).or_insert((0, 0));
+                let mut retries = shared_retry().lock().unwrap_or_else(|e|e.into_inner());
+                let entry = retries.fails.entry(id.clone()).or_insert((0, 0));
                 entry.0 = entry.0.saturating_add(1);
                 let delay = backoff_delay_secs(entry.0);
-                entry.1 = now + delay;
+                entry.1 = now_secs() + delay;
+                drop(retries);
                 let mut notice = crate::notifications::Notice::new(
                     crate::notifications::Kind::Warning,
                     "profile.updateFailed",
