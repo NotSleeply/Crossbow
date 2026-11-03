@@ -1,7 +1,7 @@
 import { parsePort } from "../stateReliability";
 import { Button, ButtonBase } from "../components/Button";
 import { notify } from "../notifications/service";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useId, useEffect, useRef, useState } from "react";
 import {
   ipc,
   type CoreBinaryInfo,
@@ -13,6 +13,8 @@ import {
 import Select from "../components/Select";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
+
+const SettingLabel = createContext<{ label: string; hint?: string } | null>(null);
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage({
@@ -709,7 +711,10 @@ function Row({
   hint?: string;
   children?: React.ReactNode;
 }) {
+  const labelId = useId();
+  const hintId = useId();
   return (
+    <SettingLabel.Provider value={{ label: labelId, hint: hint ? hintId : undefined }}>
     <div
       className="cb-setting-row flex items-center justify-between"
       role="group"
@@ -717,9 +722,10 @@ function Row({
       aria-label={label}
     >
       <div>
-        <div className="text-sm">{label}</div>
+        <div id={labelId} className="text-sm">{label}</div>
         {hint && (
           <div
+            id={hintId}
             className="cb-setting-hint mt-0.5 text-xs"
             title={hint}
             style={{ color: "var(--cb-text-dim)" }}
@@ -730,6 +736,7 @@ function Row({
       </div>
       {children}
     </div>
+    </SettingLabel.Provider>
   );
 }
 
@@ -742,9 +749,12 @@ function Switch({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
+  const field = useContext(SettingLabel);
   return (
     <ButtonBase
       role="switch"
+      aria-labelledby={field?.label}
+      aria-describedby={field?.hint}
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
