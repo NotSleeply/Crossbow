@@ -47,6 +47,7 @@ mod linux_service;
 #[cfg(target_os = "linux")]
 mod tun_linux;
 mod ws_bridge;
+mod window_focus;
 
 mod core_download;
 
@@ -3247,10 +3248,12 @@ fn refresh_tray(app: &AppHandle) {
 }
 
 fn show_main_window(app: &AppHandle) {
+    // Restore the regular app before rebuilding a window from Accessory mode.
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     match app.get_webview_window("main") {
         Some(win) => {
-            let _ = win.show();
-            let _ = win.set_focus();
+            let _ = window_focus::present(&win);
         }
         None => {
             // 轻量待机中窗口已销毁：重建
@@ -3262,6 +3265,7 @@ fn show_main_window(app: &AppHandle) {
             .title("Crossbow")
             .inner_size(1120.0, 720.0)
             .min_inner_size(880.0, 560.0)
+            .visible(false)
             .center();
             // macOS：Overlay 去掉原生标题栏，内容延伸到窗口顶，避免深色 UI 下
             // 出现灰白边（NSWindow.setBackgroundColor 会毁标题栏外观，勿用）；
@@ -3278,6 +3282,7 @@ fn show_main_window(app: &AppHandle) {
                     .map(|state| state.store.lock().unwrap().data().ui.theme.clone())
                     .unwrap_or_else(|| "system".to_string());
                 apply_window_appearance(win, &theme);
+                let _ = window_focus::present(win);
             }
             let _ = built;
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
@@ -3286,8 +3291,6 @@ fn show_main_window(app: &AppHandle) {
                     .handoff
                     .store(false, std::sync::atomic::Ordering::SeqCst);
             }
-            #[cfg(target_os = "macos")]
-            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         }
     }
 }
