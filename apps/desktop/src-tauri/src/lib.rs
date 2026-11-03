@@ -26,6 +26,7 @@ mod site_tests;
 #[cfg(windows)]
 mod windows_appearance;
 mod log_files;
+mod log_cache;
 mod mihomo_api;
 mod notifications;
 mod process;
@@ -1490,20 +1491,29 @@ fn unsubscribe_connections(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn subscribe_logs(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    state.ws.want_channel("logs");
-    let (port, secret) = require_controller(&state)?;
-    let h = app.clone();
-    state
-        .ws
-        .subscribe_logs(port, &secret, move |ev, payload: serde_json::Value| {
+fn subscribe_logs(
+    app: AppHandle,
+    state: State<AppState>,
+    subscriber: String,
+) -> Result<log_cache::Snapshot, String> {
+    state.ws.begin_log_view(subscriber);
+    if let Some((port, secret)) = state.core().controller() {
+        let h = app.clone();
+        state.ws.subscribe_logs(port, &secret, move |ev, payload: serde_json::Value| {
             let _ = h.emit(ev, payload);
-        })
+        })?;
+    }
+    Ok(state.ws.logs_snapshot())
 }
 
 #[tauri::command]
-fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
-    state.ws.unsubscribe("logs");
+fn clear_logs(state: State<AppState>) -> log_cache::Snapshot {
+    state.ws.clear_logs()
+}
+
+#[tauri::command]
+fn unsubscribe_logs(state: State<AppState>, subscriber: String) -> Result<(), String> {
+    state.ws.end_log_view(&subscriber);
     Ok(())
 }
 
@@ -2217,7 +2227,7 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         let _ = handle.emit("core://status", status.clone());
         // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
-        // 日志落盘：Running 且开关开启时订阅，其余状态退订
+        // 最近日志缓存始终跟随内核；落盘另由保存开关控制。
         update_logs_persistence(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
@@ -2392,13 +2402,22 @@ fn ensure_page_channel_watchdog(handle: &AppHandle) {
     });
 }
 
-/// 日志落盘联动（#29）：内核 Running 且开关开启时订阅落盘通道，
-/// 其余状态退订。设置开关变化与状态回调都会调用；subscribe 的替换
-/// 语义保证设置变化即时生效（新 sink 持有新的 DailyWriter）。
+/// 内存最近日志始终跟随内核；落盘通道另由保存开关控制（#29）。
+/// 设置开关变化与状态回调都会调用，缓存 reader 对同一控制器保持幂等。
 fn update_logs_persistence(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
+    if state.core().status() == CoreStatus::Running {
+        if let Some((port, secret)) = state.core().controller() {
+            let h = app.clone();
+            let _ = state.ws.subscribe_logs(port, &secret, move |event, payload| {
+                let _ = h.emit(event, payload);
+            });
+        }
+    } else {
+        state.ws.stop_logs();
+    }
     let enabled = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().logs.save_enabled
@@ -3825,6 +3844,7 @@ pub fn run() {
             subscribe_connections,
             unsubscribe_connections,
             subscribe_logs,
+            clear_logs,
             unsubscribe_logs,
             get_ui_settings,
             get_engine_config,

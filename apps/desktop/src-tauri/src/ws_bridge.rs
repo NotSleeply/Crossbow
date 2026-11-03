@@ -1,6 +1,6 @@
 //! 内核 WS 数据桥：traffic / connections / logs 三路订阅。
 //!
-//! 设计要点（DESIGN §5.2）：连接与日志由前端按页面挂载/卸载触发订阅/退订，
+//! 设计要点（DESIGN §5.2）：连接按页面订退；最近日志由独立常驻读线程缓存，
 //! Rust 侧持有唯一 WS 读线程并做节流聚合后 emit 事件——避免大快照刷爆
 //! webview。读线程阻塞式 read（内核每秒必推数据），退订后最迟约 1 秒退出；
 //! 连接断开（内核重启中）自动重连。
@@ -36,10 +36,27 @@ pub struct WsHub {
     /// 页面订阅意图集：挂载即登记、卸载即移除，与订阅是否成功无关。
     /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
     /// 命令失败」的窗口，保证 Running 后自动补上。
-    wanted: Mutex<std::collections::HashSet<&'static str>>,
+    wanted: Arc<Mutex<std::collections::HashSet<&'static str>>>,
+    logs: Arc<Mutex<crate::log_cache::LogCache>>,
+    log_source: Mutex<Option<(u16, String)>>,
+    log_view: Mutex<Option<String>>,
 }
 
 impl WsHub {
+    pub fn begin_log_view(&self, subscriber: String) {
+        let mut view = self.log_view.lock().unwrap_or_else(|e| e.into_inner());
+        *view = Some(subscriber);
+        self.want_channel("logs");
+    }
+
+    pub fn end_log_view(&self, subscriber: &str) {
+        let mut view = self.log_view.lock().unwrap_or_else(|e| e.into_inner());
+        if view.as_deref() == Some(subscriber) {
+            *view = None;
+            self.unsubscribe("logs");
+        }
+    }
+
     fn subscribe<F>(&self, name: &'static str, spawn_reader: F) -> Result<(), String>
     where
         F: FnOnce(Arc<AtomicBool>, Arc<Mutex<Instant>>) + Send + 'static,
@@ -229,18 +246,43 @@ impl WsHub {
         secret: &str,
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
+        // A single process-lifetime reader serves page history and live events.
+        // Page navigation must not restart it or lose logs generated off-page.
+        let mut source = self.log_source.lock().unwrap_or_else(|e| e.into_inner());
+        if source.as_ref().is_some_and(|(p, s)| *p == port && s == secret)
+            && self.active.lock().unwrap_or_else(|e| e.into_inner())
+                .get("logs-cache").is_some_and(|(flag, _)| flag.load(Ordering::SeqCst)) {
+            return Ok(());
+        }
+        *source = Some((port, secret.to_owned()));
+        let cache = self.logs.clone();
+        let wanted = self.wanted.clone();
+        let generation = cache.lock().unwrap_or_else(|e| e.into_inner()).begin_stream();
         let url = ws_url(port, secret, "/logs?level=info");
-        self.subscribe("logs", move |flag, _last_seen| {
+        self.subscribe("logs-cache", move |flag, _last_seen| {
             std::thread::spawn(move || {
-                let mut batch: Vec<serde_json::Value> = Vec::new();
+                let mut batch: Vec<crate::log_cache::Entry> = Vec::new();
                 let mut last_flush = Instant::now();
                 let mut on_status = |connected| {
-                    emit(EV_LOG_STATUS, serde_json::json!({ "connected": connected }));
+                    let status = cache.lock().unwrap_or_else(|e| e.into_inner()).set_connected(generation, connected);
+                    if let Some(status) = status {
+                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                            emit(EV_LOG_STATUS, serde_json::json!({ "connected": status.connected, "generation": status.generation }));
+                            // Drain cached entries missed just before reconnect;
+                            // client sequence IDs remove any overlap with live batches.
+                            if connected {
+                                let snapshot = cache.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+                                if !snapshot.entries.is_empty() { emit(EV_LOGS, serde_json::json!(snapshot.entries)); }
+                            }
+                        }
+                    }
                 };
                 read_loop(&url, flag, None, None, Some(&mut on_status), |msg| {
                     if let Some(Message::Text(txt)) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
-                            batch.push(v);
+                            if let Some(entry) = cache.lock().unwrap_or_else(|e| e.into_inner()).append(generation, &v) {
+                                batch.push(entry);
+                            }
                         }
                     }
                     // Flush even when the core sends just one line, then goes
@@ -249,18 +291,34 @@ impl WsHub {
                         && (last_flush.elapsed() >= LOG_FLUSH_INTERVAL
                             || batch.len() >= LOG_FLUSH_COUNT)
                     {
-                        emit(
-                            EV_LOGS,
-                            serde_json::Value::Array(std::mem::take(&mut batch)),
-                        );
+                        let entries = std::mem::take(&mut batch);
+                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                            emit(EV_LOGS, serde_json::json!(entries));
+                        }
                         last_flush = Instant::now();
                     }
                 });
-                if !batch.is_empty() {
-                    emit(EV_LOGS, serde_json::Value::Array(batch));
+                if !batch.is_empty() && wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                    emit(EV_LOGS, serde_json::json!(batch));
                 }
             });
         })
+    }
+
+    pub fn logs_snapshot(&self) -> crate::log_cache::Snapshot {
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).snapshot()
+    }
+
+    pub fn clear_logs(&self) -> crate::log_cache::Snapshot {
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).clear()
+    }
+
+    pub fn stop_logs(&self) {
+        let mut source = self.log_source.lock().unwrap_or_else(|e| e.into_inner());
+        *source = None;
+        self.unsubscribe("logs-cache");
+        // Invalidate callbacks still draining the old socket, retaining history.
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).begin_stream();
     }
 
     /// 日志落盘专用订阅（#29）：独立常驻通道，不随日志页挂载/卸载——
@@ -558,6 +616,7 @@ pub(crate) mod tests {
         });
         let hub = WsHub::default();
         let (send, receive) = mpsc::channel();
+        hub.begin_log_view("test-page".into());
         hub.subscribe_logs(port, "test-secret", move |event, payload| {
             let _ = send.send((event, payload));
         })
@@ -566,11 +625,66 @@ pub(crate) mod tests {
         assert_eq!(connected.0, EV_LOG_STATUS);
         assert_eq!(connected.1["connected"], true);
         let log = receive.recv_timeout(Duration::from_secs(2));
-        hub.unsubscribe("logs");
+        hub.end_log_view("test-page");
+        assert!(!hub.logs_snapshot().entries.is_empty());
+        hub.stop_logs();
         server.join().unwrap();
         let (event, payload) = log.expect("a single log must not wait for the next message");
         assert_eq!(event, EV_LOGS);
         assert_eq!(payload[0]["payload"], "single log");
+    }
+
+    #[test]
+    fn background_logs_survive_page_navigation_without_reconnecting() {
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (send_log, log_commands) = mpsc::channel::<&str>();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            while let Ok(payload) = log_commands.recv_timeout(Duration::from_secs(5)) {
+                socket.send(Message::Text(serde_json::json!({"type":"info","payload":payload}).to_string().into())).unwrap();
+            }
+        });
+        let hub = WsHub::default();
+        let (events, receive) = mpsc::channel();
+        hub.subscribe_logs(port, "test-secret", move |event, data| { let _ = events.send((event, data)); }).unwrap();
+        send_log.send("off-page").unwrap();
+        let wait_for_logs = |count| {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while hub.logs_snapshot().entries.len() < count {
+                assert!(Instant::now() < deadline, "cache did not receive log");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        wait_for_logs(1);
+        assert_eq!(hub.logs_snapshot().entries[0].payload, "off-page");
+        assert!(receive.try_recv().is_err(), "background collection must not emit to absent page");
+        let reader = hub.active.lock().unwrap().get("logs-cache").unwrap().0.clone();
+        hub.begin_log_view("old".into());
+        hub.begin_log_view("new".into());
+        hub.end_log_view("old"); // A late cleanup must not unsubscribe the new view.
+        assert!(hub.any_page_channel_wanted());
+        hub.subscribe_logs(port, "test-secret", |_, _| panic!("must retain original reader")).unwrap();
+        assert!(Arc::ptr_eq(&reader, &hub.active.lock().unwrap().get("logs-cache").unwrap().0));
+        send_log.send("on-page").unwrap();
+        wait_for_logs(2);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let (event, entries) = receive.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap();
+            if event == EV_LOGS && entries.as_array().unwrap().iter().any(|entry| entry["payload"] == "on-page") { break; }
+        }
+        hub.end_log_view("new");
+        send_log.send("after-leaving").unwrap();
+        wait_for_logs(3);
+        assert_eq!(hub.logs_snapshot().entries[2].payload, "after-leaving");
+        hub.stop_logs();
+        assert!(!hub.logs_snapshot().connected);
+        assert_eq!(hub.logs_snapshot().entries.len(), 3);
+        drop(send_log);
+        server.join().unwrap();
     }
 
     #[test]

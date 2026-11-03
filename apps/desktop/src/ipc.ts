@@ -99,6 +99,17 @@ export interface LogEntry {
   payload: string;
 }
 
+export interface CachedLogEntry extends LogEntry {
+  sequence: number;
+}
+
+export interface LogSnapshot {
+  entries: CachedLogEntry[];
+  sequence: number;
+  connected: boolean;
+  generation: number;
+}
+
 export interface CheckResult {
   id: string;
   ok: boolean;
@@ -312,8 +323,9 @@ export const ipc = {
   unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
   subscribeConnections: () => invoke<void>("subscribe_connections"),
   unsubscribeConnections: () => invoke<void>("unsubscribe_connections"),
-  subscribeLogs: () => invoke<void>("subscribe_logs"),
-  unsubscribeLogs: () => invoke<void>("unsubscribe_logs"),
+  subscribeLogs: (subscriber: string) => invoke<LogSnapshot>("subscribe_logs", { subscriber }),
+  clearLogs: () => invoke<LogSnapshot>("clear_logs"),
+  unsubscribeLogs: (subscriber: string) => invoke<void>("unsubscribe_logs", { subscriber }),
   onCoreStatus: (cb: (s: CoreStatus) => void) =>
     listen<CoreStatus>("core://status", (e) => cb(e.payload)),
   onSysproxyStatus: (cb: (s: SysProxyStatus) => void) =>
@@ -326,10 +338,10 @@ export const ipc = {
     ),
   onConnections: (cb: (s: ConnSnapshot) => void) =>
     listen("connections://data", (e) => cb(parsePayload<ConnSnapshot>(e.payload))),
-  onLogsStatus: (cb: (status: { connected: boolean }) => void) =>
-    listen<{ connected: boolean }>("logs://status", (e) => cb(parsePayload<{ connected: boolean }>(e.payload))),
-  onLogs: (cb: (entries: LogEntry[]) => void) =>
-    listen("logs://data", (e) => cb(parsePayload<LogEntry[]>(e.payload))),
+  onLogsStatus: (cb: (status: { connected: boolean; generation: number }) => void) =>
+    listen("logs://status", (e) => cb(parsePayload<{ connected: boolean; generation: number }>(e.payload))),
+  onLogs: (cb: (entries: CachedLogEntry[]) => void) =>
+    listen("logs://data", (e) => cb(parsePayload<CachedLogEntry[]>(e.payload))),
   onTheme: (cb: (t: UiSettings["theme"]) => void) =>
     listen<UiSettings["theme"]>("ui://theme", (e) => cb(e.payload)),
   onLang: (cb: (l: string) => void) =>
