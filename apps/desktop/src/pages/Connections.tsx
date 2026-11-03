@@ -19,8 +19,8 @@ export default function ConnectionsPage() {
   const t = useT();
   const [snapshot, setSnapshot] = useState<ConnSnapshot>({
     rows: [],
-    upload_total: 0,
-    download_total: 0,
+    upload_total: null,
+    download_total: null,
     memory: null,
   });
   const [filter, setFilter] = useState("");
