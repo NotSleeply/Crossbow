@@ -1,10 +1,10 @@
 {
   "date": "2026-11-03",
   "frontendTests": {
-    "passed": 13
+    "passed": 19
   },
   "backendTests": {
-    "passed": 118,
+    "passed": 122,
     "ignored": 1,
     "liveCore": "not configured; self-skipping test cases"
   },

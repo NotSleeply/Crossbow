@@ -29,6 +29,7 @@ export async function invoke(command:string,args:Record<string,any>={}) {
  case 'current_outbound':return {node:'Tokyo · Hy2',chain:['节点选择','Tokyo · Hy2'],delay_ms:84};
  case 'traffic_history':return Array.from({length:120},(_,i)=>({up:200+Math.sin(i/4)*180,down:3000+Math.sin(i/8)*2000}));
  case 'proxies_snapshot':return [{name:'节点选择',kind:'Selector',now:nodes[0].name,nodes}];
+ case 'subscribe_logs': case 'clear_logs':return {entries:[],sequence:0,connected:true,generation:0};
  case 'logs_settings':return {save_enabled:true,retention_days:7};
  case 'update_settings_get':return {auto_check:true,auto_download:false};
  case 'update_state_get':return null;
