@@ -5,6 +5,7 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "logs.levels":"日志级别",
     "layout.quickProfiles": "切换配置",
     "layout.manageProfiles": "管理配置",
     "layout.searchGroups": "搜索策略组",
@@ -461,6 +462,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
+    "logs.levels":"Log levels",
     "layout.quickProfiles": "Switch configuration",
     "layout.manageProfiles": "Manage configurations",
     "layout.searchGroups": "Search groups",
