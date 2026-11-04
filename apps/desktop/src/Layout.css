@@ -294,3 +294,8 @@
 }
 .cb-settings-page { overflow-y:auto; padding-right:2px; }
 .cb-port-editor { flex:0 1 auto; }
+
+.cb-connection-toolbar { display:flex; align-items:center; gap:8px; flex:none; min-width:0; }
+.cb-connection-toolbar .cb-connection-search { margin-left:auto; min-width:140px; flex:1 1 220px; }
+.cb-connection-toolbar .cb-select { flex:0 1 144px; min-width:112px; }
+.cb-connection-toolbar > .cb-button[aria-pressed="true"] { background:var(--cb-primary); color:var(--cb-on-primary); }

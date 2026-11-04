@@ -86,7 +86,8 @@ export default function ConnectionsPage() {
       <PageHead
         title={t("conn.title")}
         meta={`${snapshot.truncated ? t("conn.rowCountTruncated", {n: snapshot.truncated, shown: rows.length}) : t("conn.rowCount", {n: rows.length})} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
-      >
+      />
+      <div className="cb-connection-toolbar">
         <div className="cb-seg">
           <ButtonBase
             className={view === "list" ? "on" : ""}
@@ -108,10 +109,10 @@ export default function ConnectionsPage() {
           className="cb-connection-search"
         />
         <Select label={t("conn.sort")} value={sort} onChange={setSort} options={["default","down","up","age"].map(value=>({value,label:t(`conn.sort.${value}`)}))} />
-        <Button onClick={togglePause}>
+        <Button aria-pressed={paused} onClick={togglePause}>
           {paused ? t("conn.paused") : t("conn.pause")}
         </Button>
-      </PageHead>
+      </div>
 
       <div className="cb-card cb-connection-table">
         {view === "list" ? (
