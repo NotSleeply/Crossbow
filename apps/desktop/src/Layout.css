@@ -313,3 +313,9 @@
 #cb-port-setting .cb-port-editor input { width:84px; flex:none; font-variant-numeric:tabular-nums; }
 #cb-port-setting .cb-port-editor > p { font-size:11px; line-height:16px; margin:5px 0 0; overflow-wrap:anywhere; }
 #cb-port-setting .cb-port-editor > p:empty { display:none; }
+
+.cb-diag-summary > .cb-diagnostic-result { display:grid; place-items:center; flex:none; width:32px; height:32px; border:0; border-radius:50%; color:var(--cb-ok); background:color-mix(in srgb,var(--cb-ok) 12%,var(--cb-bg)); }
+.cb-diag-summary > .cb-diagnostic-result[data-result="attention"] { color:var(--cb-warn); background:color-mix(in srgb,var(--cb-warn) 12%,var(--cb-bg)); }
+.cb-diagnostic-step > .cb-check-symbol { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; color:var(--cb-text-dim); background:var(--cb-surface-2); }
+.cb-diagnostic-step > .cb-check-symbol[data-state="passed"] { color:var(--cb-ok); background:color-mix(in srgb,var(--cb-ok) 10%,var(--cb-bg)); }
+.cb-diagnostic-step > .cb-check-symbol[data-state="failed"] { color:var(--cb-bad); background:color-mix(in srgb,var(--cb-bad) 10%,var(--cb-bg)); }

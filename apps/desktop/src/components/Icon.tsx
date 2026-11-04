@@ -43,6 +43,8 @@ export function Icon({
     ),
     chevron: <path d="m9 5 7 7-7 7" />,
     "arrow-right": <path d="M5 12 H19 M14 7 L19 12 L14 17" />,
+    close: <path d="M6 6L18 18M18 6L6 18"/>,
+    minus: <path d="M5 12H19"/>,
     check: <path d="M5 12 L10 17 L19 7" />,
     download: <path d="M12 3 V15 M7 10 L12 15 L17 10 M4 17 V21 H20 V17" />,
     activity: <path d="M3 12 L10 12 L13 5 L17 19 L20 12 L21 12" />,

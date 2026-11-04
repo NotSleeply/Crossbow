@@ -1,3 +1,4 @@
+import {Icon} from "../components/Icon";
 import { Button } from "../components/Button";
 import { notify } from "../notifications/service";
 import { useEffect, useRef, useState } from "react";
@@ -100,11 +101,11 @@ export default function DiagnosticsPage() {
       ) : (
         <>
           <div className="cb-diag-summary" aria-live="polite">
-            <ProgressRing
+            {!running && !runFailed && results.length === DIAG_STEPS.length && applicable.length > 0 && !first ? <span className="cb-diagnostic-result" data-result="passed" aria-hidden="true"><Icon name="check" size={22} strokeWidth={2}/></span> : running || runFailed ? <ProgressRing
               value={(results.length / DIAG_STEPS.length) * 100}
               label={t("diag.progress", { done: results.length, total: DIAG_STEPS.length })}
               size={28}
-            />
+            /> : <span className="cb-diagnostic-result" data-result="attention" aria-hidden="true"><Icon name="activity" size={22}/></span>}
             <h2>
               {running
                 ? t("diag.progress", { done: results.length, total: DIAG_STEPS.length })
@@ -165,9 +166,7 @@ export default function DiagnosticsPage() {
                   className={`cb-card cb-diagnostic-step ${row && !row.ok && !row.skipped ? "has-issue" : ""}`}
                   aria-busy={running && checking === id}
                 >
-                  <i
-                    className={`cb-dot ${!row ? "idle" : row.skipped ? "idle" : row.ok ? "ok" : "bad"}`}
-                  />
+                  <span className="cb-check-symbol" data-state={!row?"pending":row.skipped?"skipped":row.ok?"passed":"failed"} aria-hidden="true"><Icon name={!row||row.skipped?"minus":row.ok?"check":"close"} size={16} strokeWidth={2}/></span>
                   <div>
                     <h3>{t(`check.${id}`)}</h3>
                     {row?.detail && <p className="cb-selectable">{row.detail}</p>}
