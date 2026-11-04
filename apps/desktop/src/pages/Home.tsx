@@ -443,40 +443,40 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             </ConnectionFlow>
           </section>
           <div className="cb-home-bottom">
-          <div className="cb-home-actions">
-            <Button variant="primary"  onClick={() => go("proxies")}>
-              <Icon name="bolt" />
-              {t("studio.chooseNode")}
-            </Button>
-            <Button onClick={() => go("connections")}>
-              <Icon name="cube" />
-              {t("studio.viewConnections")}
-            </Button>
-          </div>
-          <section className="cb-chart-only" aria-label={t("studio.trend")}>
-            <div className="cb-chart-head">
-              <div>
-                <h3>{t("studio.trend")}</h3>
-                <span>{t("studio.lastMinute")} · KB/s</span>
-              </div>
-              <div className="cb-chart-legend">
-                <span>
-                  <i className="down" />
-                  {t("studio.download")}
-                </span>
-                <span>
-                  <i className="up" />
-                  {t("studio.upload")}
-                </span>
-              </div>
+            <div className="cb-home-actions">
+              <Button variant="primary"  onClick={() => go("proxies")}>
+                <Icon name="bolt" />
+                {t("studio.chooseNode")}
+              </Button>
+              <Button onClick={() => go("connections")}>
+                <Icon name="cube" />
+                {t("studio.viewConnections")}
+              </Button>
             </div>
-            <Sparkline rates={rates} />
-            <div className="cb-chart-foot">
-              <span>{t("studio.secondsAgo", { seconds: 120 })}</span>
-              <span>{t("studio.secondsAgo", { seconds: 60 })}</span>
-              <span>{t("studio.now")}</span>
-            </div>
-          </section>
+            <section className="cb-chart-only" aria-label={t("studio.trend")}>
+              <div className="cb-chart-head">
+                <div>
+                  <h3>{t("studio.trend")}</h3>
+                  <span>{t("studio.lastMinute")} · KB/s</span>
+                </div>
+                <div className="cb-chart-legend">
+                  <span>
+                    <i className="down" />
+                    {t("studio.download")}
+                  </span>
+                  <span>
+                    <i className="up" />
+                    {t("studio.upload")}
+                  </span>
+                </div>
+              </div>
+              <Sparkline rates={rates} />
+              <div className="cb-chart-foot">
+                <span>{t("studio.secondsAgo", { seconds: 120 })}</span>
+                <span>{t("studio.secondsAgo", { seconds: 60 })}</span>
+                <span>{t("studio.now")}</span>
+              </div>
+            </section>
           </div>
         </section>
         <div className="cb-home-side-slot">

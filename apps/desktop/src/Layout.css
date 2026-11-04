@@ -206,6 +206,8 @@
   .cb-home-main {
     gap: 10px;
   }
+  .cb-home-bottom { gap: 8px; }
+  .cb-home-bottom .cb-chart-only { height: 96px; flex-basis: 96px; }
   .cb-home-path {
     flex-basis: 110px;
   }
