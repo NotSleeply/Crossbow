@@ -1,9 +1,11 @@
 /* Framed sheet: keep the established palette; put density where work happens. */
 .cb-home-main {
   flex: none;
-  align-self: start;
+  align-self: stretch;
   width: 100%;
-  max-height: 720px;
+  height: min(100cqh, 700px);
+  max-height: 700px;
+  justify-content: space-between;
 }
 .cb-home-path {
   flex: 0 0 clamp(110px, 28cqh, 216px);
