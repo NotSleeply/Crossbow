@@ -1,5 +1,5 @@
 .cb-filter-chip { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:30px; padding:0 10px; border:1px solid var(--cb-line-strong); border-radius:6px; background:var(--cb-bg); color:var(--cb-text-dim); font:inherit; font-size:12px; white-space:nowrap; transition:background-color 130ms ease,color 130ms ease,border-color 130ms ease; }
-.cb-filter-chip[aria-pressed="true"] { background:var(--cb-primary); border-color:var(--cb-primary); color:var(--cb-on-primary); }
+.cb-filter-chip[aria-pressed="true"] { background:color-mix(in srgb,var(--cb-accent) 12%,var(--cb-bg)); border-color:var(--cb-accent-line); color:var(--cb-accent); font-weight:500; }
 .cb-filter-check { display:flex; width:12px; height:12px; align-items:center; justify-content:center; }
 .cb-filter-chip:not([aria-pressed="true"]):hover { background:var(--cb-surface-2); color:var(--cb-text); }
 .cb-filter-chip:focus-visible { outline:2px solid var(--cb-accent); outline-offset:2px; }

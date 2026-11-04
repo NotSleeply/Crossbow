@@ -1,3 +1,4 @@
+import {Icon} from "../components/Icon";
 import {ChoiceChip} from "../components/ChoiceChip";
 import {SearchField} from "../components/Controls";
 import { ButtonBase, Button } from "../components/Button";
@@ -325,22 +326,19 @@ export default function LogsPage() {
 
   return (
     <div className="cb-logs-page">
-      <div className="cb-log-toolbar cb-data-toolbar">
-        <div className="cb-data-title-row"><h1 className="cb-log-title">{t("logs.title")}</h1>
-          <div className="cb-data-actions">
-            <Button aria-pressed={following} onClick={()=>{if(following){pinned.current=false;setFollowing(false)}else resume()}}>{t(following?"logs.pauseFollow":"logs.follow")}</Button>
-            {!following&&<Button onClick={resume}>{t("logs.bottom")}</Button>}
-            <Button disabled={!filtered.length||exporting} loading={exporting} title={t("logs.exportHint",{n:filtered.length})} onClick={()=>void exportLogs()}>{t("logs.export")}</Button>
-            <Button onClick={clear} disabled={lines.length===0||loading} loading={clearing}>{t("logs.clear")}</Button>
-          </div>
+      <div className="cb-log-toolbar cb-log-single-toolbar">
+        <h1 className="cb-log-title">{t("logs.title")}</h1>
+        <div className="cb-log-filters" role="group" aria-label={t("logs.levels")}>
+          {LEVELS.map(lv=><ChoiceChip key={lv} selected={enabled[lv]} onClick={()=>setEnabled(prev=>({...prev,[lv]:!prev[lv]}))}><span className="cb-level-dot" style={{background:LEVEL_COLOR[lv]}} aria-hidden="true"/>{lv}</ChoiceChip>)}
         </div>
-        <div className="cb-data-filter-row">
-          <div className="cb-log-filters" role="group" aria-label={t("logs.levels")}>
-            {LEVELS.map(lv=><ChoiceChip key={lv} selected={enabled[lv]} onClick={()=>setEnabled(prev=>({...prev,[lv]:!prev[lv]}))}><span className="cb-level-dot" style={{background:LEVEL_COLOR[lv]}} aria-hidden="true"/>{lv}</ChoiceChip>)}
-          </div>
-          <SearchField className="cb-log-search" id="cb-log-search" label={t("logs.keyword")} value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder={t("logs.keyword")}/>
+        <SearchField className="cb-log-search" id="cb-log-search" label={t("logs.keyword")} value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder={t("logs.keyword")}/>
+        <div className="cb-data-actions">
+          <Button title={!following?t("logs.followPaused"):undefined} onClick={()=>{if(following){pinned.current=false;setFollowing(false)}else resume()}}>{t(following?"logs.pauseFollow":"logs.follow")}</Button>
+          {!following&&<Button className="cb-log-bottom" iconOnly title={t("logs.bottom")} aria-label={t("logs.bottom")} onClick={resume}><Icon name="download"/></Button>}
+          <Button className="cb-log-export cb-log-secondary-action" aria-label={t("logs.export")} disabled={!filtered.length||exporting} loading={exporting} title={t("logs.exportHint",{n:filtered.length})} onClick={()=>void exportLogs()}><Icon name="download"/><span className="cb-log-action-label">{t("logs.export")}</span></Button>
+          <Button className="cb-log-clear cb-log-secondary-action" aria-label={t("logs.clear")} title={t("logs.clear")} onClick={clear} disabled={lines.length===0||loading} loading={clearing}><Icon name="trash"/><span className="cb-log-action-label">{t("logs.clear")}</span></Button>
         </div>
-        {!following&&<p className="cb-data-status" role="status">{t("logs.followPaused")}</p>}
+        <span className="sr-only" role="status">{!following?t("logs.followPaused"):""}</span>
       </div>
       <div
         ref={boxRef}

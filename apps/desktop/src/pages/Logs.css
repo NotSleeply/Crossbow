@@ -1,11 +1,15 @@
-/* Data operations use two stable rows: identity/actions, then filters/search. */
-.cb-logs-page .cb-log-toolbar.cb-data-toolbar { display:flex; flex-direction:column; align-items:stretch; flex:none; gap:10px; padding:0 0 4px; }
-.cb-data-title-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.cb-data-title-row h1 { margin:0; font-size:22px; font-weight:600; line-height:32px; }
-.cb-data-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
-.cb-data-filter-row { display:flex; align-items:center; gap:12px; min-width:0; }
-.cb-log-filters { display:flex; gap:6px; flex:none; }
-.cb-data-filter-row .cb-log-search { margin-left:auto; flex:1 1 220px; max-width:280px; min-width:140px; }
+/* A single non-wrapping data toolbar; secondary actions become labelled icons in compact windows. */
+.cb-logs-page .cb-log-toolbar.cb-log-single-toolbar { display:flex; flex:none; align-items:center; gap:10px; min-width:0; padding:0 0 4px; flex-wrap:nowrap; }
+.cb-log-title { margin:0; flex:none; font-size:22px; font-weight:600; line-height:32px; }
+.cb-log-filters { display:flex; gap:5px; flex:none; }
+.cb-data-actions { display:flex; align-items:center; gap:6px; flex:none; flex-wrap:nowrap; }
+.cb-log-single-toolbar .cb-log-search { margin-left:auto; flex:1 1 180px; max-width:220px; min-width:70px; width:auto; }
 .cb-level-dot { width:5px; height:5px; border-radius:50%; flex:none; }
-.cb-data-status { font-size:11px; color:var(--cb-text-dim); margin:0; }
-@media(max-width:950px) { .cb-data-actions { gap:6px; } .cb-data-filter-row {gap:8px} }
+.cb-log-filters .cb-filter-chip { gap:4px; padding-inline:7px; }
+@media(max-width:1100px) {
+ .cb-log-single-toolbar { gap:7px; }
+ .cb-log-secondary-action .cb-log-action-label { display:none; }
+ .cb-log-secondary-action.cb-button { width:32px; padding:0; }
+ .cb-log-filters .cb-level-dot { display:none; }
+ .cb-log-title { font-size:20px; }
+}
