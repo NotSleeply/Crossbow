@@ -141,26 +141,6 @@
   gap: 8px;
   align-content: center;
 }
-.cb-node-density {
-  display: flex;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--cb-line);
-  border-radius: 7px;
-}
-.cb-node-density button {
-  width: 28px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  color: var(--cb-text-dim);
-  transition: background-color 130ms ease;
-}
-.cb-node-density button[aria-pressed="true"] {
-  color: var(--cb-text);
-  background: var(--cb-surface-2);
-}
 .cb-node-alive-label {
   display: flex;
   flex: none;
@@ -189,38 +169,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cb-node-toolbar-page [data-density="list"] .cb-node-card {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  padding: 0 42px 0 12px;
-}
-.cb-node-toolbar-page [data-density="list"] .cb-node-title {
-  min-width: 0;
-  padding-right: 0;
-  flex: 1;
-}
-.cb-node-toolbar-page [data-density="list"] .cb-node-bottom {
-  flex: 0 1 220px;
-  min-width: 160px;
-  margin-top: 0;
-}
-.cb-node-toolbar-page [data-density="list"] .cb-node-selected {
-  position: static;
-  order: 2;
-  flex: none;
-  display: flex;
-}
-.cb-node-toolbar-page [data-density="list"] .cb-node-test {
-  top: 7px;
-}
 .cb-site-actions {
   display: flex;
   gap: 6px;
   align-items: center;
-}
-.cb-site-section > [hidden] {
-  display: none;
 }
 .cb-connection-search {
   flex: 0 1 280px;
@@ -257,8 +209,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .cb-source-pick .cb-button-label > svg,
-  .cb-profile-switch-option,
-  .cb-node-density button {
+  .cb-profile-switch-option {
     transition: none;
   }
 }
@@ -325,8 +276,8 @@
 .cb-override-create-form > label { font-size:12px; }
 .cb-override-create-form > input { width:100%; }
 @media(max-width:950px) { .cb-override-state-controls {gap:10px} .cb-override-state-controls label {font-size:11px;gap:5px} }
-/* Cards anchor testing to the workspace bottom; list mode remains continuous. */
-.cb-nodes-workspace:has(.cb-node-group[data-density="cards"]) > .cb-site-section { margin-top:auto; }
+/* Testing stays at the bottom when the card workspace has spare height. */
+.cb-node-toolbar-page .cb-nodes-workspace > .cb-site-section { margin-top:auto; }
 /* Space sits inside each scroll surface, ahead of the reserved scrollbar gutter. */
 .cb-settings-page,.cb-node-toolbar-page .cb-nodes-workspace,.cb-diag-results,.cb-profile-detail { padding-inline-end:12px; scrollbar-gutter:stable; }
 .cb-profile-detail { overflow:auto; }

@@ -1,8 +1,7 @@
-import SegmentedControl from "../components/SegmentedControl";
 import {ChoiceChip} from "../components/ChoiceChip";
 import {SearchField} from "../components/Controls";
 import PopoverPanel from "../components/PopoverPanel";
-import {friendlyKind, readDensity, nodeResultHeight, type NodeDensity} from "../layout";
+import {friendlyKind, nodeResultHeight} from "../layout";
 import "./Proxies.css";
 import Select from "../components/Select";
 import NodeName from "../components/NodeName";
@@ -396,11 +395,9 @@ function GroupCard({
   const [region, setRegion] = useState("all");
   const [onlyAlive, setOnlyAlive] = useState(false);
   const [sortByLatency, setSortByLatency] = useState(false);
-  const [density,setDensity] = useState<NodeDensity>(readDensity);
   const resultsRef = useRef<HTMLDivElement>(null);
   const [resultWidth,setResultWidth] = useState(600);
   useEffect(()=>{const el=resultsRef.current;if(!el)return;const observer=new ResizeObserver(()=>setResultWidth(el.clientWidth));observer.observe(el);setResultWidth(el.clientWidth);return()=>observer.disconnect()},[]);
-  const changeDensity=(value:NodeDensity)=>{setDensity(value);try{localStorage.setItem('cb-node-density',value)}catch{/* Webview storage may be unavailable. */}};
 
   const infoNodes = group.nodes.filter((n) => INFO_NAME.test(n.name));
   const realNodes = useMemo(
@@ -455,15 +452,13 @@ function GroupCard({
       : t(`proxies.region.${key}`);
 
   return (
-    <section className="cb-node-group" data-density={density}>
+    <section className="cb-node-group">
       <div className="cb-node-heading">
         <div className="cb-node-heading-copy">
           <h1><NodeName name={group.name} /><span>{realNodes.length} {t("proxies.nodeCount")}</span></h1>
-          <p>{t("proxies.now")} <b title={group.now ? nodeNameText(group.now) : undefined}><NodeName name={group.now ?? "—"} /></b><span title={group.kind}>{friendlyKind(group.kind,t)}</span></p>
         </div>
         <div className="cb-node-heading-actions">
           {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
-          <SegmentedControl className="cb-node-density-control" label={t("layout.density")} value={density} onChange={changeDensity} options={[{value:"cards",label:t("layout.cards")},{value:"list",label:t("layout.list")}]} />
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
           <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy} loading={testing}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
@@ -491,16 +486,16 @@ function GroupCard({
         <ChoiceChip selected={onlyAlive} onClick={()=>setOnlyAlive(v=>!v)}>{t("proxies.onlyAlive")}</ChoiceChip>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
-      <div ref={resultsRef} className="cb-node-results" style={{height:nodeResultHeight(visible.length,resultWidth,density)}}>
+      <div ref={resultsRef} className="cb-node-results" style={{height:nodeResultHeight(visible.length,resultWidth)}}>
       {visible.length === 0 ? <div className="cb-node-filter-empty" role="status"><p>{t("proxies.noMatch")}</p>
         <Button size="small" onClick={() => { setQuery(""); setRegion("all"); setOnlyAlive(false); setSortByLatency(false); }}>{t("proxies.resetFilters")}</Button></div> :
       <FitItems
-        key={`${query}:${region}:${onlyAlive}:${sortByLatency}:${density}`}
+        key={`${query}:${region}:${onlyAlive}:${sortByLatency}`}
         items={visible}
-        minWidth={density === "cards" ? 200 : 0}
-        maxColumns={density === "cards" ? 4 : 1}
-        rowHeight={density === "cards" ? 76 : 44}
-        maxRows={density === "cards" ? 4 : 8}
+        minWidth={200}
+        maxColumns={4}
+        rowHeight={76}
+        maxRows={4}
         label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
