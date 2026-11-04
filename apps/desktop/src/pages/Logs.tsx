@@ -166,7 +166,27 @@ export default function LogsPage() {
   const [following,setFollowing]=useState(true);
   const [exporting,setExporting]=useState(false);
   const exportFlight=useRef(false);
-  const [copiedLine,setCopiedLine]=useState<number|null>(null);
+  const [copiedLine,setCopiedLine]=useState<LogEntry|null>(null);
+  // Keep the reading target still while new logs continue to arrive in the buffer.
+  const [readingLines, setReadingLines] = useState<LogEntry[] | null>(null);
+  const reading = useRef({ pointer: false, focus: false });
+  const latestLines = useRef(lines);
+  latestLines.current = lines;
+  const lineIds = useRef(new WeakMap<LogEntry, number>());
+  const nextLineId = useRef(0);
+  const lineId = (line: LogEntry) => {
+    let id = lineIds.current.get(line);
+    if (id === undefined) { id = ++nextLineId.current; lineIds.current.set(line, id); }
+    return id;
+  };
+  const holdReading = (kind: "pointer" | "focus", hold: boolean) => {
+    reading.current[kind] = hold;
+    if (reading.current.pointer || reading.current.focus) {
+      setReadingLines(previous => previous ?? latestLines.current);
+    } else {
+      setReadingLines(null);
+    }
+  };
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
   // sing-box 同连接多行聚合的中间态（跨批次保留，#57）
@@ -297,6 +317,7 @@ export default function LogsPage() {
     if (result.ok) {
       pendingRef.current.clear();
       setLines([]);
+      setReadingLines(null);
       consumeEntries(history.hydrate(result.value));
     } else {
       consumeEntries(history.resume());
@@ -306,23 +327,23 @@ export default function LogsPage() {
 
   // 自动滚动：用户上滚超过 40px 即暂停跟随
   useEffect(() => {
-    if (pinned.current && boxRef.current) {
+    if (pinned.current && readingLines === null && boxRef.current) {
       boxRef.current.scrollTop = boxRef.current.scrollHeight;
     }
-  }, [lines]);
+  }, [lines, readingLines]);
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return lines
+    return (readingLines ?? lines)
       .filter((l) => enabled[(l.type as Level) ?? "info"] ?? true)
       .filter((l) => !kw || l.payload.toLowerCase().includes(kw));
-  }, [lines, enabled, keyword]);
+  }, [lines, readingLines, enabled, keyword]);
 
   const shown=filtered.slice(-RENDER_TAIL);
-  const copyLine=async(line:LogEntry,index:number)=>{try {const clean=await ipc.redactLogLines([`[${line.type}] ${line.payload}`]);await navigator.clipboard.writeText(clean);setCopiedLine(index);window.setTimeout(()=>setCopiedLine(null),1500);}catch(e){notify.error(e,"logs-copy");}};
+  const copyLine=async(line:LogEntry)=>{try {const clean=await ipc.redactLogLines([`[${line.type}] ${line.payload}`]);await navigator.clipboard.writeText(clean);setCopiedLine(line);window.setTimeout(()=>setCopiedLine(null),1500);}catch(e){notify.error(e,"logs-copy");}};
   const exportLogs=async()=>{if(exportFlight.current)return;exportFlight.current=true;setExporting(true);try{const saved=await ipc.exportLogLines(filtered.map(l=>`[${l.type}] ${l.payload}`));if(saved)notify.success(t("logs.exported"),"logs-export");}catch(e){notify.error(e,"logs-export");}finally{exportFlight.current=false;setExporting(false);}};
   const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
-  const copyButton=(line:LogEntry,index:number)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line,index)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===index?"✓":t("workflow.copy")}</ButtonBase>;
+  const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===line?"✓":t("workflow.copy")}</ButtonBase>;
 
   return (
     <div className="cb-logs-page">
@@ -342,6 +363,10 @@ export default function LogsPage() {
       </div>
       <div
         ref={boxRef}
+        onPointerEnter={event => { if (event.pointerType === "mouse") holdReading("pointer", true); }}
+        onPointerLeave={() => holdReading("pointer", false)}
+        onFocusCapture={() => holdReading("focus", true)}
+        onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) holdReading("focus", false); }}
         onScroll={(e) => {
           const el = e.currentTarget;
           const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
@@ -386,26 +411,26 @@ export default function LogsPage() {
               <span>{t("logs.col.rule")}</span>
               <span>{t("logs.col.outbound")}</span>
             </div>
-            {shown.map((l, i) => {
+            {shown.map((l) => {
               const parsed = parseLog(l.payload);
               if (!parsed) {
                 return (
                   <div
-                    key={i}
+                    key={lineId(l)}
                     className="cb-log-raw"
                     style={{
                       color: LEVEL_COLOR[l.type] ?? "var(--cb-text-dim)",
                     }}
                   >
                     {l.payload}
-                    {copyButton(l,i)}
+                    {copyButton(l)}
                   </div>
                 );
               }
               const rule = splitRule(parsed.rule);
               const direct = isDirect(parsed.outbound);
               return (
-                <div key={i} className="cb-log-grid cb-log-row">
+                <div key={lineId(l)} className="cb-log-grid cb-log-row">
                   <span>
                     <span
                       className="cb-log-tag"
@@ -466,7 +491,7 @@ export default function LogsPage() {
                       <NodeName name={parsed.outbound} />
                     </span>
                   </span>
-                  {copyButton(l,i)}
+                  {copyButton(l)}
                 </div>
               );
             })}
