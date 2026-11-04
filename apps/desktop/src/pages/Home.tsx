@@ -442,6 +442,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
               </div>
             </ConnectionFlow>
           </section>
+          <div className="cb-home-bottom">
           <div className="cb-home-actions">
             <Button variant="primary"  onClick={() => go("proxies")}>
               <Icon name="bolt" />
@@ -476,6 +477,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
               <span>{t("studio.now")}</span>
             </div>
           </section>
+          </div>
         </section>
         <div className="cb-home-side-slot">
           <aside className="cb-home-side">

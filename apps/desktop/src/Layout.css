@@ -7,6 +7,18 @@
   max-height: 700px;
   justify-content: space-between;
 }
+/* Keep the action-to-chart rhythm independent of distributed section spacing. */
+.cb-home-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.cb-home-bottom .cb-chart-only {
+  height: clamp(132px, calc(22vh + 16px), 202px);
+  flex-basis: clamp(132px, calc(22vh + 16px), 202px);
+}
 .cb-home-path {
   flex: 0 0 clamp(110px, 28cqh, 216px);
   max-height: 216px;
