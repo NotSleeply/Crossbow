@@ -299,13 +299,6 @@
 .cb-connection-toolbar .cb-connection-search { margin-left:auto; min-width:140px; flex:1 1 220px; }
 .cb-connection-toolbar .cb-select { flex:0 1 144px; min-width:112px; }
 .cb-connection-toolbar > .cb-button[aria-pressed="true"] { background:var(--cb-primary); color:var(--cb-on-primary); }
-/* FitItems nests the rows; selection must not depend on a direct-child selector. */
-.cb-overrides-workspace .cb-fit-cells > button { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; padding:8px 12px; gap:3px; border-radius:7px; min-width:0; text-align:left; color:var(--cb-text-dim); }
-.cb-overrides-workspace .cb-fit-cells > button > span { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
-.cb-overrides-workspace .cb-fit-cells > button small { font-size:11px; }
-.cb-overrides-workspace .cb-fit-cells > button[aria-current="page"] { background:var(--cb-accent-soft); color:var(--cb-text); box-shadow:inset 3px 0 var(--cb-accent); font-weight:600; }
-.cb-overrides-workspace .cb-fit-cells > button:not([aria-current]):hover { background:var(--cb-surface-2); }
-
 #cb-port-setting { align-items:flex-start; }
 #cb-port-setting > div:first-child { padding-top:5px; }
 #cb-port-setting .cb-port-editor { flex:none; width:220px; max-width:45%; }
@@ -319,3 +312,15 @@
 .cb-diagnostic-step > .cb-check-symbol { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; color:var(--cb-text-dim); background:var(--cb-surface-2); }
 .cb-diagnostic-step > .cb-check-symbol[data-state="passed"] { color:var(--cb-ok); background:color-mix(in srgb,var(--cb-ok) 10%,var(--cb-bg)); }
 .cb-diagnostic-step > .cb-check-symbol[data-state="failed"] { color:var(--cb-bad); background:color-mix(in srgb,var(--cb-bad) 10%,var(--cb-bg)); }
+
+/* Reuse the configuration-source list item exactly; no extra accent stripe. */
+.cb-override-title { display:flex; align-items:center; gap:8px; min-width:0; flex:1; }
+.cb-override-title h2 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; font-weight:600; }
+.cb-override-title input { width:160px; max-width:100%; }
+.cb-override-detail .cb-editor-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:32px; }
+.cb-override-state-controls { display:flex; flex:none; align-items:center; gap:16px; }
+.cb-override-state-controls label { display:flex; align-items:center; gap:7px; color:var(--cb-text-dim); font-size:12px; white-space:nowrap; }
+.cb-override-create-form { display:flex; flex-direction:column; gap:12px; }
+.cb-override-create-form > label { font-size:12px; }
+.cb-override-create-form > input { width:100%; }
+@media(max-width:950px) { .cb-override-state-controls {gap:10px} .cb-override-state-controls label {font-size:11px;gap:5px} }

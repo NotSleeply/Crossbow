@@ -5,6 +5,11 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "ov.create": "新建覆写",
+    "ov.createAction": "创建",
+    "ov.cancel": "取消",
+    "ov.type": "覆写类型",
+    "ov.hint": "使用脚本或 Merge 补丁调整配置，并按需绑定到订阅。",
     "logs.levels":"日志级别",
     "layout.quickProfiles": "切换配置",
     "layout.manageProfiles": "管理配置",
@@ -462,6 +467,11 @@ const dict: Record<Lang, Record<string, string>> = {
       "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
+    "ov.create": "New override",
+    "ov.createAction": "Create",
+    "ov.cancel": "Cancel",
+    "ov.type": "Override type",
+    "ov.hint": "Adjust configurations with scripts or Merge patches and bind them to profiles.",
     "logs.levels":"Log levels",
     "layout.quickProfiles": "Switch configuration",
     "layout.manageProfiles": "Manage configurations",

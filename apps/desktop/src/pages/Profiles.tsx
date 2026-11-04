@@ -51,6 +51,7 @@ export default function ProfilesPage({
 }) {
   const t = useT();
   const [recovering,setRecovering]=useState(false);
+  const [creatingOverride,setCreatingOverride]=useState(false);
   const [statuses,setStatuses]=useState<ProfileStatus[]>([]);
   useEffect(()=>{if(focusProfileId)setSelectedId(focusProfileId);if(navigationRequest?.control==="cb-config-recovery")setRecovering(true)},[focusProfileId,navigationRequest]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -162,8 +163,9 @@ export default function ProfilesPage({
     <div className="cb-profiles-page">
       <PageHead
         title={t(tab === "overrides" ? "studio.overrides" : "studio.sources")}
-        meta={t("studio.configHint")}
+        meta={t(tab === "overrides" ? "ov.hint" : "studio.configHint")}
       >
+        {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         <Button onClick={()=>setRecovering(true)}>{t("backup.title")}</Button>
         {tab === "sources" && (
           <Button onClick={() => setImporting(true)}>
@@ -189,6 +191,8 @@ export default function ProfilesPage({
       )}
       {tab === "overrides" ? (
         <OverridePanel
+          createOpen={creatingOverride}
+          onCreateClose={()=>setCreatingOverride(false)}
           profiles={profiles}
           activeId={activeId}
           onChanged={refresh}
