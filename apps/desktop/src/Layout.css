@@ -305,3 +305,11 @@
 .cb-overrides-workspace .cb-fit-cells > button small { font-size:11px; }
 .cb-overrides-workspace .cb-fit-cells > button[aria-current="page"] { background:var(--cb-accent-soft); color:var(--cb-text); box-shadow:inset 3px 0 var(--cb-accent); font-weight:600; }
 .cb-overrides-workspace .cb-fit-cells > button:not([aria-current]):hover { background:var(--cb-surface-2); }
+
+#cb-port-setting { align-items:flex-start; }
+#cb-port-setting > div:first-child { padding-top:5px; }
+#cb-port-setting .cb-port-editor { flex:none; width:220px; max-width:45%; }
+#cb-port-setting .cb-port-editor > div { justify-content:flex-start; gap:6px; }
+#cb-port-setting .cb-port-editor input { width:84px; flex:none; font-variant-numeric:tabular-nums; }
+#cb-port-setting .cb-port-editor > p { font-size:11px; line-height:16px; margin:5px 0 0; overflow-wrap:anywhere; }
+#cb-port-setting .cb-port-editor > p:empty { display:none; }

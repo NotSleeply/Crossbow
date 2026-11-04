@@ -357,7 +357,7 @@ export default function SettingsPage({
             </span>
           </Row>
         </Group><Group title={t("layout.connectionSettings")}>
-          <Row label={t("settings.port")} hint={t("settings.portHint")}>
+          <Row id="cb-port-setting" label={t("settings.port")} hint={t("settings.portHint")}>
             <div className="cb-port-editor">
               <div className="flex items-center gap-2">
                 <Input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
@@ -369,7 +369,7 @@ export default function SettingsPage({
                 <Button size="small" loading={portBusy} disabled={portBusy || !engine || portDraft === String(engine.mixed_port)} onClick={() => void applyPort()}>{t("settings.applyPort")}</Button>
                 {engine && portDraft !== String(engine.mixed_port) && <Button size="small" disabled={portBusy} onClick={() => { dirtyPort.current = false; setPortDraft(String(engine.mixed_port)); setPortInvalid(false); }}>{t("settings.cancelPort")}</Button>}
               </div>
-              <p id="mixed-port-help" className="cb-control-note" role={portInvalid ? "status" : undefined}>{t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint")}</p>
+              <p id="mixed-port-help" className="cb-control-note" role="status">{portInvalid||portBusy||engine&&portDraft!==String(engine.mixed_port)?t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint"):""}</p>
             </div>
           </Row>
           <Row label={t("settings.flags")} hint={t("settings.flagsHint")}>
