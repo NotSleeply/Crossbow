@@ -15,6 +15,8 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | 桌面九项验收修复及卡片底部/滚动间距等后续调整 | v02 | 已实现，待 PR 评审 | [规格](2026-11-04-acceptance/v02/SPEC.md) · [卡片底部](2026-11-04-acceptance/v02/previews/cards-bottom-1120.png) · [日志](2026-11-04-acceptance/v02/previews/logs-light-1120.png) · [覆写](2026-11-04-acceptance/v02/previews/overrides-light-1120.png) · [源稿](2026-11-04-acceptance/v02/source.zip) · [验证边界](2026-11-04-acceptance/v02/checks.json) | #279 |
+| 2026-11-04 | 桌面九项验收修复首轮 | v01 | 已被 v02 后续调整替代，留存追溯 | [规格](2026-11-04-acceptance/v01/SPEC.md) · [源稿](2026-11-04-acceptance/v01/source.zip) | #279 |
 | 2026-11-04 | 桌面十一项界面整理、节点密度与共享控件 | v01 | 已实现，待 PR 评审 | [规格](2026-11-04-layout/v01/SPEC.md) · [概览](2026-11-04-layout/v01/previews/overview-light-1440.png) · [节点](2026-11-04-layout/v01/previews/nodes-list-light-1120.png) · [源稿](2026-11-04-layout/v01/source.zip) | #275 / 前置 #276 |
 | 2026-11-03 | 诊断、连接、日志、订阅与恢复工作流 | v01 | 已实现，待 PR 评审 | [规格](2026-11-03-workflows/v01/SPEC.md) · [诊断](2026-11-03-workflows/v01/previews/diagnosis.jpg) · [恢复](2026-11-03-workflows/v01/previews/recovery-confirm.jpg) · [源稿](2026-11-03-workflows/v01/source.zip) | #274 |
 | 2026-11-03 | 桌面基础交互九项修复与连接状态卡片 | v01 | 已实现，待 PR 评审 | [规格](2026-11-03-ui-reliability/v01/SPEC.md) · [浅色](2026-11-03-ui-reliability/v01/previews/overview-light.jpg) · [深色英文](2026-11-03-ui-reliability/v01/previews/overview-dark-880.jpg) · [源稿](2026-11-03-ui-reliability/v01/source.zip) | #271 |

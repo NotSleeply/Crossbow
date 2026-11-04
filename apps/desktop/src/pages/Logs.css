@@ -1,25 +1,15 @@
-/* Scoped so toolbar polish does not change other pages' shared controls. */
-.cb-logs-page .cb-log-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 20px;
-  padding: 2px 0 14px;
-  flex: none;
+/* A single non-wrapping data toolbar; secondary actions become labelled icons in compact windows. */
+.cb-logs-page .cb-log-toolbar.cb-log-single-toolbar { display:flex; flex:none; align-items:center; gap:10px; min-width:0; padding:0 0 4px; flex-wrap:nowrap; }
+.cb-log-title { margin:0; flex:none; font-size:22px; font-weight:600; line-height:32px; }
+.cb-log-filters { display:flex; gap:5px; flex:none; }
+.cb-data-actions { display:flex; align-items:center; gap:6px; flex:none; flex-wrap:nowrap; }
+.cb-log-single-toolbar .cb-log-search { margin-left:auto; flex:1 1 180px; max-width:220px; min-width:70px; width:auto; }
+.cb-level-dot { width:5px; height:5px; border-radius:50%; flex:none; }
+.cb-log-filters .cb-filter-chip { gap:4px; padding-inline:7px; }
+@media(max-width:1100px) {
+ .cb-log-single-toolbar { gap:7px; }
+ .cb-log-secondary-action .cb-log-action-label { display:none; }
+ .cb-log-secondary-action.cb-button { width:32px; padding:0; }
+ .cb-log-filters .cb-level-dot { display:none; }
+ .cb-log-title { font-size:20px; }
 }
-.cb-log-title { margin: 0; font-size: 22px; font-weight: 600; line-height: 36px; letter-spacing: -.025em; }
-.cb-log-levels { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--cb-surface); border-radius: 10px; }
-.cb-log-level { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--cb-text-dim); font: inherit; font-size: 12px; cursor: pointer; transition: background-color 120ms, color 120ms; }
-.cb-log-level[aria-pressed="true"] { background: var(--cb-surface-2); color: var(--cb-text); font-weight: 500; }
-.cb-log-level-dot { width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; color: var(--cb-faint); }
-.cb-log-level[aria-pressed="true"] .cb-log-level-dot { background: var(--log-level-color); border-color: var(--log-level-color); }
-.cb-log-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.cb-log-search { display: flex; align-items: center; gap: 9px; width: 240px; height: 36px; padding: 0 11px; border: 1px solid var(--cb-line-strong); border-radius: 8px; background: var(--cb-bg); color: var(--cb-text-dim); }
-.cb-log-search input { width: 100%; min-width: 0; outline: none; border: 0; background: transparent; color: var(--cb-text); font: inherit; font-size: 13px; }
-.cb-log-search input::placeholder { color: var(--cb-faint); }
-.cb-log-level:focus-visible, .cb-log-search:focus-within { outline: 2px solid var(--cb-accent); outline-offset: 2px; }
-@media (hover: hover) { .cb-log-level:hover { background: var(--cb-surface-2); color: var(--cb-text); } }
-.cb-log-level:active { background: var(--cb-line); }
-@media (max-width: 820px) { .cb-log-actions { flex: 1 1 100%; } .cb-log-search { width: auto; flex: 1; } }
-@media (max-width: 460px) { .cb-logs-page .cb-log-toolbar { gap: 10px; } .cb-log-level { padding: 0 8px; min-height: 36px; } .cb-log-title { font-size: 20px; } }
-@media (prefers-reduced-motion: reduce) { .cb-log-level { transition: none; } }

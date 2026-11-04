@@ -1,9 +1,11 @@
 /* Framed sheet: keep the established palette; put density where work happens. */
 .cb-home-main {
   flex: none;
-  align-self: start;
+  align-self: stretch;
   width: 100%;
-  max-height: 720px;
+  height: min(100cqh, 700px);
+  max-height: 700px;
+  justify-content: space-between;
 }
 .cb-home-path {
   flex: 0 0 clamp(110px, 28cqh, 216px);
@@ -292,3 +294,39 @@
 }
 .cb-settings-page { overflow-y:auto; padding-right:2px; }
 .cb-port-editor { flex:0 1 auto; }
+
+.cb-connection-toolbar { display:flex; align-items:center; gap:8px; flex:none; min-width:0; }
+.cb-connection-toolbar .cb-connection-search { margin-left:auto; min-width:140px; flex:1 1 220px; }
+.cb-connection-toolbar .cb-select { flex:0 1 144px; min-width:112px; }
+.cb-connection-toolbar > .cb-button[aria-pressed="true"] { background:var(--cb-primary); color:var(--cb-on-primary); }
+#cb-port-setting { align-items:flex-start; }
+#cb-port-setting > div:first-child { padding-top:5px; }
+#cb-port-setting .cb-port-editor { flex:none; width:220px; max-width:45%; }
+#cb-port-setting .cb-port-editor > div { justify-content:flex-start; gap:6px; }
+#cb-port-setting .cb-port-editor input { width:84px; flex:none; font-variant-numeric:tabular-nums; }
+#cb-port-setting .cb-port-editor > p { font-size:11px; line-height:16px; margin:5px 0 0; overflow-wrap:anywhere; }
+#cb-port-setting .cb-port-editor > p:empty { display:none; }
+
+.cb-diag-summary > .cb-diagnostic-result { display:grid; place-items:center; flex:none; width:32px; height:32px; border:0; border-radius:50%; color:var(--cb-ok); background:color-mix(in srgb,var(--cb-ok) 12%,var(--cb-bg)); }
+.cb-diag-summary > .cb-diagnostic-result[data-result="attention"] { color:var(--cb-warn); background:color-mix(in srgb,var(--cb-warn) 12%,var(--cb-bg)); }
+.cb-diagnostic-step > .cb-check-symbol { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; color:var(--cb-text-dim); background:var(--cb-surface-2); }
+.cb-diagnostic-step > .cb-check-symbol[data-state="passed"] { color:var(--cb-ok); background:color-mix(in srgb,var(--cb-ok) 10%,var(--cb-bg)); }
+.cb-diagnostic-step > .cb-check-symbol[data-state="failed"] { color:var(--cb-bad); background:color-mix(in srgb,var(--cb-bad) 10%,var(--cb-bg)); }
+
+/* Reuse the configuration-source list item exactly; no extra accent stripe. */
+.cb-override-title { display:flex; align-items:center; gap:8px; min-width:0; flex:1; }
+.cb-override-title h2 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; font-weight:600; }
+.cb-override-title input { width:160px; max-width:100%; }
+.cb-override-detail .cb-editor-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:32px; }
+.cb-override-state-controls { display:flex; flex:none; align-items:center; gap:16px; }
+.cb-override-state-controls label { display:flex; align-items:center; gap:7px; color:var(--cb-text-dim); font-size:12px; white-space:nowrap; }
+.cb-override-create-form { display:flex; flex-direction:column; gap:12px; }
+.cb-override-create-form > label { font-size:12px; }
+.cb-override-create-form > input { width:100%; }
+@media(max-width:950px) { .cb-override-state-controls {gap:10px} .cb-override-state-controls label {font-size:11px;gap:5px} }
+/* Cards anchor testing to the workspace bottom; list mode remains continuous. */
+.cb-nodes-workspace:has(.cb-node-group[data-density="cards"]) > .cb-site-section { margin-top:auto; }
+/* Space sits inside each scroll surface, ahead of the reserved scrollbar gutter. */
+.cb-settings-page,.cb-node-toolbar-page .cb-nodes-workspace,.cb-diag-results,.cb-profile-detail { padding-inline-end:12px; scrollbar-gutter:stable; }
+.cb-profile-detail { overflow:auto; }
+.cb-context-scroll { padding-inline-end:10px; }

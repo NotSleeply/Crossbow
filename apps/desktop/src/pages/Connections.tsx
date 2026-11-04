@@ -1,3 +1,4 @@
+import SegmentedControl from "../components/SegmentedControl";
 import {SearchField} from "../components/Controls";
 import Dialog from "../components/Dialog";
 import Select from "../components/Select";
@@ -86,21 +87,9 @@ export default function ConnectionsPage() {
       <PageHead
         title={t("conn.title")}
         meta={`${snapshot.truncated ? t("conn.rowCountTruncated", {n: snapshot.truncated, shown: rows.length}) : t("conn.rowCount", {n: rows.length})} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
-      >
-        <div className="cb-seg">
-          <ButtonBase
-            className={view === "list" ? "on" : ""}
-            onClick={() => setView("list")}
-          >
-            {t("conn.viewList")}
-          </ButtonBase>
-          <ButtonBase
-            className={view === "apps" ? "on" : ""}
-            onClick={() => setView("apps")}
-          >
-            {t("conn.viewApps")}
-          </ButtonBase>
-        </div>
+      />
+      <div className="cb-connection-toolbar">
+        <SegmentedControl label={t("conn.title")} value={view} onChange={setView} options={[{value:"list",label:t("conn.viewList")},{value:"apps",label:t("conn.viewApps")}]} />
         <SearchField label={t("conn.filter")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -108,10 +97,10 @@ export default function ConnectionsPage() {
           className="cb-connection-search"
         />
         <Select label={t("conn.sort")} value={sort} onChange={setSort} options={["default","down","up","age"].map(value=>({value,label:t(`conn.sort.${value}`)}))} />
-        <Button onClick={togglePause}>
+        <Button aria-pressed={paused} onClick={togglePause}>
           {paused ? t("conn.paused") : t("conn.pause")}
         </Button>
-      </PageHead>
+      </div>
 
       <div className="cb-card cb-connection-table">
         {view === "list" ? (

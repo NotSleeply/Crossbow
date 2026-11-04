@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-04",
+  "version": "v01",
+  "status": "superseded-by-v02",
+  "issue": 279,
+  "baseline": "ce9b965",
+  "sourceCommit": "693e36e",
+  "files": {
+    "index.html": "d273a02c536ea2883483969633e40eedc7c516dee92d6ceb001ac52e1aef8d24",
+    "preview.tsx": "7d90688adc3010c8fa99e9a35351141cbb887827049609db34cffebd594fd362",
+    "source.zip": "7f183b27e87fd69afbbb8e8e63ac4d6f14373af0c21670828ef9dfbbf6386d8d",
+    "mock-tauri.ts": "0354548ed5c39d8c1fe74366ab9757978f59378b97855df444aebe5c455b37e0",
+    "vite.config.mts": "c822ccb02c453e5c62ec0ddfa1314e95fa1ac40963ef9fc57a91d8f2f6249fb9",
+    "SPEC.md": "cc140d34fcc984f164b8ee54e3946eb50d6903f812bedcb194284632bb9bd3a5",
+    "previews/overview-1120.png": "3f07ec39d01cf3b054f89d97246c2c101d848548e75b1a35bf763567d3606c53",
+    "previews/overrides-selected.png": "bcf0091a5884e0ab42bf93eda979b8664e3f0ba1986f4ec608eb3bd4702839ef",
+    "previews/logs-dark-880.png": "b043525f6d60fbd7f4700005667be100b908c89dcc06a7e214623966a7989c83",
+    "previews/connections-1120.png": "27150bb2a53f5647beb293bee4915e3f390dfad50b0541f5ebade69359387f80",
+    "previews/port-dark-880.png": "479ffd3da2debe2ceb2d0440c28c1fab171d6e475b26837b6c8808afb7cab77c",
+    "previews/connections-dark-880.png": "9aaa567bc8f5b2f1c6b2de5f107a3342684af79e2b5dd66a8fc73f42448a30c4",
+    "previews/logs-1120.png": "d15e496dd3a7550ce6e9b1d73f4c0458aa4ca31a7ffa2980a0449c3231378f13"
+  }
+}

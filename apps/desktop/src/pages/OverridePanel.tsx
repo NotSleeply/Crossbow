@@ -1,18 +1,24 @@
+import Dialog from "../components/Dialog";
+import SegmentedControl from "../components/SegmentedControl";
 import {Input, Switch} from "../components/Controls";
 import { Button, ButtonBase } from "../components/Button";
 import FitItems from "../components/FitItems";
 import { notify } from "../notifications/service";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type OverrideDef, type OverrideKind, type Profile } from "../ipc";
 import { useT } from "../i18n";
 
 /** 覆写面板：列表 + 新建 + 编辑器 + 绑定当前订阅。 */
 export default function OverridePanel({
   profiles,
+  createOpen,
+  onCreateClose,
   activeId,
   onChanged,
 }: {
   profiles: Profile[];
+  createOpen:boolean;
+  onCreateClose:()=>void;
   activeId: string | null;
   onChanged: () => void;
 }) {
@@ -24,6 +30,8 @@ export default function OverridePanel({
   const [nameDraft, setNameDraft] = useState("");
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const createFlight=useRef(false);
+  const [newKind,setNewKind]=useState<OverrideKind>("script");
   const [savingId, setSavingId] = useState<string | null>(null);
   const active = profiles.find((p) => p.id === activeId);
 
@@ -36,7 +44,8 @@ export default function OverridePanel({
   }, [refresh]);
 
   const create = async (kind: OverrideKind) => {
-    if (!newName.trim()) return;
+    if (!newName.trim()||createFlight.current) return;
+    createFlight.current=true;
     setCreating(true);
     try {
       const def = await ipc.createOverride(newName.trim(), kind);
@@ -45,10 +54,12 @@ export default function OverridePanel({
       setEditingId(def.id);
       setDraft(def.content);
       onChanged();
+      onCreateClose();
       void notify.resolve("override-create");
     } catch (e) {
       notify.error(e, "override-create");
     } finally {
+      createFlight.current=false;
       setCreating(false);
     }
   };
@@ -119,30 +130,14 @@ export default function OverridePanel({
     overrides.find((override) => override.id === editingId) ?? overrides[0];
   return (
     <section className="cb-overrides-workspace">
-      <div className="cb-override-create">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && newName.trim() && !creating)
-              void create("script");
-          }}
-          placeholder={t("ov.namePlaceholder")}
-          className="cb-input cb-selectable"
-        />
-        <Button
-          disabled={creating || !newName.trim()}
-          onClick={() => create("script")}
-        >
-          {creating ? "…" : t("ov.newScript")}
-        </Button>
-        <Button
-          disabled={creating || !newName.trim()}
-          onClick={() => create("merge")}
-        >
-          {t("ov.newMerge")}
-        </Button>
-      </div>
+      {createOpen && <Dialog title={t("ov.create")} onClose={()=>{if(!creating)onCreateClose()}}>
+        <form className="cb-override-create-form" onSubmit={e=>{e.preventDefault();void create(newKind)}}>
+          <label htmlFor="new-override-name">{t("ov.namePlaceholder")}</label>
+          <Input id="new-override-name" autoFocus value={newName} disabled={creating} onChange={e=>setNewName(e.target.value)} placeholder={t("ov.namePlaceholder")}/>
+          <SegmentedControl label={t("ov.type")} value={newKind} onChange={setNewKind} disabled={creating} options={[{value:"script",label:t("ov.newScript")},{value:"merge",label:t("ov.newMerge")}]} />
+          <div className="actions"><Button disabled={creating} onClick={onCreateClose}>{t("ov.cancel")}</Button><Button type="submit" variant="primary" disabled={creating||!newName.trim()} loading={creating}>{t("ov.createAction")}</Button></div>
+        </form>
+      </Dialog>}
       {overrides.length === 0 ? (
         <div className="cb-empty">
           <p>{t("ov.empty")}</p>
@@ -158,7 +153,8 @@ export default function OverridePanel({
               render={(override) => (
                 <ButtonBase
                   key={override.id}
-                  className={selected?.id === override.id ? "active" : ""}
+                  title={override.name}
+                  className={`cb-profile-list-item ${selected?.id === override.id ? "active" : ""}`}
                   aria-current={
                     selected?.id === override.id ? "page" : undefined
                   }
@@ -180,7 +176,7 @@ export default function OverridePanel({
           {selected && (
             <div className="cb-override-detail">
               <div className="cb-editor-tools">
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="cb-override-title">
                   {renamingId === selected.id ? (
                     <Input
                       autoFocus
@@ -194,9 +190,9 @@ export default function OverridePanel({
                       className="cb-input"
                     />
                   ) : (
-                    <h2 className="text-lg font-medium">{selected.name}</h2>
+                    <h2 title={selected.name}>{selected.name}</h2>
                   )}
-                  <Button
+                  <Button size="small"
                     onClick={() => {
                       setNameDraft(selected.name);
                       setRenamingId(selected.id);
@@ -205,8 +201,9 @@ export default function OverridePanel({
                     {t("profiles.rename")}
                   </Button>
                 </div>
-                <label className="flex items-center gap-2 text-xs">
-                  <Switch aria-label={t("ov.enabled")}
+                <div className="cb-override-state-controls"><label>
+                  <span>{t("ov.enabled")}</span>
+                  <Switch size="compact" aria-label={t("ov.enabled")}
                     checked={selected.enabled}
                     onChange={(value) =>
                       ipc
@@ -226,15 +223,8 @@ export default function OverridePanel({
                         )
                     }
                   />
-                  {t("ov.enabled")}
                 </label>
-              </div>
-              <div className="cb-editor">
-                <div className="cb-editor-head">
-                  <span>
-                    {selected.kind === "script" ? "JavaScript" : "YAML"}
-                  </span>
-                  <label className="flex items-center gap-2">
+                  <label><span>{t("ov.bind")}</span>
                     <Switch size="compact" aria-label={t("ov.bind")}
                       checked={activeId ? bound(selected.id) : false}
                       disabled={!activeId}
@@ -242,9 +232,11 @@ export default function OverridePanel({
                         toggleBind(selected.id, value)
                       }
                     />
-                    {t("ov.bind")}
                   </label>
                 </div>
+              </div>
+              <div className="cb-editor">
+                <div className="cb-editor-head"><span>{selected.kind === "script" ? "JavaScript" : "YAML"}</span></div>
                 <textarea
                   aria-label={t("ov.edit")}
                   spellCheck={false}
