@@ -4,7 +4,7 @@ import {SearchField} from "../components/Controls";
 import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { notify } from "../notifications/service";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
 import "./Logs.css";
@@ -314,8 +314,8 @@ export default function LogsPage() {
     setClearing(false);
   };
 
-  // 自动滚动：用户上滚超过 40px 即暂停跟随
-  useEffect(() => {
+  // Follow before paint; a post-paint scroll flashes the previous position on each batch.
+  useLayoutEffect(() => {
     if (pinned.current && readingLines === null && boxRef.current) {
       boxRef.current.scrollTop = boxRef.current.scrollHeight;
     }
