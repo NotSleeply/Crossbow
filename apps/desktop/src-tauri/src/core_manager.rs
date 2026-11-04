@@ -115,6 +115,7 @@ impl Shared {
         let record = serde_json::json!({
             "port": port, "secret": secret, "pid": pid,
             "binary_path": binary.display().to_string(),
+            "config": self.config_cache.lock().unwrap().clone(),
         });
         // A restart must not see a truncated descriptor. Keep credentials private.
         let temporary = self
@@ -388,6 +389,16 @@ impl CoreManager {
             .config_cache
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(content);
+        let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let (Some(pid), Some((port, secret))) = (
+            inner.child.as_ref().map(|child| child.id()).or(inner.external_pid),
+            inner.controller.as_ref(),
+        ) {
+            let binary = inner.external_binary.as_deref().unwrap_or(&self.shared.binary_path);
+            if let Err(error) = self.shared.write_descriptor(pid, *port, secret, binary) {
+                eprintln!("could not persist updated core descriptor: {error}");
+            }
+        }
     }
 
     /// 启动链决策日志（独立文件 core-decision.log），排查引擎切换竞态。
@@ -419,6 +430,21 @@ impl CoreManager {
     }
 
     fn start_internal(
+        &self,
+        base_config: &str,
+        engine_rt: &RuntimeConfig,
+        spawner: Option<Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>>,
+    ) -> Result<(), String> {
+        let result = self.start_attempt(base_config, engine_rt, spawner);
+        if let Err(error) = &result {
+            if self.status() == CoreStatus::Starting {
+                self.shared.notify(CoreStatus::Crashed(error.clone()));
+            }
+        }
+        result
+    }
+
+    fn start_attempt(
         &self,
         base_config: &str,
         engine_rt: &RuntimeConfig,
@@ -482,6 +508,10 @@ impl CoreManager {
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
         }
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
+
+        // Port handover is part of startup too. A privileged macOS listener can
+        // leave cross-UID TIME_WAIT sockets for ~60s after confirmed process exit.
+        self.shared.notify(CoreStatus::Starting);
 
         // 混合端口预检：被其他程序占用（常见：Clash Verge 等代理同端口）时，
         // sing-box 会 FATAL 退出、mihomo 静默失去代理能力——直接给出可操作的错误。
@@ -571,17 +601,19 @@ impl CoreManager {
             let handover_wait = if port_has_listener(address) {
                 Duration::from_secs(5)
             } else {
-                Duration::from_secs(30)
+                Duration::from_secs(if cfg!(target_os = "macos") { 75 } else { 30 })
             };
             if let Err(e) = wait_for_mixed_port(&try_bind, handover_wait) {
                 let listeners = port_listeners_via_lsof(engine_rt.mixed_port);
                 for (pid, cmd) in &listeners {
                     note.push_str(&format!("占用者 pid={pid}（{cmd}）；"));
                 }
-                return Err(format!(
+                let message = format!(
                     "混合端口 {} 无法绑定（{e}）。{note}若仍失败：请更换本应用的混合端口，或退出占用该端口的程序",
                     engine_rt.mixed_port
-                ));
+                );
+                self.shared.notify(CoreStatus::Crashed(message.clone()));
+                return Err(message);
             }
         }
         // controller 端口避开 mixed，避免自相争抢
@@ -696,6 +728,11 @@ impl CoreManager {
             }
             return false;
         }
+        // Only reuse a snapshot persisted after a successful start/reload and
+        // still matching the disk file. Legacy/changed files remain uncached,
+        // so rollback never guesses which configuration the live process uses.
+        let config = d.verified_config(&self.config_path());
+        *self.shared.config_cache.lock().unwrap() = config;
         let mut inner = self.shared.inner.lock().unwrap();
         inner.stopping = false;
         inner.detached = true;
@@ -1041,6 +1078,15 @@ struct CoreDescriptor {
     pid: u32,
     #[serde(default)]
     binary_path: Option<PathBuf>,
+    #[serde(default)]
+    config: Option<String>,
+}
+
+impl CoreDescriptor {
+    fn verified_config(&self, path: &Path) -> Option<String> {
+        let snapshot = self.config.as_ref()?;
+        (std::fs::read_to_string(path).ok().as_ref() == Some(snapshot)).then(|| snapshot.clone())
+    }
 }
 
 /// 枚举可执行路径与任一候选完全一致的进程（识别本应用残留内核，
@@ -1966,6 +2012,113 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn adopted_cache_requires_a_known_unchanged_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let mut record: CoreDescriptor = serde_json::from_str(
+            r#"{"pid":1,"port":12345,"secret":"test"}"#,
+        ).unwrap();
+        std::fs::write(&path, "mode: rule\n").unwrap();
+        assert!(record.verified_config(&path).is_none(), "legacy records cannot guess live config");
+        record.config = Some("mode: rule\n".into());
+        assert_eq!(record.verified_config(&path), record.config);
+        std::fs::write(&path, "mode: direct\n").unwrap();
+        assert!(record.verified_config(&path).is_none(), "uncommitted disk edits are not live config");
+        std::fs::remove_file(&path).unwrap();
+        assert!(record.verified_config(&path).is_none());
+    }
+
+    #[test]
+    fn preflight_does_not_bypass_a_live_listener() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        assert_eq!(check_mixed_port_available(listener.local_addr().unwrap()).unwrap_err().kind(), std::io::ErrorKind::AddrInUse);
+    }
+
+    #[test]
+    fn invalid_configuration_does_not_leave_starting_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(std::env::current_exe().unwrap(), dir.path().to_path_buf());
+        assert!(manager.start("proxies: [", &RuntimeConfig {mixed_port:free_port().unwrap(), ..RuntimeConfig::default()}).is_err());
+        assert!(matches!(manager.status(), CoreStatus::Crashed(_)));
+        assert!(manager.pid().is_none());
+    }
+
+    fn wait_test_core(manager: &CoreManager) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while manager.status() != CoreStatus::Running {
+            assert!(Instant::now() < deadline, "core not ready: {:?}", manager.status());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Local-only regression for the actual macOS root -> user TIME_WAIT handover.
+    /// Uses isolated ports/configs, TUN disabled, and never changes system proxy.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_privileged_to_user_port_handover() {
+        use std::io::Read;
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (Ok(root_bin), Ok(user_bin)) = (
+            std::env::var("CROSSBOW_ROOT_CORE_BIN"), std::env::var("CROSSBOW_CORE_BIN"),
+        ) else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let root = CoreManager::new(root_bin.into(), dir.path().to_path_buf());
+        root.set_options(CoreOptions { ensure_geo_files:false, ..CoreOptions::default() });
+        let rt = RuntimeConfig {mixed_port:free_port().unwrap(), ..RuntimeConfig::default()};
+        let base = "proxies: []\nrules: ['MATCH,DIRECT']\n";
+        root.start(base, &rt).unwrap();
+        wait_test_core(&root);
+        let mut client = TcpStream::connect(("127.0.0.1", rt.mixed_port)).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client.write_all(b"GET http://127.0.0.1:1/ HTTP/1.1\r\nHost: 127.0.0.1:1\r\nConnection: close\r\n\r\n").unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1"));
+        drop(client);
+        assert!(root.stop());
+        let address = SocketAddr::from(([127,0,0,1], rt.mixed_port));
+        assert!(!port_has_listener(address));
+        assert_eq!(check_mixed_port_available(address).unwrap_err().kind(), std::io::ErrorKind::AddrInUse);
+        let user = CoreManager::new(user_bin.into(), dir.path().to_path_buf());
+        user.set_options(CoreOptions { ensure_geo_files:false, ..CoreOptions::default() });
+        let began = Instant::now();
+        user.start(base, &rt).unwrap();
+        wait_test_core(&user);
+        assert!(began.elapsed() < Duration::from_secs(90));
+        assert!(user.stop());
+    }
+
+    #[test]
+    fn real_handoff_keeps_reload_snapshot_and_process() {
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let previous = CoreManager::new(bin.clone().into(), dir.path().to_path_buf());
+        previous.set_options(CoreOptions { ensure_geo_files:false, ..CoreOptions::default() });
+        previous.start("proxies: []\nrules: ['MATCH,DIRECT']\n", &RuntimeConfig {mixed_port:free_port().unwrap(), ..RuntimeConfig::default()}).unwrap();
+        wait_test_core(&previous);
+        let pid = previous.pid();
+        let original = previous.current_config();
+        previous.prepare_handoff().unwrap();
+        // Simulate the old GUI exiting, without leaving its watcher in this test process.
+        previous.shared.inner.lock().unwrap().stopping = true;
+        let mut child = previous.shared.inner.lock().unwrap().child.take().unwrap();
+        let reaper = std::thread::spawn(move || child.wait());
+        let replacement = CoreManager::new(bin.into(), dir.path().to_path_buf());
+        assert!(replacement.adopt_external());
+        assert_eq!(replacement.current_config(), original);
+        let config = original.unwrap().replace("mode: rule", "mode: direct");
+        replacement.write_config_file(&config).unwrap();
+        let (port, secret) = replacement.controller().unwrap();
+        crate::mihomo_api::Controller {port,secret}.reload_config(&replacement.config_path()).unwrap();
+        replacement.replace_cached_config(config.clone());
+        assert_eq!(replacement.pid(), pid);
+        assert_eq!(Shared::read_descriptor(dir.path()).unwrap().config, Some(config));
+        assert!(replacement.stop());
+        reaper.join().unwrap().unwrap();
+    }
+
+    #[test]
     fn start_rejects_missing_binary() {
         let dir = tempfile::tempdir().unwrap();
         let mgr = CoreManager::new(dir.path().join("no-such-bin"), dir.path().to_path_buf());
@@ -2278,6 +2431,9 @@ pub(crate) mod tests {
                 .unwrap();
         });
         let previous = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let snapshot = "mode: rule\n".to_string();
+        std::fs::write(previous.config_path(), &snapshot).unwrap();
+        *previous.shared.config_cache.lock().unwrap() = Some(snapshot.clone());
         let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
         let pid = sleeper.id();
         {
@@ -2290,6 +2446,11 @@ pub(crate) mod tests {
         let replacement = CoreManager::new(PathBuf::from("/bin/false"), dir.path().to_path_buf());
         assert!(replacement.adopt_external());
         server.join().unwrap();
+        assert_eq!(replacement.current_config(), Some(snapshot));
+        let reloaded = "mode: direct\n".to_string();
+        replacement.write_config_file(&reloaded).unwrap();
+        replacement.replace_cached_config(reloaded.clone());
+        assert_eq!(Shared::read_descriptor(dir.path()).unwrap().config, Some(reloaded));
         assert_eq!(replacement.binary_path(), PathBuf::from("/bin/sleep"));
         assert_eq!(replacement.prepare_handoff().unwrap(), Some(pid));
         let record = Shared::read_descriptor(dir.path()).unwrap();

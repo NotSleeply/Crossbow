@@ -138,21 +138,26 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
         const value = await task();
         if (!mounted.current || !readGate.current.current(key, version)) return;
         commit(value); confirm(key);
+        return value;
       } catch {
         if (!mounted.current || !readGate.current.current(key, version)) return;
         errors.push({ key, version });
         setReadErrors(old => new Set([...old, key]));
       }
     };
+    const status = await read("core", ipc.coreStatus, setCore);
+    if (status && status.state !== "Running") {
+      readGate.current.invalidate("outbound");
+      confirm("outbound");
+    }
     await Promise.all([
       read("profiles", ipc.listProfiles, setProfiles),
       read("active", ipc.activeProfileId, setActiveId),
-      read("core", ipc.coreStatus, setCore),
       read("proxy", ipc.sysproxyStatus, setProxy),
       read("tun", ipc.tunStatus, setTun),
       read("mode", ipc.coreMode, setMode),
       read("port", () => ipc.getEngineConfig().then(c => c.mixed_port), setMixedPort),
-      read("outbound", ipc.currentOutbound, setOutbound),
+      status?.state === "Running" ? read("outbound", ipc.currentOutbound, setOutbound) : Promise.resolve(),
     ]);
     if (mounted.current && errors.some(({key, version}) => readGate.current.current(key, version))) notify.error(t("home.stateReadFailed"), "home-state-read");
     else if (mounted.current) void notify.resolve("home-state-read");
@@ -166,7 +171,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     const un1 = ipc.onCoreStatus((status) => {
       if (!active) return;
       eventReceived("core"); setCore(status);
-      if (status.state !== "Running") setLastTrafficAt(0);
+      if (status.state !== "Running") {
+        setLastTrafficAt(0);
+        // A controller is intentionally unavailable during stop/port handover.
+        eventReceived("outbound");
+      } else {
+        void refresh();
+      }
       const version = readGate.current.begin("tun");
       void ipc.tunStatus().then(value => {
         if (active && readGate.current.current("tun", version)) { setTun(value); confirm("tun"); }

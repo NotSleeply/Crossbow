@@ -16,14 +16,29 @@ export default function DiagnosticsPage() {
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
   const fixingRef = useRef(false);
+  const coreRevision = useRef(0);
   const active = useRef(true),
     runId = useRef<string | null>(null),
     inFlight = useRef(false);
   useEffect(() => {
     active.current = true;
+    const invalidate = () => {
+      coreRevision.current += 1;
+      previousResults = null;
+      if (active.current) setResults(null);
+    };
+    const off = ipc.onCoreStatus(invalidate);
+    // Cached reports can also become stale while this page is unmounted.
+    const revision = coreRevision.current;
+    void off.then(() => ipc.coreStatus()).then(status => {
+      if (!active.current || coreRevision.current !== revision) return;
+      const core = previousResults?.find(row => row.id === "core_running");
+      if (core && core.ok !== (status.state === "Running")) invalidate();
+    }).catch(() => {});
     return () => {
       active.current = false;
       runId.current = null;
+      void off.then(unsubscribe => unsubscribe()).catch(() => {});
     };
   }, []);
   const run = async () => {
@@ -33,16 +48,18 @@ export default function DiagnosticsPage() {
     setRunFailed(false);
     setResults([]);
     const id = crypto.randomUUID();
+    const revision = coreRevision.current;
     runId.current = id;
     let off: (() => void) | undefined;
     try {
       off = await ipc.onDiagnosisProgress((p) => {
-        if (!active.current || p.run_id !== runId.current) return;
+        if (!active.current || p.run_id !== runId.current || coreRevision.current !== revision) return;
         if (!p.result) setChecking(p.id);
         else setResults((old) => [...(old ?? []).filter((r) => r.id !== p.id), p.result!]);
       });
       if (!active.current) return;
       const rows = await ipc.runDiagnosis(id);
+      if (!active.current || coreRevision.current !== revision) return;
       previousResults = rows;
       if (active.current && runId.current === id) {
         setResults(rows);
