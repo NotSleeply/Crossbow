@@ -29,6 +29,8 @@ export default function SettingsPage({
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
   const [portDraft, setPortDraft] = useState<string>("");
+  const [editingPort, setEditingPort] = useState(false);
+  const portEditButton = useRef<HTMLButtonElement>(null);
   const [portBusy, setPortBusy] = useState(false);
   const portInFlight = useRef(false);
   const [portInvalid, setPortInvalid] = useState(false);
@@ -71,7 +73,7 @@ export default function SettingsPage({
   const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
   useEffect(()=>{
     if(!focusControl||!settingsReady)return;
-    const frame=requestAnimationFrame(()=>{const el=document.getElementById(focusControl);el?.scrollIntoView({block:"center"});el?.focus({preventScroll:true})});
+    const frame=requestAnimationFrame(()=>{const el=document.getElementById(focusControl);el?.scrollIntoView({block:"center"});(focusControl==="cb-port-setting"?portEditButton.current:el)?.focus({preventScroll:true})});
     return()=>cancelAnimationFrame(frame);
   },[focusControl,settingsReady,section]);
   const [savingCount, setSavingCount] = useState(0);
@@ -220,6 +222,15 @@ export default function SettingsPage({
     }
   };
 
+  const closePortEditor = () => {
+    if (portInFlight.current) return;
+    dirtyPort.current = false;
+    setPortDraft(engine ? String(engine.mixed_port) : "");
+    setPortInvalid(false);
+    setEditingPort(false);
+    requestAnimationFrame(() => portEditButton.current?.focus());
+  };
+
   const applyPort = async () => {
     if (portInFlight.current || !engine) return;
     const port = parsePort(portDraft);
@@ -232,7 +243,7 @@ export default function SettingsPage({
       );
       return;
     }
-    if (port === engine?.mixed_port) return;
+    if (port === engine?.mixed_port) { closePortEditor(); return; }
     portInFlight.current = true; setPortBusy(true); setPortInvalid(false);
     try { await saveSetting(
       "port",
@@ -241,6 +252,8 @@ export default function SettingsPage({
       () => {
         setEngine((old) => (old ? { ...old, mixed_port: port } : old));
         dirtyPort.current = false;
+        setEditingPort(false);
+        requestAnimationFrame(() => portEditButton.current?.focus());
       },
       `${t("settings.port")}: ${port}`,
     ); } finally { portInFlight.current = false; setPortBusy(false); }
@@ -359,17 +372,19 @@ export default function SettingsPage({
         </Group><Group title={t("layout.connectionSettings")}>
           <Row id="cb-port-setting" label={t("settings.port")} hint={t("settings.portHint")}>
             <div className="cb-port-editor">
-              <div className="flex items-center gap-2">
-                <Input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
+              {editingPort ? <div className="cb-port-editor-actions">
+                <Input id="mixed-port" autoFocus aria-label={t("settings.port")} inputMode="numeric"
                   value={portDraft} onChange={e => { dirtyPort.current = true; setPortDraft(e.target.value); setPortInvalid(false); }}
                   aria-invalid={portInvalid} aria-describedby="mixed-port-help"
                   disabled={portBusy || !engine}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void applyPort(); } }}
-                  className="cb-input cb-selectable w-24 px-2 py-1" />
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void applyPort(); } else if(e.key === "Escape") { e.preventDefault(); closePortEditor(); } }} />
                 <Button size="small" loading={portBusy} disabled={portBusy || !engine || portDraft === String(engine.mixed_port)} onClick={() => void applyPort()}>{t("settings.applyPort")}</Button>
-                {engine && portDraft !== String(engine.mixed_port) && <Button size="small" disabled={portBusy} onClick={() => { dirtyPort.current = false; setPortDraft(String(engine.mixed_port)); setPortInvalid(false); }}>{t("settings.cancelPort")}</Button>}
-              </div>
-              <p id="mixed-port-help" className="cb-control-note" role="status">{portInvalid||portBusy||engine&&portDraft!==String(engine.mixed_port)?t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint"):""}</p>
+                <Button size="small" disabled={portBusy} onClick={closePortEditor}>{t("settings.cancelPort")}</Button>
+              </div> : <div className="cb-port-readout">
+                <span className="cb-port-value">{engine?.mixed_port ?? "—"}</span>
+                <Button ref={portEditButton} size="small" disabled={!engine} aria-label={`${t("settings.editPort")} ${t("settings.port")}`} onClick={() => setEditingPort(true)}>{t("settings.editPort")}</Button>
+              </div>}
+              {editingPort && <p id="mixed-port-help" className="cb-control-note" role="status">{t(portInvalid ? "settings.invalidPort" : portBusy ? "settings.portApplying" : "settings.portApplyHint")}</p>}
             </div>
           </Row>
           <Row label={t("settings.flags")} hint={t("settings.flagsHint")}>
