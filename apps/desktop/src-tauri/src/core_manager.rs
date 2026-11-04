@@ -288,7 +288,7 @@ impl Shared {
                 kill_external(pid, binary.as_deref())
             };
             #[cfg(not(target_os = "linux"))]
-            let stopped = kill_external(pid, binary.as_deref());
+            let stopped = kill_external_checked(pid, binary.as_deref(), Some(&self.work_dir));
             if !stopped {
                 let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
                 inner.external_pid = Some(pid);
@@ -470,7 +470,7 @@ impl CoreManager {
             #[cfg(not(target_os = "windows"))]
             let stopped_via_service = false;
             if !stopped_via_service
-                && !kill_external(descriptor.pid, descriptor.binary_path.as_deref())
+                && !kill_external_checked(descriptor.pid, descriptor.binary_path.as_deref(), Some(&self.shared.work_dir))
             {
                 let msg = format!(
                     "无法确认旧内核进程 {} 已退出；描述文件已保留，请关闭旧内核后重试",
@@ -691,7 +691,7 @@ impl CoreManager {
         };
         let timeout = if cfg!(windows) { Duration::from_secs(2) } else { Duration::from_secs(15) };
         if !probe.wait_ready(timeout, || false, gone) {
-            if kill_external(d.pid, d.binary_path.as_deref()) {
+            if kill_external_checked(d.pid, d.binary_path.as_deref(), Some(&self.shared.work_dir)) {
                 let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             }
             return false;
@@ -955,6 +955,10 @@ fn escalate_admin_kill(_pid: u32) {}
 /// 缺少身份信息时只在 PID 已不存在的情况下报告完成，不发送信号或提权。
 /// 返回是否确认已退出。
 fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
+    kill_external_checked(pid, expected, None)
+}
+
+fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Path>) -> bool {
     let Some(expected) = expected else {
         if !pid_is_alive(pid) {
             return true;
@@ -967,7 +971,8 @@ fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
     if gone() {
         return true;
     }
-    if process_matches_binary(pid, expected) != Some(true) {
+    if process_matches_binary(pid, expected) != Some(true)
+        && !work_dir.is_some_and(|dir| verified_updated_core(pid, expected, dir)) {
         eprintln!("core kill: cannot verify external process identity; retaining descriptor");
         return false;
     }
@@ -991,6 +996,43 @@ fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
     eprintln!("core kill: external pid {pid} still alive after admin kill");
     false
 }
+
+// Tauri's macOS updater moves the running bundle into a temporary directory,
+// then deletes it. proc_pidpath returns ENOENT for its still-running sidecar.
+// Recover ONLY our persisted PID: a known updater text mapping, ownership of
+// the recorded controller listener, and authenticated controller readiness must
+// all agree. Never authorize a signal from the executable basename alone.
+#[cfg(any(target_os = "macos", test))]
+fn updater_text_path(path: &Path, expected: &Path, temporary_root: &Path) -> bool {
+    if !expected.ends_with("Crossbow.app/Contents/MacOS/mihomo")
+        && !expected.ends_with("Crossbow.app/Contents/MacOS/sing-box") { return false; }
+    let Some(name)=expected.file_name() else {return false};
+    let Ok(relative)=path.strip_prefix(temporary_root) else {return false};
+    let parts:Vec<_>=relative.components().collect();
+    parts.len()==5 && parts[0].as_os_str().to_str().is_some_and(|v|
+        v.strip_prefix("tauri_current_app").is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|c|c.is_ascii_alphanumeric())))
+        && parts[1].as_os_str()=="current_app" && parts[2].as_os_str()=="Contents"
+        && parts[3].as_os_str()=="MacOS" && parts[4].as_os_str()==name
+}
+
+#[cfg(target_os = "macos")]
+fn verified_updated_core(pid:u32, expected:&Path, work_dir:&Path)->bool {
+    let Some(d)=Shared::read_descriptor(work_dir) else {return false};
+    if d.pid!=pid || d.binary_path.as_deref()!=Some(expected) || d.secret.is_empty() {return false;}
+    let Ok(text)=crate::process::command("/usr/sbin/lsof").args(["-a","-p",&pid.to_string(),"-d","txt","-Fn"]).output() else {return false};
+    let root=std::fs::canonicalize(std::env::temp_dir()).ok();
+    let mapped=String::from_utf8_lossy(&text.stdout).lines().filter_map(|line|line.strip_prefix('n')).any(|name| {
+        // The mapped file can be deleted, so normalize only the existing temp root.
+        root.as_ref().is_some_and(|root|updater_text_path(Path::new(name),expected,root))
+    });
+    if !text.status.success() || !mapped {return false;}
+    let Ok(listener)=crate::process::command("/usr/sbin/lsof").args(["-nP","-a","-p",&pid.to_string(),"-i",&format!("TCP:{}",d.port),"-sTCP:LISTEN","-Fp"]).output() else {return false};
+    if !listener.status.success() || !String::from_utf8_lossy(&listener.stdout).lines().any(|line|line==format!("p{pid}")) {return false;}
+    let probe=ControllerProbe {port:d.port,secret:d.secret};
+    probe.wait_ready(Duration::from_secs(2),||false,||!pid_is_alive(pid))
+}
+#[cfg(not(target_os = "macos"))]
+fn verified_updated_core(_pid:u32,_expected:&Path,_work_dir:&Path)->bool {false}
 
 #[derive(serde::Deserialize)]
 struct CoreDescriptor {
@@ -2322,6 +2364,18 @@ pub(crate) mod tests {
         sleeper.kill().unwrap();
         sleeper.wait().unwrap();
         drop(manager);
+    }
+
+    #[test]
+    fn updater_recovery_accepts_only_our_exact_temporary_bundle_mapping() {
+        let root=Path::new("/private/tmp/test-root");
+        let expected=Path::new("/Applications/Crossbow.app/Contents/MacOS/mihomo");
+        assert!(updater_text_path(&root.join("tauri_current_appRu7F6K/current_app/Contents/MacOS/mihomo"),expected,root));
+        for bad in ["other/current_app/Contents/MacOS/mihomo", "tauri_current_app/current_app/Contents/MacOS/mihomo", "tauri_current_appABC/other/Contents/MacOS/mihomo", "tauri_current_appABC/current_app/Contents/MacOS/sleep", "tauri_current_appABC/current_app/Contents/MacOS/mihomo/extra", "../tauri_current_appABC/current_app/Contents/MacOS/mihomo"] {
+            assert!(!updater_text_path(&root.join(bad),expected,root),"{bad}");
+        }
+        assert!(!updater_text_path(Path::new("/other/tauri_current_appABC/current_app/Contents/MacOS/mihomo"),expected,root));
+        assert!(!updater_text_path(&root.join("tauri_current_appABC/current_app/Contents/MacOS/mihomo"),Path::new("/other/mihomo"),root));
     }
 
     #[test]
