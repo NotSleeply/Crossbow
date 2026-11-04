@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-04",
+  "version": "v01",
+  "issue": 285,
+  "baseline": "b8027aa",
+  "sourceCommit": "e606decef0891bde9b62dae0f390061b57e38cc2",
+  "status": "implemented-pending-visual-review",
+  "inputSummary": "User four screenshots: port readout/focus, card-only nodes and permanent connectivity, consistent overview card borders",
+  "files": {
+    "SPEC.md": "3e82195078afd07795613470d4e695e17eb4b562a2df4e1471db4f3cee7d5c33",
+    "checks.json": "8515c7d6b8d96785513c7dad2b0146bcd78cdbd7050407e971d3fdd10c45683f",
+    "index.html": "d273a02c536ea2883483969633e40eedc7c516dee92d6ceb001ac52e1aef8d24",
+    "mock-tauri.ts": "6ce0b346fd8860e1eec92b040e579ce4b0775436fdcb82c5601f30eb5fbe818c",
+    "preview.tsx": "7d90688adc3010c8fa99e9a35351141cbb887827049609db34cffebd594fd362",
+    "source.zip": "67e055202586469f2f742a662ac6f48a813b47f348e67a7f905bfdafa483cddc",
+    "vite.config.mts": "43fed7a350e09c6074b817096f69715f6425aa2f91485f78c995d12106ce09bb"
+  }
+}
