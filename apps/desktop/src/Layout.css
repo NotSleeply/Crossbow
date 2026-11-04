@@ -299,3 +299,9 @@
 .cb-connection-toolbar .cb-connection-search { margin-left:auto; min-width:140px; flex:1 1 220px; }
 .cb-connection-toolbar .cb-select { flex:0 1 144px; min-width:112px; }
 .cb-connection-toolbar > .cb-button[aria-pressed="true"] { background:var(--cb-primary); color:var(--cb-on-primary); }
+/* FitItems nests the rows; selection must not depend on a direct-child selector. */
+.cb-overrides-workspace .cb-fit-cells > button { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; padding:8px 12px; gap:3px; border-radius:7px; min-width:0; text-align:left; color:var(--cb-text-dim); }
+.cb-overrides-workspace .cb-fit-cells > button > span { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.cb-overrides-workspace .cb-fit-cells > button small { font-size:11px; }
+.cb-overrides-workspace .cb-fit-cells > button[aria-current="page"] { background:var(--cb-accent-soft); color:var(--cb-text); box-shadow:inset 3px 0 var(--cb-accent); font-weight:600; }
+.cb-overrides-workspace .cb-fit-cells > button:not([aria-current]):hover { background:var(--cb-surface-2); }

@@ -158,6 +158,7 @@ export default function OverridePanel({
               render={(override) => (
                 <ButtonBase
                   key={override.id}
+                  title={override.name}
                   className={selected?.id === override.id ? "active" : ""}
                   aria-current={
                     selected?.id === override.id ? "page" : undefined
