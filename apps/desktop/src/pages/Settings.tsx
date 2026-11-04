@@ -1,7 +1,8 @@
+import { Input, Switch, ControlRow as Row } from "../components/Controls";
 import { createReadGate, parsePort } from "../stateReliability";
-import { Button, ButtonBase } from "../components/Button";
+import { Button } from "../components/Button";
 import { notify } from "../notifications/service";
-import { createContext, useContext, useId, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ipc,
   type CoreBinaryInfo,
@@ -14,7 +15,6 @@ import Select from "../components/Select";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
 
-const SettingLabel = createContext<{ label: string; hint?: string } | null>(null);
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage({
@@ -254,7 +254,7 @@ export default function SettingsPage({
       <fieldset className="cb-settings-fields" disabled={!settingsReady || savingCount > 0} aria-busy={savingCount > 0 || (!settingsReady && !settingsReadFailed)}>
 
       {section === "network" && (
-        <Group title={t("settings.coreSection")}>
+        <><Group title={t("settings.coreSection")}>
           <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
             <Select
               label={t("settings.engine")}
@@ -282,7 +282,7 @@ export default function SettingsPage({
           {engineBin?.source === "missing" ? (
             <Row
               label={t("settings.coreMissingEngine", {
-                engine: selectedEngine,
+                engine: selectedEngine === "singbox" ? "sing-box" : "mihomo",
               })}
             >
               <Button variant="primary" loading={installing !== null}
@@ -327,7 +327,7 @@ export default function SettingsPage({
           ) : (
             selectedEngine !== (engine?.engine ?? "mihomo") && (
               <Row
-                label={t("settings.engineApply", { engine: selectedEngine })}
+                label={t("settings.engineApply", { engine: selectedEngine === "singbox" ? "sing-box" : "mihomo" })} hint={t("layout.engineImpact")}
               >
                 <Button variant="primary"
                   onClick={async () => {
@@ -346,7 +346,7 @@ export default function SettingsPage({
               </Row>
             )
           )}
-          <Row label={t("settings.version")} hint={selectedEngine}>
+          <Row label={t("settings.version")} hint={selectedEngine === "singbox" ? "sing-box" : "mihomo"}>
             <span
               className="cb-selectable text-xs"
               style={{ color: "var(--cb-text-dim)" }}
@@ -356,10 +356,11 @@ export default function SettingsPage({
                 : version}
             </span>
           </Row>
+        </Group><Group title={t("layout.connectionSettings")}>
           <Row label={t("settings.port")} hint={t("settings.portHint")}>
             <div className="cb-port-editor">
               <div className="flex items-center gap-2">
-                <input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
+                <Input id="mixed-port" aria-label={t("settings.port")} inputMode="numeric"
                   value={portDraft} onChange={e => { dirtyPort.current = true; setPortDraft(e.target.value); setPortInvalid(false); }}
                   aria-invalid={portInvalid} aria-describedby="mixed-port-help"
                   disabled={portBusy || !engine}
@@ -456,7 +457,7 @@ export default function SettingsPage({
               }}
             />
           </Row>
-        </Group>
+        </Group></>
       )}
 
       {section === "appearance" && (
@@ -553,7 +554,7 @@ export default function SettingsPage({
       )}
 
       {section === "app" && (
-        <Group title={t("settings.systemSection")}>
+        <><Group title={t("settings.systemSection")}>
           <Row
             label={t("settings.lightweight")}
             hint={t("settings.lightweightHint")}
@@ -587,6 +588,7 @@ export default function SettingsPage({
               }}
             />
           </Row>
+        </Group><Group title={t("layout.maintenance")}>
           <Row
             label={t("settings.snapshot")}
             hint={t("settings.snapshotAuto")}
@@ -697,7 +699,7 @@ export default function SettingsPage({
               </div>
             </div>
           </Row>
-        </Group>
+        </Group></>
       )}
       </fieldset>
     </div>
@@ -722,72 +724,5 @@ function Group({
       </div>
       <div className="cb-rows">{children}</div>
     </section>
-  );
-}
-
-function Row({
-  id,
-  label,
-  hint,
-  children,
-}: {
-  id?: string;
-  label: string;
-  hint?: string;
-  children?: React.ReactNode;
-}) {
-  const labelId = useId();
-  const hintId = useId();
-  return (
-    <SettingLabel.Provider value={{ label: labelId, hint: hint ? hintId : undefined }}>
-    <div
-      id={id} tabIndex={id ? -1 : undefined}
-      className="cb-setting-row flex items-center justify-between"
-      role="group"
-      title={hint}
-      aria-label={label}
-    >
-      <div>
-        <div id={labelId} className="text-sm">{label}</div>
-        {hint && (
-          <div
-            id={hintId}
-            className="cb-setting-hint mt-0.5 text-xs"
-            title={hint}
-            style={{ color: "var(--cb-text-dim)" }}
-          >
-            {hint}
-          </div>
-        )}
-      </div>
-      {children}
-    </div>
-    </SettingLabel.Provider>
-  );
-}
-
-function Switch({
-  id,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  id?:string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  const field = useContext(SettingLabel);
-  return (
-    <ButtonBase
-      id={id}
-      role="switch"
-      aria-labelledby={field?.label}
-      aria-describedby={field?.hint}
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`cb-toggle ${checked ? "on" : ""} ${disabled ? "opacity-60 cursor-wait" : ""}`}
-    />
   );
 }

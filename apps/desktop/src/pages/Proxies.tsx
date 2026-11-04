@@ -1,3 +1,6 @@
+import {SearchField, Switch} from "../components/Controls";
+import PopoverPanel from "../components/PopoverPanel";
+import {friendlyKind, readDensity, nodeResultHeight, type NodeDensity} from "../layout";
 import "./Proxies.css";
 import Select from "../components/Select";
 import NodeName from "../components/NodeName";
@@ -88,6 +91,7 @@ function regionOf(node: NodeView): string {
 export default function ProxiesPage() {
   const t = useT();
   const [groupName, setGroupName] = useState("");
+  const [groupQuery, setGroupQuery] = useState("");
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [phase, setPhase] = useState<"loading" | "error" | "noConfig" | "stopped" | "ready">("loading");
   const [starting, setStarting] = useState(false);
@@ -125,10 +129,12 @@ export default function ProxiesPage() {
       else if (s.state !== "Running") { ++snapshotRevision.current; setGroups([]); setPhase("stopped"); }
     });
     // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
+    const switched = () => void load();
+    window.addEventListener("cb:profile-switched", switched);
     const timer = window.setInterval(() => {
       if (!document.hidden && !selectionInFlight.current) void load(true);
     }, 5000);
-    return () => { window.clearInterval(timer); ++snapshotRevision.current; void un.then((f) => f()); };
+    return () => { window.removeEventListener("cb:profile-switched", switched); window.clearInterval(timer); ++snapshotRevision.current; void un.then((f) => f()); };
   }, [load]);
 
   const testGroup = async (name: string) => {
@@ -310,10 +316,12 @@ export default function ProxiesPage() {
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2 className="cb-node-page-title">{t("studio.nodes")}</h2>
             <p className="cb-node-nav-caption">{t("studio.groups")}</p>
+            <SearchField className="cb-group-search" label={t("layout.searchGroups")} placeholder={t("layout.searchGroups")} value={groupQuery} onChange={e=>setGroupQuery(e.target.value)}/>
             <div className="cb-context-scroll">
-              {groups.map((group) => (
+              {groups.filter(group=>group.name.toLowerCase().includes(groupQuery.trim().toLowerCase())).map((group) => (
                 <ButtonBase
                   key={group.name}
+                  title={`${nodeNameText(group.name)} · ${friendlyKind(group.kind,t)}`}
                   className={selectedGroup?.name === group.name ? "active" : ""}
                   aria-current={
                     selectedGroup?.name === group.name ? "page" : undefined
@@ -321,9 +329,10 @@ export default function ProxiesPage() {
                   onClick={() => setGroupName(group.name)}
                 >
                   <span><NodeName name={group.name} /></span>
-                  <small>{group.kind === "URLTest" && group.fixed ? t("proxies.manuallyFixed") : group.kind}</small>
+                  <small>{group.kind === "URLTest" && group.fixed ? t("proxies.manuallyFixed") : friendlyKind(group.kind, t)}</small>
                 </ButtonBase>
               ))}
+              {groupQuery && !groups.some(g=>g.name.toLowerCase().includes(groupQuery.trim().toLowerCase())) && <p className="cb-group-empty">{t("proxies.noMatch")}</p>}
             </div>
           </nav>
           <div className="cb-nodes-workspace">
@@ -385,15 +394,11 @@ function GroupCard({
   const [region, setRegion] = useState("all");
   const [onlyAlive, setOnlyAlive] = useState(false);
   const [sortByLatency, setSortByLatency] = useState(false);
-  const infoRef = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const closeOutside = (event: PointerEvent) => {
-      if (infoRef.current && !infoRef.current.contains(event.target as Node)) infoRef.current.open = false;
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    return () => document.removeEventListener("pointerdown", closeOutside);
-  }, []);
-
+  const [density,setDensity] = useState<NodeDensity>(readDensity);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [resultWidth,setResultWidth] = useState(600);
+  useEffect(()=>{const el=resultsRef.current;if(!el)return;const observer=new ResizeObserver(()=>setResultWidth(el.clientWidth));observer.observe(el);setResultWidth(el.clientWidth);return()=>observer.disconnect()},[]);
+  const changeDensity=(value:NodeDensity)=>{setDensity(value);try{localStorage.setItem('cb-node-density',value)}catch{/* Webview storage may be unavailable. */}};
 
   const infoNodes = group.nodes.filter((n) => INFO_NAME.test(n.name));
   const realNodes = useMemo(
@@ -448,18 +453,17 @@ function GroupCard({
       : t(`proxies.region.${key}`);
 
   return (
-    <section className="cb-node-group">
+    <section className="cb-node-group" data-density={density}>
       <div className="cb-node-heading">
         <div className="cb-node-heading-copy">
           <h1><NodeName name={group.name} /><span>{realNodes.length} {t("proxies.nodeCount")}</span></h1>
-          <p>{t("proxies.now")} <b title={group.now ? nodeNameText(group.now) : undefined}><NodeName name={group.now ?? "—"} /></b><span>{group.kind}</span></p>
+          <p>{t("proxies.now")} <b title={group.now ? nodeNameText(group.now) : undefined}><NodeName name={group.now ?? "—"} /></b><span title={group.kind}>{friendlyKind(group.kind,t)}</span></p>
         </div>
         <div className="cb-node-heading-actions">
-          {infoNodes.length > 0 && <details className="cb-node-info" ref={infoRef}
-            onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-            <summary>{t("proxies.subscriptionInfo")}</summary>
-            <div className="cb-node-info-panel">{infoNodes.map((node) => <p key={node.name}><NodeName name={node.name} /></p>)}</div>
-          </details>}
+          {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
+          <div className="cb-node-density" role="group" aria-label={t("layout.density")}>
+            {(['cards','list'] as const).map(value=><ButtonBase key={value} aria-pressed={density===value} aria-label={t(`layout.${value}`)} title={t(`layout.${value}`)} onClick={()=>changeDensity(value)}><Icon name={value==='cards'?'grid':'lines'}/></ButtonBase>)}
+          </div>
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
           <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy} loading={testing}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
@@ -479,26 +483,24 @@ function GroupCard({
         </Button>}
       </div>}
       {realNodes.length > 0 && <div className="cb-node-filters">
-        <label className="cb-node-search"><Icon name="search" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("proxies.search")} aria-label={t("proxies.search")} /></label>
+        <SearchField className="cb-node-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("proxies.search")} label={t("proxies.search")}/>
         <Select className="cb-node-filter-select" size="compact" label={t("proxies.regionFilter")} value={region} onChange={setRegion}
           options={[{ value: "all", label: t("proxies.allRegions") }, ...regionChips.map((chip) => ({ value: chip.key, label: `${regionLabel(chip.key)} · ${chip.count}` }))]} />
         <Select className="cb-node-filter-select" size="compact" label={t("proxies.sortOrder")} value={sortByLatency ? "latency" : "default"} onChange={(value) => setSortByLatency(value === "latency")}
           options={[{ value: "default", label: t("proxies.defaultOrder") }, { value: "latency", label: t("proxies.latencyOrder") }]} />
-        <ButtonBase type="button" role="switch" aria-checked={onlyAlive} className="cb-node-alive-switch" onClick={() => setOnlyAlive((value) => !value)}>
-          <span className="cb-node-switch-track" aria-hidden="true"><span /></span>{t("proxies.onlyAlive")}
-        </ButtonBase>
+        <label className="cb-node-alive-label"><Switch size="compact" checked={onlyAlive} onChange={setOnlyAlive} aria-label={t("proxies.onlyAlive")}/><span>{t("proxies.onlyAlive")}</span></label>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
+      <div ref={resultsRef} className="cb-node-results" style={{height:nodeResultHeight(visible.length,resultWidth,density)}}>
       {visible.length === 0 ? <div className="cb-node-filter-empty" role="status"><p>{t("proxies.noMatch")}</p>
         <Button size="small" onClick={() => { setQuery(""); setRegion("all"); setOnlyAlive(false); setSortByLatency(false); }}>{t("proxies.resetFilters")}</Button></div> :
       <FitItems
-        key={`${query}:${region}:${onlyAlive}:${sortByLatency}`}
+        key={`${query}:${region}:${onlyAlive}:${sortByLatency}:${density}`}
         items={visible}
-        minWidth={200}
-        maxColumns={4}
-        rowHeight={76}
-        maxRows={4}
-        stretch
+        minWidth={density === "cards" ? 200 : 0}
+        maxColumns={density === "cards" ? 4 : 1}
+        rowHeight={density === "cards" ? 76 : 44}
+        maxRows={density === "cards" ? 4 : 8}
         label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
@@ -556,7 +558,7 @@ function GroupCard({
                 <NodeName name={n.name} />
               </div>
               <div className="cb-node-bottom pointer-events-none mt-1.5 flex items-center gap-1.5">
-                <span className="cb-node-kind">{n.kind}</span>
+                <span className="cb-node-kind" title={n.kind}>{friendlyKind(n.kind,t)}</span>
                 <i
                   className="h-[5px] w-[5px] flex-none rounded-full"
                   style={{
@@ -584,7 +586,7 @@ function GroupCard({
             </div>
           );
         }}
-      />}
+      />}</div>
 
 
     </section>

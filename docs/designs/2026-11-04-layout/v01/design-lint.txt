@@ -1,0 +1,14 @@
+TASTESKILL · LINT   6 file(s)
+
+WARN
+  [shadow] Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may.  (7×)
+      apps/desktop/src/components/Controls.css:18  box-shadow:
+      apps/desktop/src/components/Controls.css:37  box-shadow:
+      apps/desktop/src/components/Controls.css:53  box-shadow:
+      apps/desktop/src/components/Controls.css:71  box-shadow:
+      apps/desktop/src/components/Controls.css:79  box-shadow:
+      apps/desktop/src/components/Controls.css:87  box-shadow:
+      … 1 more
+
+RESULT: 0 FAIL, 7 WARN
+Interface fragments marked data-ui keep their own borders and shadows. Any other line that must keep a flagged pattern for a real reason can carry the comment taste-skill-ignore.

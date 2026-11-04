@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-04",
+  "sourceCommit": "3b46486",
+  "frontend": {
+    "passed": 24,
+    "failed": 0
+  },
+  "productionBuild": "passed; existing >500kB bundle warning",
+  "designLint": {
+    "failed": 0,
+    "warnings": 7,
+    "explanation": "focus rings, inset switch outlines and overlay shadows"
+  },
+  "viewports": [
+    {
+      "width": 880,
+      "height": 560,
+      "themes": [
+        "light",
+        "dark"
+      ],
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "horizontalOverflow": false,
+      "overviewRailOverflow": 0
+    },
+    {
+      "width": 1120,
+      "height": 720
+    },
+    {
+      "width": 1440,
+      "height": 1000
+    }
+  ],
+  "observations": {
+    "groupRowHeight": 48,
+    "nodeToolbarRows": 1,
+    "searchInnerBorder": "0px",
+    "searchInnerOutlineStyle": "none",
+    "searchInnerShadow": "none",
+    "densitySurvivesReload": true,
+    "groupFilterKeepsSelection": true,
+    "configKeyboardSwitchUpdatesToolbar": true,
+    "configFailureKeepsOriginal": true,
+    "escapeReturnsToTrigger": true,
+    "siteContextsRetainedAfterCollapse": 4,
+    "settingsSwitchLabelsAndDescriptions": true
+  },
+  "limits": [
+    "browser IPC fixtures; no installed configuration or network changes",
+    "reduced motion reviewed in CSS; OS setting not toggled",
+    "fixture-module HMR portal error required a full reload; normal UI retested"
+  ]
+}

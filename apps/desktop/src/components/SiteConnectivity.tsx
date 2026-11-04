@@ -19,6 +19,7 @@ export default function SiteConnectivity({
   contextKey: string;
 }) {
   const t = useT();
+  const [collapsed,setCollapsed]=useState(false);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, SiteResult & {testedAt:number;outbound:string;stamp:number;pathChanged?:boolean}>>({});
@@ -137,13 +138,15 @@ export default function SiteConnectivity({
             {t("sites.hint")}
           </p>
         </div>
+        <div className="cb-site-actions"><Button size="small" aria-expanded={!collapsed} aria-controls="cb-site-results" onClick={()=>setCollapsed(v=>!v)}>{t(collapsed?"layout.expand":"layout.collapse")}</Button>
         <Button loading={busy.size > 0}
           disabled={!running || busy.size > 0}
           onClick={() => void test(SITES.map((site) => site.id))}
         >
           {busy.size ? t("sites.testing") : t("sites.testAll")}
-        </Button>
+        </Button></div>
       </div>
+      <div id="cb-site-results" hidden={collapsed}>
       {Object.values(results).some(r=>r.stamp!==generation.current||r.pathChanged)&&<p className="cb-control-note" role="status">{t("workflow.contextChanged")}</p>}
       <div className="cb-site-grid">
         {SITES.map((site) => {
@@ -219,6 +222,7 @@ export default function SiteConnectivity({
       <p className="text-[10px] mt-3" style={{ color: "var(--cb-faint)" }}>
         {running ? t("sites.scope") : t("sites.stopped")}
       </p>
+      </div>
     </section>
   );
 }

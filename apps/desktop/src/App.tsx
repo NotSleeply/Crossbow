@@ -1,3 +1,4 @@
+import ProfileSwitcher from "./components/ProfileSwitcher";
 import { parseNavigation, type NavigationTarget } from "./workflow";
 import { ButtonBase, Button } from "./components/Button";
 import { notify } from "./notifications/service";
@@ -118,15 +119,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    void Promise.all([ipc.listProfiles(), ipc.activeProfileId()])
-      .then(([profiles, id]) => {
-        if (alive) setProfileName(profiles.find((profile) => profile.id === id)?.name ?? "");
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
+    let alive = true, revision = 0;
+    const refresh = async () => {
+      const current = ++revision;
+      try {
+        const [rows,id] = await Promise.all([ipc.listProfiles(),ipc.activeProfileId()]);
+        if(alive && current === revision) setProfileName(rows.find(p=>p.id===id)?.name ?? "");
+      } catch { /* The switcher exposes its own read failure and retry. */ }
     };
+    void refresh();
+    window.addEventListener("cb:profile-switched",refresh);
+    return () => { alive=false; window.removeEventListener("cb:profile-switched",refresh); };
   }, [page]);
 
   const refreshCoreLabel = () => {
@@ -269,18 +272,7 @@ export default function App() {
           ))}
         </nav>
         <div className="cb-global-tools">
-          <Button
-            context="toolbar"
-            className="cb-source-pick"
-            title={profileName || t("studio.sources")}
-            onClick={() => {
-              setConfigTab("sources");
-              go("profiles");
-            }}
-          >
-            <span>{profileName || t("studio.sources")}</span>
-            <span aria-hidden="true">›</span>
-          </Button>
+          <ProfileSwitcher currentName={profileName} onManage={()=>{setConfigTab("sources");go("profiles")}}/>
           <Button
             context="toolbar"
             className="cb-diagnostics-button"

@@ -1,3 +1,5 @@
+import { Switch } from "../components/Controls";
+import { HelpPopover } from "../components/PopoverPanel";
 import { Button, ButtonBase } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
@@ -235,6 +237,8 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     };
   }, [refresh]);
 
+  useEffect(()=>{const changed=()=>void refresh();window.addEventListener("cb:profile-switched",changed);return()=>window.removeEventListener("cb:profile-switched",changed)},[refresh]);
+
   // 状态自愈：事件丢失或 WS 通道冻结（内核重启竞态，#111）最迟 30s 对齐
   // 一次。重订借后端替换语义——新读线程以当前 port/secret 顶替旧通道，
   // 冻结在死端口上的旧读线程随之退场。
@@ -344,7 +348,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     window.dispatchEvent(new CustomEvent("cb:goto", { detail: page }));
   return (
     <div className="cb-home-page">
-      <PageHead title={t("studio.workbench")} meta={t("studio.overviewHint")} />
+      <PageHead title={t("studio.workbench")} />
       {update && <UpdateBanner update={update} onOpen={() => go("settings")} />}
       <div className="cb-home-layout">
         <section className="cb-home-main">
@@ -359,7 +363,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
               <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
             </div>
             <h2>{statusTitle}</h2>
-            <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>
+            {(readErrors.size>0||!canControl||!active||!running||!routingEnabled||explicitOnly)&&<p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
@@ -466,36 +470,15 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             <section className="cb-takeover-panel">
               <div className="cb-home-card-title">
                 <h3>{t("studio.takeover")}</h3>
-                <details
-                  className="cb-home-help"
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape")
-                      event.currentTarget.open = false;
-                  }}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget))
-                      event.currentTarget.open = false;
-                  }}
-                >
-                  <summary aria-label={t("studio.takeoverHelp")}>?</summary>
-                  <div>
-                    <p>{t("studio.proxyHint")}</p>
-                    <p>{t("studio.tunHint")}</p>
-                    <p>{t("studio.independent")}</p>
-                  </div>
-                </details>
+                <HelpPopover label={t("studio.takeoverHelp")}><p>{t("studio.proxyHint")}</p><p>{t("studio.tunHint")}</p><p>{t("studio.independent")}</p></HelpPopover>
               </div>
               <div className="cb-takeover-row" title={proxyHint}>
                 <div>
                   <b>{proxyLabel}</b>
                   <p>{proxyHint}</p>
                 </div>
-                <ButtonBase
-                  className={`cb-toggle ${proxyOn ? "on" : ""}`}
-                  role="switch"
-                  aria-label={proxyLabel}
-                  aria-checked={proxyOn}
-                  onClick={explicitProxy ? toggleCore : toggleProxy}
+                <Switch checked={proxyOn} aria-label={proxyLabel}
+                  onChange={() => {void (explicitProxy ? toggleCore() : toggleProxy());}}
                   disabled={!canControl || busy || core.state === "Starting" || !active || (explicitProxy ? tun.enabled : !capabilities?.system_proxy)}
                 />
               </div>
@@ -504,12 +487,8 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <b>{t("settings.tun")}</b>
                   <p>{t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}</p>
                 </div>
-                <ButtonBase
-                  className={`cb-toggle ${tun.enabled ? "on" : ""}`}
-                  role="switch"
-                  aria-label={t("settings.tun")}
-                  aria-checked={tun.enabled}
-                  onClick={toggleTun}
+                <Switch checked={tun.enabled} aria-label={t("settings.tun")}
+                  onChange={() => void toggleTun()}
                   disabled={!canControl || busy || core.state === "Starting" || !active || !capabilities?.tun}
                 />
               </div>

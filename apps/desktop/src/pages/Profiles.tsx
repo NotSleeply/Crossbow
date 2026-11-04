@@ -1,3 +1,4 @@
+import {Input} from "../components/Controls";
 import type { NavigationTarget } from "../workflow";
 import ConfigRecovery from "../components/ConfigRecovery";
 import { Button, ButtonBase } from "../components/Button";
@@ -118,12 +119,13 @@ export default function ProfilesPage({
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
     try {
-      await notify.run(`profile-${key}`, t("profiles.title"), fn, undefined, {
+      const outcome=await notify.run(`profile-${key}`, t("profiles.title"), fn, undefined, {
         feedback: /^(update|activate|remove|interval|rename)-/.test(key)
           ? "error-only"
           : "task",
         titleKey: "profiles.title",
       });
+      if(outcome.ok&&key.startsWith("activate-"))window.dispatchEvent(new CustomEvent("cb:profile-switched"));
       await refresh();
     } finally {
       setBusy(null);
@@ -275,7 +277,7 @@ export default function ProfilesPage({
         >
           <p className="cb-control-note">{t("profiles.dropHint")}</p>
           <label htmlFor="profile-url">{t("profiles.urlPlaceholder")}</label>
-          <input
+          <Input
             id="profile-url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -344,7 +346,7 @@ function ProfileCard({
     <section>
       <div className="flex flex-wrap items-center gap-3">
         {editing ? (
-          <input
+          <Input
             autoFocus
             className="cb-input cb-selectable"
             value={nameDraft}
