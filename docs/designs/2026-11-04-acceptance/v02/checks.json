@@ -1,0 +1,40 @@
+{
+  "sourceCommit": "f11b4b37afdcae4f35ce57f3e07d0acaf1d15402",
+  "frontendBuild": "passed",
+  "frontendTests": {
+    "passed": 24,
+    "failed": 0
+  },
+  "backendTests": {
+    "passed": 129,
+    "ignored": 1,
+    "failed": 0
+  },
+  "nativeBuild": "passed, Developer ID signed, not notarized",
+  "signatureVerification": "passed",
+  "nativeBehaviorVerifiedAt": "693e36e",
+  "nativeBehavior": [
+    "switch profile both directions",
+    "restore original profile",
+    "old relocated core exited",
+    "7 applicable diagnosis checks passed"
+  ],
+  "browserEvidence": {
+    "viewport": [
+      1120,
+      720
+    ],
+    "logToolbarHeight": 36,
+    "horizontalOverflow": false,
+    "nodeWorkspaceBottom": 681,
+    "connectivityBottom": 681,
+    "scrollPaddingInlineEnd": 12
+  },
+  "remainingVisualRegression": [
+    "final 880px dark English",
+    "create-dialog end-to-end",
+    "settings scroll",
+    "tall overview"
+  ],
+  "limitation": "Local browser use disabled in Work settings after recorded screenshots"
+}

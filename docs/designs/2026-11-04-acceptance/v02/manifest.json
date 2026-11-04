@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-04",
+  "version": "v02",
+  "status": "implemented-awaiting-pr-review",
+  "issue": 279,
+  "baseline": "ce9b965",
+  "sourceCommit": "f11b4b37afdcae4f35ce57f3e07d0acaf1d15402",
+  "inputs": "User nine acceptance reports plus five refinements; sanitized production-component preview",
+  "files": {
+    "SPEC.md": "ada3b2545adbf615e324455883625dccf6f8a2a99d9c2e2b4857961f6ae5a181",
+    "checks.json": "c27624243eeab2d32bd1757d6ed2042a5e3ef641f1763657d36941834e28effd",
+    "index.html": "d273a02c536ea2883483969633e40eedc7c516dee92d6ceb001ac52e1aef8d24",
+    "mock-tauri.ts": "837695a3a78ce4db8b634402c46c913ddc5ba07e92ce038664e9df8ac8d474bb",
+    "preview.tsx": "7d90688adc3010c8fa99e9a35351141cbb887827049609db34cffebd594fd362",
+    "previews/cards-bottom-1120.png": "dd955c6d6a304b35f62309f5ee388a54425f3b34bc7c8b140108d11d61f06712",
+    "previews/logs-light-1120.png": "7b314b46be1c756efb4c967dbe3e0cf268bb74499d4a3cabf8105555a6cbec0f",
+    "previews/overrides-light-1120.png": "321275a4c0c94d886b79d5a811329cca75ff472346711bc509e74af74c547d0f",
+    "source.zip": "66232f9b5d7d2e2c93cc552ec43643b6727abc04f39855f7a950318c5aed652b",
+    "vite.config.mts": "2e17ba43a6fa6d00b51096ac5358c8fe1d821c8937762f65caac47a409f651c1"
+  }
+}
