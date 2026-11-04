@@ -324,3 +324,9 @@
 .cb-override-create-form > label { font-size:12px; }
 .cb-override-create-form > input { width:100%; }
 @media(max-width:950px) { .cb-override-state-controls {gap:10px} .cb-override-state-controls label {font-size:11px;gap:5px} }
+/* Cards anchor testing to the workspace bottom; list mode remains continuous. */
+.cb-nodes-workspace:has(.cb-node-group[data-density="cards"]) > .cb-site-section { margin-top:auto; }
+/* Space sits inside each scroll surface, ahead of the reserved scrollbar gutter. */
+.cb-settings-page,.cb-node-toolbar-page .cb-nodes-workspace,.cb-diag-results,.cb-profile-detail { padding-inline-end:12px; scrollbar-gutter:stable; }
+.cb-profile-detail { overflow:auto; }
+.cb-context-scroll { padding-inline-end:10px; }
