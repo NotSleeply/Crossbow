@@ -10,37 +10,41 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-/** Shared desktop select: one visual system, with keyboard/focus/portal behavior from Base UI. */
-export default function Select({
-  value,
-  options,
-  onChange,
-  label,
-  className = "",
-  size = "default",
-  disabled = false,
-}: {
-  value: string | number;
+interface SelectCommonProps {
   options: SelectOption[];
-  onChange: (value: string) => void;
   label: string;
   className?: string;
   size?: "default" | "compact";
   disabled?: boolean;
-}) {
+}
+export type SelectProps = SelectCommonProps & (
+  | { multiple?: false; value: string | number; onChange: (value: string) => void }
+  | { multiple: true; value: readonly (string | number)[]; onChange: (value: string[]) => void; selectionLabel: string }
+);
+
+/** One menu system for single and multiple selection, including keyboard and portal behavior. */
+export default function Select(props: SelectProps) {
+  const { value, options, label, className = "", size = "default", disabled = false } = props;
+  const multiple = props.multiple === true;
   const [keyboard, setKeyboard] = useState(false);
   const items = options.map((option) => ({
     ...option,
     value: String(option.value),
   }));
   const current = items.find((option) => option.value === String(value));
+  const selectionLabel = props.multiple ? props.selectionLabel : undefined;
   return (
     <div className={`cb-select ${className}`} data-size={size}>
-      <SelectPrimitive.Root
+      <SelectPrimitive.Root<string, boolean>
+        multiple={multiple}
         items={items}
-        value={String(value)}
+        value={props.multiple ? props.value.map(String) : String(value)}
         onValueChange={(next) => {
-          if (next !== null) onChange(next);
+          if (props.multiple) {
+            if (Array.isArray(next)) props.onChange(next);
+          } else if (typeof next === "string") {
+            props.onChange(next);
+          }
         }}
         disabled={disabled || items.length === 0}
         modal={false}
@@ -49,12 +53,14 @@ export default function Select({
           render={<ButtonBase />}
           className="cb-select-trigger"
           aria-label={label}
-          title={current?.label}
+          title={selectionLabel ?? current?.label}
           onPointerDown={() => setKeyboard(false)}
           onKeyDown={() => setKeyboard(true)}
           data-instant={keyboard || undefined}
         >
-          <SelectPrimitive.Value className="cb-select-value" placeholder="—" />
+          <SelectPrimitive.Value className="cb-select-value" placeholder="—">
+            {selectionLabel}
+          </SelectPrimitive.Value>
           <SelectPrimitive.Icon className="cb-select-chevron">
             <Icon name="chevron" size={12} />
           </SelectPrimitive.Icon>

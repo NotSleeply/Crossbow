@@ -1,5 +1,5 @@
 import {Icon} from "../components/Icon";
-import {ChoiceChip} from "../components/ChoiceChip";
+import Select from "../components/Select";
 import {SearchField} from "../components/Controls";
 import { ButtonBase, Button } from "../components/Button";
 import NodeName from "../components/NodeName";
@@ -349,9 +349,19 @@ export default function LogsPage() {
     <div className="cb-logs-page">
       <div className="cb-log-toolbar cb-log-single-toolbar">
         <h1 className="cb-log-title">{t("logs.title")}</h1>
-        <div className="cb-log-filters" role="group" aria-label={t("logs.levels")}>
-          {LEVELS.map(lv=><ChoiceChip key={lv} selected={enabled[lv]} onClick={()=>setEnabled(prev=>({...prev,[lv]:!prev[lv]}))}><span className="cb-level-dot" style={{background:LEVEL_COLOR[lv]}} aria-hidden="true"/>{lv}</ChoiceChip>)}
-        </div>
+        <Select
+          multiple
+          size="compact"
+          className="cb-log-level-select"
+          label={t("logs.levels")}
+          selectionLabel={t("logs.selectedLevels", { n: LEVELS.filter(level => enabled[level]).length })}
+          value={LEVELS.filter(level => enabled[level])}
+          options={LEVELS.map(level => ({ value: level, label: level }))}
+          onChange={selected => setEnabled({
+            debug: selected.includes("debug"), info: selected.includes("info"),
+            warning: selected.includes("warning"), error: selected.includes("error"),
+          })}
+        />
         <SearchField className="cb-log-search" id="cb-log-search" label={t("logs.keyword")} value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder={t("logs.keyword")}/>
         <div className="cb-data-actions">
           <Button title={!following?t("logs.followPaused"):undefined} onClick={()=>{if(following){pinned.current=false;setFollowing(false)}else resume()}}>{t(following?"logs.pauseFollow":"logs.follow")}</Button>
