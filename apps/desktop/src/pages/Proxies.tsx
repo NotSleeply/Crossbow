@@ -1,4 +1,6 @@
-import {SearchField, Switch} from "../components/Controls";
+import SegmentedControl from "../components/SegmentedControl";
+import {ChoiceChip} from "../components/ChoiceChip";
+import {SearchField} from "../components/Controls";
 import PopoverPanel from "../components/PopoverPanel";
 import {friendlyKind, readDensity, nodeResultHeight, type NodeDensity} from "../layout";
 import "./Proxies.css";
@@ -461,9 +463,7 @@ function GroupCard({
         </div>
         <div className="cb-node-heading-actions">
           {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
-          <div className="cb-node-density" role="group" aria-label={t("layout.density")}>
-            {(['cards','list'] as const).map(value=><ButtonBase key={value} aria-pressed={density===value} aria-label={t(`layout.${value}`)} title={t(`layout.${value}`)} onClick={()=>changeDensity(value)}><Icon name={value==='cards'?'grid':'lines'}/></ButtonBase>)}
-          </div>
+          <SegmentedControl className="cb-node-density-control" label={t("layout.density")} value={density} onChange={changeDensity} options={[{value:"cards",label:t("layout.cards")},{value:"list",label:t("layout.list")}]} />
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
           <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy} loading={testing}>
             {testing ? t("proxies.testing") : t("proxies.testAll")}
@@ -488,7 +488,7 @@ function GroupCard({
           options={[{ value: "all", label: t("proxies.allRegions") }, ...regionChips.map((chip) => ({ value: chip.key, label: `${regionLabel(chip.key)} · ${chip.count}` }))]} />
         <Select className="cb-node-filter-select" size="compact" label={t("proxies.sortOrder")} value={sortByLatency ? "latency" : "default"} onChange={(value) => setSortByLatency(value === "latency")}
           options={[{ value: "default", label: t("proxies.defaultOrder") }, { value: "latency", label: t("proxies.latencyOrder") }]} />
-        <label className="cb-node-alive-label"><Switch size="compact" checked={onlyAlive} onChange={setOnlyAlive} aria-label={t("proxies.onlyAlive")}/><span>{t("proxies.onlyAlive")}</span></label>
+        <ChoiceChip selected={onlyAlive} onClick={()=>setOnlyAlive(v=>!v)}>{t("proxies.onlyAlive")}</ChoiceChip>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
       <div ref={resultsRef} className="cb-node-results" style={{height:nodeResultHeight(visible.length,resultWidth,density)}}>

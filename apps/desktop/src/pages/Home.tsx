@@ -1,6 +1,7 @@
+import SegmentedControl from "../components/SegmentedControl";
 import { Switch } from "../components/Controls";
 import { HelpPopover } from "../components/PopoverPanel";
-import { Button, ButtonBase } from "../components/Button";
+import { Button } from "../components/Button";
 import NodeName from "../components/NodeName";
 import { nodeNameText } from "../components/nodeFlags";
 import { notify, notificationText } from "../notifications/service";
@@ -494,31 +495,10 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
               </div>
               <div className="cb-mode-control">
                 <p>{t("studio.mode")}</p>
-                <div
-                  className="cb-seg"
-                  role="group"
-                  aria-label={t("studio.mode")}
-                >
-                  {CORE_MODES.map((m) => (
-                    <ButtonBase
-                      key={m.id}
-                      className={mode === m.id ? "on" : ""}
-                      aria-pressed={known.has("mode") ? mode === m.id : undefined}
-                      disabled={busy || !known.has("mode") || readErrors.has("mode")}
-                      onClick={() =>
-                        notify.run(
-                          "core-mode",
-                          notificationText("core.mode"),
-                          () => ipc.setCoreMode(m.id),
-                          undefined,
-                          { feedback: "error-only" },
-                        )
-                      }
-                    >
-                      {t(`mode.${m.id}`)}
-                    </ButtonBase>
-                  ))}
-                </div>
+                <SegmentedControl label={t("studio.mode")} value={known.has("mode")?mode:""} disabled={busy||!known.has("mode")||readErrors.has("mode")}
+                  options={CORE_MODES.map(m=>({value:m.id,label:t(`mode.${m.id}`)}))}
+                  onChange={value=>{if(!value)return;void notify.run("core-mode",notificationText("core.mode"),()=>ipc.setCoreMode(value as CoreMode),undefined,{feedback:"error-only"})}}/>
+
               </div>
             </section>
             <section className="cb-connection-state" aria-label={t("home.healthSummary")}>

@@ -1,3 +1,4 @@
+import SegmentedControl from "../components/SegmentedControl";
 import {SearchField} from "../components/Controls";
 import Dialog from "../components/Dialog";
 import Select from "../components/Select";
@@ -88,20 +89,7 @@ export default function ConnectionsPage() {
         meta={`${snapshot.truncated ? t("conn.rowCountTruncated", {n: snapshot.truncated, shown: rows.length}) : t("conn.rowCount", {n: rows.length})} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
       />
       <div className="cb-connection-toolbar">
-        <div className="cb-seg">
-          <ButtonBase
-            className={view === "list" ? "on" : ""}
-            onClick={() => setView("list")}
-          >
-            {t("conn.viewList")}
-          </ButtonBase>
-          <ButtonBase
-            className={view === "apps" ? "on" : ""}
-            onClick={() => setView("apps")}
-          >
-            {t("conn.viewApps")}
-          </ButtonBase>
-        </div>
+        <SegmentedControl label={t("conn.title")} value={view} onChange={setView} options={[{value:"list",label:t("conn.viewList")},{value:"apps",label:t("conn.viewApps")}]} />
         <SearchField label={t("conn.filter")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
