@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "e606decef0891bde9b62dae0f390061b57e38cc2",
+  "frontendBuild": "passed",
+  "frontendTests": {
+    "passed": 24,
+    "failed": 0
+  },
+  "visualStatus": "pending-browser-enabled",
+  "visualLimitation": "Local browser use is disabled in Work settings",
+  "review": [
+    "reading/editing separation",
+    "explicit apply and cancel",
+    "focus only on controls",
+    "card-only pagination",
+    "always-visible connectivity",
+    "uniform borderless cards"
+  ]
+}

@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | 端口读值/显式编辑、节点只留卡片、概览统一表面 | v01 | 已实现，实际截图待浏览器可用后补验 | [规格/运行方式](2026-11-04-ui-simplification/v01/SPEC.md) · [交互原型](2026-11-04-ui-simplification/v01/index.html) · [源稿](2026-11-04-ui-simplification/v01/source.zip) · [验证](2026-11-04-ui-simplification/v01/checks.json) | #285 |
 | 2026-11-04 | 桌面九项验收修复及卡片底部/滚动间距等后续调整 | v02 | 已实现，待 PR 评审 | [规格](2026-11-04-acceptance/v02/SPEC.md) · [卡片底部](2026-11-04-acceptance/v02/previews/cards-bottom-1120.png) · [日志](2026-11-04-acceptance/v02/previews/logs-light-1120.png) · [覆写](2026-11-04-acceptance/v02/previews/overrides-light-1120.png) · [源稿](2026-11-04-acceptance/v02/source.zip) · [验证边界](2026-11-04-acceptance/v02/checks.json) | #279 |
 | 2026-11-04 | 桌面九项验收修复首轮 | v01 | 已被 v02 后续调整替代，留存追溯 | [规格](2026-11-04-acceptance/v01/SPEC.md) · [源稿](2026-11-04-acceptance/v01/source.zip) | #279 |
 | 2026-11-04 | 桌面十一项界面整理、节点密度与共享控件 | v01 | 已实现，待 PR 评审 | [规格](2026-11-04-layout/v01/SPEC.md) · [概览](2026-11-04-layout/v01/previews/overview-light-1440.png) · [节点](2026-11-04-layout/v01/previews/nodes-list-light-1120.png) · [源稿](2026-11-04-layout/v01/source.zip) | #275 / 前置 #276 |

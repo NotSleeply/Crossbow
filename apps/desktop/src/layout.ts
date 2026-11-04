@@ -1,25 +1,10 @@
-export type NodeDensity = "cards" | "list";
-export function readDensity(): NodeDensity {
-  try {
-    return localStorage.getItem("cb-node-density") === "list"
-      ? "list"
-      : "cards";
-  } catch {
-    return "cards";
-  }
-}
-/** Match FitItems' minimum widths and gaps, without stretching a sparse list. */
+/** Match the card grid's minimum widths and gaps without stretching sparse results. */
 export function nodeResultHeight(
   length: number,
   width: number,
-  density: NodeDensity,
 ): number {
-  const columns =
-    density === "cards"
-      ? Math.max(1, Math.min(4, Math.floor((width + 10) / 210)))
-      : 1;
-  const row = density === "cards" ? 76 : 44,
-    limit = density === "cards" ? 4 : 8;
+  const columns = Math.max(1, Math.min(4, Math.floor((width + 10) / 210)));
+  const row = 76, limit = 4;
   const rows = Math.max(1, Math.ceil(length / columns));
   return Math.min(rows, limit) * (row + 8) - 8 + (rows > limit ? 40 : 0);
 }

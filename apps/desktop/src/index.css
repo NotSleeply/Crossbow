@@ -1086,6 +1086,7 @@ summary:focus-visible {
   min-width: 0;
   border-radius: 12px;
   background: var(--cb-surface);
+  border: 0;
 }
 .cb-takeover-panel {
   display: flex;
@@ -1197,7 +1198,6 @@ summary:focus-visible {
   justify-content: space-between;
   max-height: 224px;
   padding: 20px;
-  border: 1px solid var(--cb-line);
   font-variant-numeric: tabular-nums;
 }
 .cb-rate-state {

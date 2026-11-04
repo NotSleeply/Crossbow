@@ -331,7 +331,6 @@ export default function App() {
           {page === "settings" && (
             <div className="cb-context-layout cb-settings-layout">
               <nav className="cb-context-nav" aria-label={t("studio.settings")}>
-                <h2>{t("studio.preferences")}</h2>
                 {(
                   [
                     ["network", "studio.network"],
