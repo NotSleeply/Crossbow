@@ -9,6 +9,7 @@ import { ipc, type LogEntry } from "../ipc";
 import { useT } from "../i18n";
 import "./Logs.css";
 import { LogHistory } from "./logHistory";
+import { LogReadingWindow } from "./logReading";
 
 const MAX_LINES = 2000;
 const RENDER_TAIL = 500;
@@ -169,23 +170,11 @@ export default function LogsPage() {
   const [copiedLine,setCopiedLine]=useState<LogEntry|null>(null);
   // Keep the reading target still while new logs continue to arrive in the buffer.
   const [readingLines, setReadingLines] = useState<LogEntry[] | null>(null);
-  const reading = useRef({ pointer: false, focus: false });
+  const reading = useRef(new LogReadingWindow<LogEntry>());
   const latestLines = useRef(lines);
   latestLines.current = lines;
-  const lineIds = useRef(new WeakMap<LogEntry, number>());
-  const nextLineId = useRef(0);
-  const lineId = (line: LogEntry) => {
-    let id = lineIds.current.get(line);
-    if (id === undefined) { id = ++nextLineId.current; lineIds.current.set(line, id); }
-    return id;
-  };
   const holdReading = (kind: "pointer" | "focus", hold: boolean) => {
-    reading.current[kind] = hold;
-    if (reading.current.pointer || reading.current.focus) {
-      setReadingLines(previous => previous ?? latestLines.current);
-    } else {
-      setReadingLines(null);
-    }
+    setReadingLines(reading.current.hold(kind, hold, latestLines.current));
   };
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
@@ -317,7 +306,7 @@ export default function LogsPage() {
     if (result.ok) {
       pendingRef.current.clear();
       setLines([]);
-      setReadingLines(null);
+      setReadingLines(reading.current.clear());
       consumeEntries(history.hydrate(result.value));
     } else {
       consumeEntries(history.resume());
@@ -426,7 +415,7 @@ export default function LogsPage() {
               if (!parsed) {
                 return (
                   <div
-                    key={lineId(l)}
+                    key={reading.current.key(l)}
                     className="cb-log-raw"
                     style={{
                       color: LEVEL_COLOR[l.type] ?? "var(--cb-text-dim)",
@@ -440,7 +429,7 @@ export default function LogsPage() {
               const rule = splitRule(parsed.rule);
               const direct = isDirect(parsed.outbound);
               return (
-                <div key={lineId(l)} className="cb-log-grid cb-log-row">
+                <div key={reading.current.key(l)} className="cb-log-grid cb-log-row">
                   <span>
                     <span
                       className="cb-log-tag"
