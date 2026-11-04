@@ -251,8 +251,7 @@
 .cb-connection-toolbar .cb-select { flex:0 1 144px; min-width:112px; }
 .cb-connection-toolbar > .cb-button[aria-pressed="true"] { background:var(--cb-primary); color:var(--cb-on-primary); }
 /* Readout and editing actions both end at the row's right edge. */
-#cb-port-setting { align-items:center; outline:none; }
-#cb-port-setting:focus { outline:none; }
+#cb-port-setting { align-items:center; }
 #cb-port-setting .cb-port-editor { flex:none; width:auto; max-width:50%; }
 .cb-port-readout,.cb-port-editor-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
 .cb-port-value { font-size:13px; font-weight:500; font-variant-numeric:tabular-nums; color:var(--cb-text); }
@@ -282,3 +281,9 @@
 .cb-settings-page,.cb-node-toolbar-page .cb-nodes-workspace,.cb-diag-results,.cb-profile-detail { padding-inline-end:12px; scrollbar-gutter:stable; }
 .cb-profile-detail { overflow:auto; }
 .cb-context-scroll { padding-inline-end:10px; }
+
+/* Extend the scroll surface into the outer inset, while keeping row content aligned. */
+.cb-settings-page {
+  margin-inline-end: -12px;
+  padding-inline-end: 24px;
+}

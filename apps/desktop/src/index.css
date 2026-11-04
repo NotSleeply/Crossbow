@@ -2805,6 +2805,5 @@ textarea:focus-visible,
 .cb-diag-results { overflow:auto; padding-top:8px; }
 .cb-diag-results > .cb-diagnostic-step { flex:none; min-height:62px; padding:12px 4px; }
 .cb-diag-results > .cb-diagnostic-step.has-issue { padding-left:12px; box-shadow:inset 2px 0 var(--cb-warn); background:var(--cb-surface); }
-.cb-setting-row[id]:focus { outline:2px solid var(--cb-accent-line); outline-offset:3px; }
 @media(prefers-reduced-motion:reduce) { .cb-connection-row,.cb-log-copy { transition:none; } }
 .cb-log-copy:focus-visible { transition:none; }
