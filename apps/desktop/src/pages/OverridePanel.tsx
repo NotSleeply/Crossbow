@@ -145,7 +145,6 @@ export default function OverridePanel({
       ) : (
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("ov.title")}>
-            <h2>{t("ov.title")}</h2>
             <FitItems
               items={overrides}
               rowHeight={58}
