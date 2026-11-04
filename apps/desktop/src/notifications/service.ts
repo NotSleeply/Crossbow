@@ -1,3 +1,4 @@
+import { notificationDestination } from "../workflow";
 import { invoke } from "@tauri-apps/api/core";
 import { currentLang } from "../i18n";
 
@@ -231,7 +232,7 @@ export const notify = {
       details: String(error),
       source,
       operationId: source,
-      actions: ["diagnostics"],
+      actions: notificationDestination(source),
     });
   },
   async run<T>(
@@ -279,7 +280,7 @@ export const notify = {
         kind: "error",
         title: options.titleKey ? "" : title,
         details: String(error),
-        actions: ["diagnostics"],
+        actions: notificationDestination(source),
       });
       return { ok: false };
     }

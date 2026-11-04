@@ -49,12 +49,18 @@ pub struct Profile {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateOutcome {
     pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<NodeChanges>,
     /// 失败原因等补充信息。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// Unix 秒。
     pub at: u64,
 }
+
+/// Counts only: never persist server credentials in update summaries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeChanges { pub added: usize, pub removed: usize, pub changed: usize }
 
 /// 机场订阅的流量/到期信息。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -454,6 +454,7 @@ struct ConnRow {
     network: String,
     kind: String,
     process: String,
+    process_path: String,
     elapsed_ms: Option<u64>,
 }
 
@@ -515,8 +516,9 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                 down: c.get("download").and_then(|x| x.as_u64()).unwrap_or(0),
                 network: str_at("network").to_string(),
                 kind: str_at("type").to_string(),
+                process_path: str_at("processPath").to_string(),
                 process: str_at("processPath")
-                    .rsplit('/')
+                    .rsplit(['/', '\\'])
                     .next()
                     .unwrap_or("")
                     .to_string(),

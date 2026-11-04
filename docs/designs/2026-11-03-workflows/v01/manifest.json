@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-03",
+  "version": "v01",
+  "status": "implemented-awaiting-review",
+  "issue": 274,
+  "baseline": "2c3add3",
+  "source": "Red-framed eight workflow improvements from user screenshot; visual audit handled separately.",
+  "files": {
+    "SPEC.md": "2df74650bf7d2c725bd9f1a13cbe799d07eb6639ff372e2d48d63261af79989c",
+    "index.html": "4f7a14be87e29db56e13474cbb5c39fa78b349ff4a72eda8ea16f4affa29fb06",
+    "mock-tauri.ts": "5855811d19f165bfa23f4d383eeb23014659cbb33757b00596f0a1e383bebe33",
+    "preview.tsx": "af7fc42745b7421a8ad05f014ce48abe2245d0b024957e2e260ba170cb0d5d4d",
+    "previews/checks.json": "d2cb0c2970f1b4e47a5d46b25d51d7b95ef10f8b7b9797de369740df1795a384",
+    "previews/connection-detail-dark-en.jpg": "07e7628ec510970d7ceb88a9068579b7ea816b550020e49f640f11d44c7838d2",
+    "previews/connection-detail.jpg": "fa968e67cad8f58263744bcca7829f440f637ff814006f07abd34dfe3af712c8",
+    "previews/diagnosis-progress.jpg": "33ea01509ec220b576f767706451be7b13eeae9182ba77ec2c2d43c01f434e83",
+    "previews/diagnosis.jpg": "52d1a6e6fb2e9317dc6cc95ae958fce54da1c904edcff17d80ce9999e0c586d1",
+    "previews/logs-paused.jpg": "113e99f0f2fd72e504b9730e6e8b31ff60aef0451adcf7bc81693c30dc50309b",
+    "previews/notice-port-target.jpg": "544b446f8fd5cd180436d2855442555a52f8d1a1e7fc7e65f590a02459d685ad",
+    "previews/recovery-confirm.jpg": "f399ba29fb08d9edd35d7b8bde184c0f3c46aa514f717a4dea2a4a1526c68011",
+    "previews/site-context.jpg": "242a775c36e643fb0dff25b60906e8e69bada9f7eff83aef162b51109426ce1a",
+    "previews/subscription.jpg": "c3d49d79c0f38b4d60b85994f8d3faac58c630970ba19c22bd525d0b65ac158b",
+    "source.zip": "81679e583fddc23da0210522d50c4c4bb483eb188c6da2c6a8d1a7860be30e7d",
+    "vite.config.mts": "e2a53bd7a6b198f394dfd4ec80226b9abc44ac4effc4f7dda70e932d1283a00e"
+  }
+}

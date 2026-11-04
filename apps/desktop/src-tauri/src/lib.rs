@@ -33,6 +33,7 @@ mod process;
 mod platform;
 mod update_check;
 mod scheduler;
+mod workflow;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
@@ -906,10 +907,12 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
                 id,
                 crossbow_core::UpdateOutcome {
                     ok: false,
+                    changes: None,
                     detail: Some(e.to_string()),
                     at: now_secs(),
                 },
             );
+            let _ = state.store.lock().unwrap().save();
             return Err(e.to_string());
         }
     };
@@ -918,10 +921,12 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
             id,
             crossbow_core::UpdateOutcome {
                 ok: false,
+                changes: None,
                 detail: Some(e.to_string()),
                 at: now_secs(),
             },
         );
+        let _ = state.store.lock().unwrap().save();
         return Err(e.to_string());
     }
 
@@ -929,6 +934,8 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
         let store = state.store.lock().unwrap();
         store.data().active_profile.as_deref() == Some(id)
     };
+    let previous_content = state.store.lock().unwrap().data().profile(id).map(|p| p.content.clone()).unwrap_or_default();
+    let changes = workflow::node_changes(&previous_content, &fetched.content);
     let content = fetched.content.clone();
     let traffic = fetched.traffic;
     let updated_at = now_secs();
@@ -949,6 +956,7 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
             id,
             crossbow_core::UpdateOutcome {
                 ok: false,
+                changes: None,
                 detail: Some(error.clone()),
                 at: now_secs(),
             },
@@ -960,6 +968,7 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
         id,
         crossbow_core::UpdateOutcome {
             ok: true,
+            changes,
             detail: None,
             at: now_secs(),
         },
@@ -980,6 +989,7 @@ fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile
 #[tauri::command]
 async fn update_profile(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Profile, String> {
     let profile = refresh_profile_blocking(&state, &id)?;
+    scheduler::clear_retry(&id);
     notifications::resolve(&app, &format!("profile-auto-update-{id}"));
     refresh_tray(&app);
     Ok(profile)
@@ -1387,6 +1397,7 @@ fn set_profile_interval(
         .ok_or("profile not found")?;
     p.update_interval_min = interval_min;
     store.save().map_err(|e| e.to_string())?;
+    scheduler::clear_retry(&id);
     Ok(())
 }
 
@@ -1520,8 +1531,11 @@ fn unsubscribe_logs(state: State<AppState>, subscriber: String) -> Result<(), St
 // ---------- 诊断 ----------
 
 #[tauri::command]
-async fn run_diagnosis(state: State<'_, AppState>) -> Result<Vec<diagnose::CheckResult>, String> {
-    Ok(diagnose::run(&state))
+async fn run_diagnosis(app: AppHandle, run_id: String) -> Result<Vec<diagnose::CheckResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        diagnose::run(&state, &run_id, |progress| { let _ = app.emit("diagnosis://progress", progress); })
+    }).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -3876,6 +3890,11 @@ pub fn run() {
             tun_status,
             diag_log,
             run_diagnosis,
+            workflow::profile_statuses,
+            workflow::config_snapshots,
+            workflow::restore_config_snapshot,
+            workflow::redact_log_lines,
+            workflow::export_log_lines,
             test_site,
             current_outbound,
             close_connection,

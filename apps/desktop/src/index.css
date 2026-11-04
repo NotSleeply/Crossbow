@@ -2760,3 +2760,51 @@ textarea:focus-visible,
 
 .cb-settings-fields { border:0; padding:0; margin:0; min-width:0; }
 .cb-port-editor { max-width:100%; }
+
+/* Maintenance views: the observation is the feedback; keep metadata quiet. */
+.cb-workflow-callout { padding:16px; border:1px solid var(--cb-line-strong); border-left:3px solid var(--cb-warn); border-radius:10px; background:var(--cb-surface); margin-bottom:16px; }
+.cb-workflow-callout > span { color:var(--cb-text-dim); font-size:11px; }
+.cb-workflow-callout h3 { font-size:14px; font-weight:600; margin:4px 0; }
+.cb-workflow-callout p { font-size:12px; color:var(--cb-text-dim); margin:6px 0 12px; overflow-wrap:anywhere; }
+.cb-diagnostic-step { display:flex; align-items:center; gap:12px; padding:14px 16px; }
+.cb-diagnostic-step > div { min-width:0; flex:1; }
+.cb-diagnostic-step h3 { font-size:13px; font-weight:500; }
+.cb-diagnostic-step p { font-size:11px; color:var(--cb-text-dim); overflow-wrap:anywhere; margin-top:4px; }
+.cb-diagnostic-step > span { font-size:11px; flex:none; color:var(--cb-text-dim); }
+.cb-diagnostic-step.has-issue { border-color:var(--cb-warn); }
+.cb-diagnostic-step:focus-visible,.cb-workflow-callout:focus-visible { outline:2px solid var(--cb-accent); outline-offset:3px; }
+.cb-connection-row { cursor:pointer; transition:background-color 150ms ease; }
+.cb-connection-row:hover { background:var(--cb-surface); }
+.cb-connection-details { display:grid; margin:4px 0 16px; }
+.cb-connection-details > div { display:grid; grid-template-columns:84px minmax(0,1fr) auto; gap:12px; align-items:start; padding:12px 0; border-bottom:1px solid var(--cb-line); font-size:12px; }
+.cb-connection-details dt { color:var(--cb-text-dim); }
+.cb-connection-details dd { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }
+.cb-log-reading-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 12px; }
+.cb-log-reading-tools > div { display:flex; align-items:center; gap:8px; min-width:0; }
+.cb-log-reading-tools span { color:var(--cb-text-dim); font-size:11px; }
+.cb-log-row,.cb-log-raw { position:relative; padding-right:48px; }
+.cb-log-copy { position:absolute; right:6px; top:8px; font:10px/20px system-ui; color:var(--cb-text-dim); padding:0 4px; border-radius:4px; opacity:0; transition:opacity 130ms ease,background-color 130ms ease; }
+.cb-log-row:hover .cb-log-copy,.cb-log-raw:hover .cb-log-copy,.cb-log-copy:focus-visible { opacity:1; background:var(--cb-surface-2); }
+.cb-site-context { display:flex; flex-direction:column; gap:2px; margin-top:6px; color:var(--cb-text-dim); font-size:10px; text-align:left; min-width:0; }
+.cb-site-context > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.cb-subscription-status { padding:16px 0; border-bottom:1px solid var(--cb-line); }
+.cb-subscription-status dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; font-size:12px; }
+.cb-subscription-status dt { color:var(--cb-text-dim); margin-bottom:6px; }
+.cb-subscription-status dd { margin:0; }
+.cb-subscription-status > p { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:14px; font-size:12px; }
+.cb-subscription-status > p span { color:var(--cb-text-dim); }
+.cb-subscription-status .cb-workflow-callout { margin:16px 0 0; }
+.cb-recovery-list { display:grid; gap:8px; margin-top:16px; }
+.cb-recovery-list section { display:flex; align-items:center; justify-content:space-between; gap:16px; border:1px solid var(--cb-line); border-radius:8px; padding:12px; }
+.cb-recovery-list h3,.cb-recovery-confirm h3 { font-size:13px; font-weight:500; }
+.cb-recovery-list p,.cb-recovery-confirm p { font-size:12px; color:var(--cb-text-dim); overflow-wrap:anywhere; margin-top:5px; }
+@media(max-width:900px) { .cb-log-reading-tools span { display:none; } }
+.cb-diag-blocker { display:flex; align-items:center; justify-content:space-between; gap:20px; flex:none; }
+.cb-diag-blocker p { margin-bottom:0; }
+.cb-diag-blocker > button { flex:none; }
+.cb-diag-results { overflow:auto; padding-top:8px; }
+.cb-diag-results > .cb-diagnostic-step { flex:none; min-height:62px; padding:12px 4px; }
+.cb-diag-results > .cb-diagnostic-step.has-issue { padding-left:12px; box-shadow:inset 2px 0 var(--cb-warn); background:var(--cb-surface); }
+.cb-setting-row[id]:focus { outline:2px solid var(--cb-accent-line); outline-offset:3px; }
+@media(prefers-reduced-motion:reduce) { .cb-connection-row,.cb-log-copy { transition:none; } }
+.cb-log-copy:focus-visible { transition:none; }

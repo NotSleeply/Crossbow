@@ -1,3 +1,4 @@
+import { parseNavigation, type NavigationTarget } from "./workflow";
 import { ButtonBase, Button } from "./components/Button";
 import { notify } from "./notifications/service";
 import { useEffect, useState } from "react";
@@ -66,6 +67,7 @@ export default function App() {
   const t = useT();
   const isWindows = navigator.userAgent.includes("Windows");
   const isMacos = navigator.userAgent.includes("Macintosh");
+  const [destination,setDestination]=useState<NavigationTarget|null>(null);
   const [page, setPage] = useState<PageId>("home");
   const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
     "network",
@@ -195,6 +197,7 @@ export default function App() {
     const navigate = (event: Event) => {
       const next = (event as CustomEvent<string>).detail;
       if (isPage(next)) {
+        setDestination(null);
         setPage(next);
         if (next === "settings") setSettingSection("app");
         if (next === "profiles") setConfigTab("sources");
@@ -204,16 +207,23 @@ export default function App() {
     return () => window.removeEventListener("cb:goto", navigate);
   }, []);
 
-  useNotificationNavigation((next) => {
-    if (isPage(next)) {
-      setPage(next);
-      if (next === "settings") setSettingSection("app");
-      if (next === "profiles") setConfigTab("sources");
-    }
+  useNotificationNavigation(raw => {
+    const target=parseNavigation(raw);if(!target||!isPage(target.page))return;
+    setDestination(target);setPage(target.page);
+    if(target.page==="settings")setSettingSection(target.settingSection??"app");
+    if(target.page==="profiles")setConfigTab("sources");
   });
+  useEffect(()=>{
+    if(!destination)return;
+    const id=destination.control??(destination.checkId?`cb-check-${destination.checkId}`:undefined);
+    if(!id)return;
+    const frame=requestAnimationFrame(()=>{const el=document.getElementById(id)??(destination.page==="diagnostics"?document.querySelector<HTMLElement>(".cb-diagnostics-page button"):null);el?.scrollIntoView({block:"center"});el?.focus({preventScroll:true});});
+    return()=>cancelAnimationFrame(frame);
+  },[destination,page,settingSection]);
 
   const workspace = ["connections", "logs", "diagnostics"].includes(page) ? "monitor" : page;
   const go = (next: PageId) => {
+    setDestination(null);
     setPage(next);
   };
   return (
@@ -307,13 +317,13 @@ export default function App() {
           <nav className="cb-subnav" aria-label={t("studio.config")}>
             <ButtonBase
               className={configTab === "sources" ? "active" : ""}
-              onClick={() => setConfigTab("sources")}
+              onClick={() => {setDestination(null);setConfigTab("sources");}}
             >
               {t("studio.sources")}
             </ButtonBase>
             <ButtonBase
               className={configTab === "overrides" ? "active" : ""}
-              onClick={() => setConfigTab("overrides")}
+              onClick={() => {setDestination(null);setConfigTab("overrides");}}
             >
               {t("studio.overrides")}
             </ButtonBase>
@@ -322,7 +332,7 @@ export default function App() {
         <div className={`cb-page-content cb-view-${page}`}>
           {page === "home" && <HomePage capabilities={capabilities} />}
           {page === "proxies" && <ProxiesPage />}
-          {page === "profiles" && <ProfilesPage tab={configTab} />}
+          {page === "profiles" && <ProfilesPage tab={configTab} focusProfileId={destination?.profileId} navigationRequest={destination} />}
           {page === "connections" && <ConnectionsPage />}
           {page === "diagnostics" && <DiagnosticsPage />}
           {page === "logs" && <LogsPage />}
@@ -342,13 +352,13 @@ export default function App() {
                     key={id}
                     className={settingSection === id ? "active" : ""}
                     aria-current={settingSection === id ? "page" : undefined}
-                    onClick={() => setSettingSection(id)}
+                    onClick={() => {setDestination(null);setSettingSection(id);}}
                   >
                     {t(label)}
                   </ButtonBase>
                 ))}
               </nav>
-              <SettingsPage section={settingSection} capabilities={capabilities} />
+              <SettingsPage section={settingSection} capabilities={capabilities} focusControl={destination?.control} />
             </div>
           )}
         </div>

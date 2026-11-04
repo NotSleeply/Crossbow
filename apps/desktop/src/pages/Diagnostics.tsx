@@ -1,130 +1,193 @@
 import { Button } from "../components/Button";
 import { notify } from "../notifications/service";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ipc, type CheckResult } from "../ipc";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
-import { Icon } from "../components/Icon";
-
-/** 网络诊断页（M1.2）：一键自检 + 可执行修复动作。 */
+import { ProgressRing } from "../components/ProgressRing";
+import { DIAG_STEPS } from "../workflow";
+let previousResults: CheckResult[] | null = null;
 export default function DiagnosticsPage() {
   const t = useT();
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<CheckResult[] | null>(null);
+  const [results, setResults] = useState<CheckResult[] | null>(previousResults);
+  const [runFailed,setRunFailed]=useState(false);
+  const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
-
+  const fixingRef = useRef(false);
+  const active = useRef(true),
+    runId = useRef<string | null>(null),
+    inFlight = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      runId.current = null;
+    };
+  }, []);
   const run = async () => {
-    if (running) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setRunning(true);
-
+    setRunFailed(false);
+    setResults([]);
+    const id = crypto.randomUUID();
+    runId.current = id;
+    let off: (() => void) | undefined;
     try {
-      const checks = await ipc.runDiagnosis();
-      setResults(checks);
-      void notify.resolve("diagnostics-operation");
+      off = await ipc.onDiagnosisProgress((p) => {
+        if (!active.current || p.run_id !== runId.current) return;
+        if (!p.result) setChecking(p.id);
+        else setResults((old) => [...(old ?? []).filter((r) => r.id !== p.id), p.result!]);
+      });
+      if (!active.current) return;
+      const rows = await ipc.runDiagnosis(id);
+      previousResults = rows;
+      if (active.current && runId.current === id) {
+        setResults(rows);
+        void notify.resolve("diagnostics-operation");
+      }
     } catch (e) {
-      notify.error(e, "diagnostics-operation");
+      if (active.current) {setRunFailed(true);notify.error(e, "diagnostics-operation");}
     } finally {
-      setRunning(false);
+      off?.();
+      inFlight.current = false;
+      if (active.current) {
+        setChecking(null);
+        setRunning(false);
+      }
     }
   };
-
-  const applyFix = async (check: CheckResult) => {
-    if (!check.fix) return;
-    setFixing(check.id);
-    const backendOwnsNotice = check.fix === "toggle_sysproxy";
-
+  const fix = async (r: CheckResult) => {
+    if (!r.fix || fixingRef.current || inFlight.current) return;
+    fixingRef.current = true;
+    setFixing(r.id);
     try {
-      if (check.fix === "start_core") await ipc.coreStart();
-      if (check.fix === "restart_core") {
-        try {
-          await ipc.coreStop();
-        } catch {
-          // The backend already reported this failure. Do not start another core.
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 500));
+      if (r.fix === "start_core") await ipc.coreStart();
+      if (r.fix === "restart_core") {
+        await ipc.coreStop();
         await ipc.coreStart();
       }
-      if (check.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
-      if (!backendOwnsNotice) void notify.resolve("diagnostics-fix");
+      if (r.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
+      void notify.resolve("diagnostics-fix");
+      await run();
     } catch (e) {
-      if (!backendOwnsNotice) notify.error(e, "diagnostics-fix");
+      if (r.fix !== "toggle_sysproxy") notify.error(e, "diagnostics-fix");
     } finally {
-      setFixing(null);
-      void run(); // 修复后自动重跑
+      fixingRef.current = false;
+      if (active.current) setFixing(null);
     }
   };
-
-  const applicable = results?.filter((r) => !r.skipped);
-  const allOk = applicable && applicable.length > 0 && applicable.every((r) => r.ok);
-
+  const first = results?.find((r) => !r.ok && !r.skipped),
+    applicable = results?.filter((r) => !r.skipped) ?? [];
+  const goConfig = () => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }));
   return (
     <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
-        <Button variant="primary" loading={running} onClick={run} disabled={running}>
-          {running ? t("diag.running") : t("diag.run")}
+        <Button
+          variant="primary"
+          loading={running}
+          disabled={running || !!fixing}
+          onClick={() => void run()}
+        >
+          {t(running ? "diag.running" : "diag.run")}
         </Button>
       </PageHead>
-
       {results === null ? (
-        <div
-          className="cb-card flex h-56 flex-col items-center justify-center gap-2 text-sm"
-          style={{ color: "var(--cb-text-dim)" }}
-        >
-          <Icon name="pulse" size={20} stroke="var(--cb-faint)" />
-          <span>{t("diag.hint")}</span>
+        <div className="cb-empty">
+          <p>{t("diag.hint")}</p>
         </div>
       ) : (
-        <div className="cb-diag-results">
-          <div className="cb-diag-summary">
-            <span style={{ color: allOk ? "var(--cb-ok)" : "var(--cb-warn)" }}>
-              {applicable?.filter((result) => result.ok).length}/{applicable?.length}
-            </span>
-            <div>
-              <h2>{allOk ? t(results.some((r) => r.skipped) ? "diag.applicableOk" : "diag.allOk") : t("diag.title")}</h2>
-            </div>
+        <>
+          <div className="cb-diag-summary" aria-live="polite">
+            <ProgressRing
+              value={(results.length / DIAG_STEPS.length) * 100}
+              label={t("diag.progress", { done: results.length, total: DIAG_STEPS.length })}
+              size={28}
+            />
+            <h2>
+              {running
+                ? t("diag.progress", { done: results.length, total: DIAG_STEPS.length })
+                : first
+                  ? t("diag.resultIssues", { n: results.filter((r) => !r.ok && !r.skipped).length })
+                  : t(runFailed?"diag.incomplete":applicable.length ? "diag.applicableOk" : "diag.title")}
+            </h2>
           </div>
-          {results.map((r) => (
+          {!running && first && (
             <section
-              key={r.id}
-              className="cb-card flex items-center gap-3 px-4 py-3"
+              id="cb-check-first-problem"
+              tabIndex={-1}
+              className="cb-workflow-callout cb-diag-blocker"
             >
-              <i className={`cb-dot flex-none ${r.skipped ? "idle" : r.ok ? "ok" : "bad"}`} />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium">
-                  {t(`check.${r.id}` as const)}
-                </div>
-                {!r.ok && (
-                  <div
-                    className="cb-selectable mt-0.5 text-[11.5px]"
-                    title={r.detail}
-                    style={{ color: "var(--cb-text-dim)" }}
-                  >
-                    {r.detail}
-                  </div>
-                )}
+              <div>
+                <span>{t("diag.firstBlocker")}</span>
+                <h3>{t(`check.${first.id}`)}</h3>
+                <p>{t("diag.nextStep")}</p>
               </div>
-              {r.skipped ? (
-                <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>{t("diag.notApplicable")}</span>
-              ) : r.ok ? (
-                <span
-                  className="cb-mono text-[11px]"
-                  style={{ color: "var(--cb-text-dim)" }}
+              {first.fix ? (
+                <Button
+                  loading={fixing === first.id}
+                  disabled={!!fixing}
+                  onClick={() => void fix(first)}
                 >
-                  OK
-                </span>
-              ) : r.fix ? (
-                <Button variant="primary"
-                  loading={fixing === r.id} disabled={fixing !== null}
-                  onClick={() => applyFix(r)}
-                >
-                  {fixing === r.id ? "…" : t(`diag.fix.${r.fix}` as const)}
+                  {t(`diag.fix.${first.fix}`)}
                 </Button>
-              ) : null}
+              ) : (
+                <Button
+                  onClick={
+                    first.id === "config_renders"
+                      ? goConfig
+                      : () => document.getElementById(`cb-check-${first.id}`)?.focus()
+                  }
+                >
+                  {first.id === "config_renders" ? t("diag.openConfig") : t("workflow.details")}
+                </Button>
+              )}
             </section>
-          ))}
-
-        </div>
+          )}
+          <div className="cb-diag-results">
+            {DIAG_STEPS.map((id) => {
+              const row = results.find((r) => r.id === id),
+                state = row
+                  ? row.skipped
+                    ? "diag.skipped"
+                    : row.ok
+                      ? "diag.passed"
+                      : "diag.failed"
+                  : checking === id
+                    ? "diag.checking"
+                    : runFailed ? "diag.incomplete" : "diag.pending";
+              return (
+                <section
+                  key={id}
+                  id={`cb-check-${id}`}
+                  tabIndex={-1}
+                  className={`cb-card cb-diagnostic-step ${row && !row.ok && !row.skipped ? "has-issue" : ""}`}
+                  aria-busy={running && checking === id}
+                >
+                  <i
+                    className={`cb-dot ${!row ? "idle" : row.skipped ? "idle" : row.ok ? "ok" : "bad"}`}
+                  />
+                  <div>
+                    <h3>{t(`check.${id}`)}</h3>
+                    {row?.detail && <p className="cb-selectable">{row.detail}</p>}
+                  </div>
+                  <span>{t(state)}</span>
+                  {!running && row?.fix && (
+                    <Button
+                      size="small"
+                      loading={fixing === id}
+                      disabled={!!fixing}
+                      onClick={() => void fix(row)}
+                    >
+                      {t(`diag.fix.${row.fix}`)}
+                    </Button>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

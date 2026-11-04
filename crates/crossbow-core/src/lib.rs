@@ -15,7 +15,7 @@ pub mod store;
 pub mod subscription;
 
 pub use emoji::enrich_flags;
-pub use model::{
+pub use model::{NodeChanges,
     Engine, EngineConfig, OverrideDef, OverrideKind, Profile, ProfileKind, StoreSchema,
     TrafficInfo, UiSettings, UpdateOutcome,
 };

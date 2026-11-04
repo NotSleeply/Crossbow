@@ -43,11 +43,24 @@ fn bad(id: &str, detail: impl Into<String>, fix: Option<&str>) -> CheckResult {
     }
 }
 
-pub fn run(state: &AppState) -> Vec<CheckResult> {
-    let mut results = Vec::new();
+#[derive(Clone, Serialize)]
+pub struct Progress { pub run_id: String, pub id: String, pub result: Option<CheckResult> }
+struct Report<'a> { rows: Vec<CheckResult>, run_id: &'a str, send: &'a dyn Fn(Progress) }
+impl Report<'_> {
+    fn start(&self, id: &str) { (self.send)(Progress {run_id:self.run_id.into(),id:id.into(),result:None}); }
+    fn push(&mut self, mut row: CheckResult) {
+        row.detail = crate::notifications::redact(&row.detail);
+        (self.send)(Progress {run_id:self.run_id.into(),id:row.id.clone(),result:Some(row.clone())});
+        self.rows.push(row);
+    }
+    fn skip(&mut self, id: &str) { self.push(CheckResult {id:id.into(),ok:false,skipped:true,detail:"Dependency is not ready".into(),fix:None}); }
+}
+pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<CheckResult> {
+    let mut results = Report { rows:Vec::new(), run_id, send:&send };
     let mixed_port = state.store.lock().unwrap().data().engine.mixed_port;
 
     // 1. 内核状态
+    results.start("core_running");
     let status = state.core().status();
     match &status {
         crate::core_manager::CoreStatus::Running => {
@@ -65,6 +78,7 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
     }
 
     // 2. 控制器 API
+    results.start("controller");
     if let Some((port, secret)) = state.core().controller() {
         let c = crate::mihomo_api::Controller { port, secret };
         match c.version() {
@@ -79,7 +93,10 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
         ));
     }
 
+    if !results.rows.iter().any(|r| r.id == "controller") { results.skip("controller"); }
+
     // 3. 配置可渲染
+    results.start("config_renders");
     {
         let store = state.store.lock().unwrap();
         match crossbow_core::render_config(store.data()) {
@@ -89,7 +106,8 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
     }
 
     // 4. 混合端口监听
-    match std::net::TcpStream::connect_timeout(
+    results.start("listener");
+    if !matches!(status, crate::core_manager::CoreStatus::Running) { results.skip("listener"); } else { match std::net::TcpStream::connect_timeout(
         &format!("127.0.0.1:{mixed_port}").parse().unwrap(),
         Duration::from_millis(1200),
     ) {
@@ -97,7 +115,9 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
         Err(e) => results.push(bad("listener", format!("{e}"), Some("restart_core"))),
     }
 
+    }
     // 5. 系统代理指向
+    results.start("sysproxy");
     let endpoints = state.sysproxy.external_endpoints();
     if !crate::platform::capabilities().system_proxy {
         results.push(CheckResult {
@@ -137,12 +157,15 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
     }
 
     // 6. 代理连通性（经混合端口访问 204 端点）
-    match proxied_probe(mixed_port) {
+    results.start("proxied_traffic");
+    if !matches!(status, crate::core_manager::CoreStatus::Running) { results.skip("proxied_traffic"); } else { match proxied_probe(mixed_port) {
         Ok(()) => results.push(ok("proxied_traffic", "经内核访问外网正常（HTTP 204）")),
         Err(e) => results.push(bad("proxied_traffic", e, None)),
     }
 
+    }
     // 7. 直连 DNS
+    results.start("dns_direct");
     match ("www.gstatic.com", 80u16).to_socket_addrs() {
         Ok(mut addrs) => {
             let first = addrs.next().map(|a| a.ip().to_string()).unwrap_or_default();
@@ -151,7 +174,7 @@ pub fn run(state: &AppState) -> Vec<CheckResult> {
         Err(e) => results.push(bad("dns_direct", format!("系统 DNS 解析失败：{e}"), None)),
     }
 
-    results
+    results.rows
 }
 
 /// 经混合端口探测 204 端点。
@@ -166,5 +189,16 @@ fn proxied_probe(mixed_port: u16) -> Result<(), String> {
         Ok(resp) if resp.status() == 204 => Ok(()),
         Ok(resp) => Err(format!("探测返回 HTTP {}", resp.status())),
         Err(e) => Err(format!("经内核访问外网失败：{e}")),
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    #[test] fn reports_start_and_skip_with_the_original_run_id() {
+        let events=std::cell::RefCell::new(Vec::new());
+        let send=|p|events.borrow_mut().push(p);
+        let mut report=super::Report{rows:Vec::new(),run_id:"attempt-1",send:&send};
+        report.start("controller");report.skip("controller");
+        let e=events.borrow();assert_eq!(e.len(),2);assert_eq!(e[0].run_id,"attempt-1");assert!(e[0].result.is_none());assert!(e[1].result.as_ref().unwrap().skipped);
     }
 }
