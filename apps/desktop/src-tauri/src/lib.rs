@@ -261,6 +261,13 @@ fn render_current(
 /// 安全模式（safe_mode）下跳过覆写链。
 fn start_core(state: &AppState) -> Result<(), String> {
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    // A diagnostic result can predate a successful rollback or another start.
+    // Starting means ensure-running, never stop/reject an already healthy core.
+    match state.core().status() {
+        CoreStatus::Running => return Ok(()),
+        CoreStatus::Starting => return wait_core_running(state),
+        _ => {}
+    }
     start_core_locked(state)
 }
 
@@ -1438,7 +1445,7 @@ fn platform_capabilities() -> platform::Capabilities {
 
 #[tauri::command]
 async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
-    start_core(&state)
+    start_core(&state).and_then(|()| wait_core_running(&state))
 }
 
 #[tauri::command]
