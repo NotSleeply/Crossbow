@@ -1,0 +1,18 @@
+{
+  "implementation": "118a2a4",
+  "baseline": "c350369",
+  "frontendBuild": "passed",
+  "previewBuild": "passed",
+  "unitTests": {
+    "passed": 27,
+    "failed": 0
+  },
+  "visual": {
+    "status": "pending",
+    "reason": "Local browser use is disabled in Work settings",
+    "screenshots": []
+  },
+  "native": "not run for UI-only change",
+  "inputVideo": "inspected sampled frames; private input not copied",
+  "ci": "not polled"
+}

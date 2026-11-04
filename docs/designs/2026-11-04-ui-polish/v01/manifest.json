@@ -1,0 +1,43 @@
+{
+  "topic": "desktop-ui-polish",
+  "version": "v01",
+  "started": "2026-11-04",
+  "archived": "2026-11-05",
+  "status": "implemented-visual-validation-pending",
+  "issue": 291,
+  "base": "c350369",
+  "sourceCommit": "118a2a4",
+  "input": "five user screenshots and private Desktop recording",
+  "files": [
+    "SPEC.md",
+    "checks.json",
+    "source.zip",
+    "index.html",
+    "preview.tsx",
+    "mock-tauri.ts",
+    "vite.config.mts"
+  ],
+  "previewEvidence": [],
+  "sourceFiles": [
+    "apps/desktop/src/App.tsx",
+    "apps/desktop/src/Layout.css",
+    "apps/desktop/src/components/Controls.tsx",
+    "apps/desktop/src/components/Select.tsx",
+    "apps/desktop/src/i18n.ts",
+    "apps/desktop/src/index.css",
+    "apps/desktop/src/pages/Home.tsx",
+    "apps/desktop/src/pages/Logs.css",
+    "apps/desktop/src/pages/Logs.tsx",
+    "apps/desktop/src/pages/OverridePanel.tsx",
+    "apps/desktop/src/pages/Settings.tsx",
+    "apps/desktop/src/pages/logReading.test.mjs",
+    "apps/desktop/src/pages/logReading.ts",
+    "docs/UI-DESIGN.md",
+    "apps/desktop/package.json",
+    "docs/designs/2026-11-04-ui-polish/v01/index.html",
+    "docs/designs/2026-11-04-ui-polish/v01/preview.tsx",
+    "docs/designs/2026-11-04-ui-polish/v01/mock-tauri.ts",
+    "docs/designs/2026-11-04-ui-polish/v01/vite.config.mts",
+    "docs/designs/2026-11-04-ui-polish/v01/SPEC.md"
+  ]
+}
