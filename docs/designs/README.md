@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-05 | 概览左侧：有限留白与图表优先的高度分配 | v01 | 已实现，实际视觉验收待补 | [说明/运行](2026-11-05-overview-height/v01/SPEC.md) · [源稿](2026-11-05-overview-height/v01/source.zip) · [矩阵入口](2026-11-05-overview-height/v01/matrix.html) · [检查](2026-11-05-overview-height/v01/checks.json) | #295 |
 | 2026-11-05 | 连接详情行居中及 PR CI 故障分析 | v02 | 已实现，实际视觉验收待补 | [说明](2026-11-04-ui-polish/v02/SPEC.md) · [源稿](2026-11-04-ui-polish/v02/source.zip) · [检查](2026-11-04-ui-polish/v02/checks.json) | #291 / PR #292 |
 | 2026-11-04 | 设置焦点、日志悬停与多选筛选、页面留白 | v01 | 已实现，工具受限，实际视觉验收待补 | [规格/预览运行](2026-11-04-ui-polish/v01/SPEC.md) · [源稿](2026-11-04-ui-polish/v01/source.zip) · [验证边界](2026-11-04-ui-polish/v01/checks.json) | #291 |
 | 2026-11-04 | 端口读值/显式编辑、节点只留卡片、概览统一表面 | v01 | 已实现，实际截图待浏览器可用后补验 | [规格/运行方式](2026-11-04-ui-simplification/v01/SPEC.md) · [交互原型](2026-11-04-ui-simplification/v01/index.html) · [源稿](2026-11-04-ui-simplification/v01/source.zip) · [验证](2026-11-04-ui-simplification/v01/checks.json) | #285 |
