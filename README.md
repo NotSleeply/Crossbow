@@ -4,8 +4,7 @@ Crossbow 是面向 macOS 和 Windows 的开源代理客户端，使用 Tauri 2�
 mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
 并在托盘 / 菜单栏显示实时速率。
 
-<img width="1120" height="720" alt="image" src="https://github.com/user-attachments/assets/64fbf2d0-b7c3-47ee-81e4-35f576c9ebb1" />
-
+<img width="1029" height="719" alt="image" src="https://github.com/user-attachments/assets/88879463-6eb9-47a6-90e2-81ea7cea58b8" />
 
 **当前版本：** [v0.13.5](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.13.5)。
 提供 macOS Apple Silicon DMG、Windows x64 安装包和 Linux x86_64 实验性压缩包。
