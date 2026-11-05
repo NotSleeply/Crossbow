@@ -49,12 +49,16 @@ try {
     Stop-Service CrossbowService
     $idle.Dispose()
     (Get-Service CrossbowService).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(10))
-    Start-Service CrossbowService
+    # Keep the service stopped: preflight checks its EXE as well as the GUI.
     # Real file locks: preflight must fail without changing the installed EXE,
     # and must wait for a delayed handle release (antivirus/terminating process).
     $gui = Join-Path $env:ProgramFiles 'Crossbow/crossbow-desktop.exe'
     $beforeHash = (Get-FileHash $gui).Hash
     $helper = (Resolve-Path apps/desktop/src-tauri/windows/prepare-upgrade.ps1).Path
+    # Establish an unlocked baseline so the negative case cannot pass because
+    # an unrelated service/DLL lock was left behind by fixture setup.
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -InstallDir (Split-Path $gui)
+    if ($LASTEXITCODE -ne 0) { throw 'Preflight rejected unlocked installation baseline' }
     $lock = [IO.File]::Open($gui, 'Open', 'Read', 'Read')
     try {
         & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -InstallDir (Split-Path $gui) -TimeoutSeconds 1
@@ -70,6 +74,8 @@ try {
     if (-not $probe.WaitForExit(20000)) { throw 'Preflight failed to resume after lock release' }
     $probe.Refresh()
     if ($probe.ExitCode -ne 0) { throw 'Preflight rejected released executable' }
+    Start-Service CrossbowService
+    (Get-Service CrossbowService).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, [TimeSpan]::FromSeconds(10))
     # Install while the service AND an EXE at the exact installed GUI path run.
     # Use an inert process fixture: no user profile, proxy, TUN or GUI interaction.
     $fixtureDir = Join-Path $env:RUNNER_TEMP 'crossbow-upgrade-fixture'
