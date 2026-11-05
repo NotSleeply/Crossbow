@@ -1,4 +1,5 @@
 !include "LogicLib.nsh"
+!define CROSSBOW_UPGRADE_HELPER "${__FILEDIR__}\prepare-upgrade.ps1"
 !macro NSIS_HOOK_PREINSTALL
   ; A LocalSystem service must never execute out of a user-writable installation.
   StrLen $0 "$PROGRAMFILES64\"
@@ -8,6 +9,10 @@
     SetErrorLevel 101
     Abort
   ${EndIf}
+  ; The built-in check may return before Windows releases the image mapping.
+  ; Close only the app registered against this installation, then verify files
+  ; can be opened exclusively before Tauri's first File instruction truncates them.
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\crossbow-desktop.exe" "Crossbow"
   ; Upgrades must stop the broker AND its managed core before replacing binaries.
   nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "try { $$s=Get-Service CrossbowService -ErrorAction SilentlyContinue; if ($$s) { Stop-Service CrossbowService -ErrorAction Stop; $$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30)) }; exit 0 } catch { Write-Error $$_.Exception.Message; exit 1 }"'
   Pop $0
@@ -16,6 +21,17 @@
     MessageBox MB_ICONSTOP "Cannot stop Crossbow service for upgrade. Please restart Windows and retry." /SD IDOK
     SetErrorLevel 102
     Abort
+  ${EndIf}
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\prepare-upgrade.ps1" "${CROSSBOW_UPGRADE_HELPER}"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\prepare-upgrade.ps1" -InstallDir "$INSTDIR"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "$1"
+    MessageBox MB_ICONSTOP "Crossbow files are still in use or cannot be written. No application files have been replaced. Restart Windows and rerun this installer. ($0)" /SD IDOK
+    SetErrorLevel 107
+    Quit
   ${EndIf}
 !macroend
 

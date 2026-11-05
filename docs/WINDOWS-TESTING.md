@@ -55,3 +55,11 @@
 Windows 代理使用 [WinINET per-connection API](https://learn.microsoft.com/en-us/windows/win32/wininet/setting-and-retrieving-internet-options)，保存/恢复完整配置，并在开启后读回校验。详见 [选项与标志](https://learn.microsoft.com/en-us/windows/win32/api/wininet/ns-wininet-internet_per_conn_optionw)。
 
 本地 macOS 测试覆盖代理配置解析/恢复、低频日志刷新和通用回归；Windows 编译和后端测试由 GitHub Actions 执行。原生标题栏、后台窗口是否闪现、Windows 策略和真实节点流量必须由上述 Windows 实机流程验收。
+
+## Windows 更新覆盖失败（#308）
+
+- 发生 `Extract: error writing to file crossbow-desktop.exe` 时，说明安装器未能写入主程序，不是检查版本接口失败。旧进程占用、杀毒软件拦截或目录写权限均可能导致此错误；应保留安装器详情和 Windows 安全中心记录。
+- 恢复：退出安装器，重启 Windows，从官方 Release 下载完整安装包覆盖原安装目录。不要删除 `%APPDATA%\com.richard.crossbow`，其中保留订阅及设置；网络无法使用时先在 Windows 代理设置中关闭指向已停止内核的手动代理。
+- 新安装器在覆盖前关闭本安装路径的 GUI、停止服务，并最多等待 15 秒检查主程序/服务/内核/DLL 可独占写入；检查失败则退出，不覆盖应用二进制。此检查无法保证后续磁盘写入永不失败，也不替代完整安装事务回滚。
+- 真机验收：保持系统代理/服务 TUN 运行，执行应用内更新；确认旧进程结束、安装成功、应用重新打开、订阅保留、系统代理恢复后可重新开启。取消 UAC 后应用应仍可使用。再测试从完整包手动覆盖运行中的应用、文件被其他程序占用时的提前失败及重试。
+- CI 使用临时 runner 验证真实文件锁、延迟释放、运行中主程序覆盖和其他目录同名进程存活；这不等于真实 Windows WebView、UAC 或杀毒软件环境验收。

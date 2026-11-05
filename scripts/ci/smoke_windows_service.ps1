@@ -50,8 +50,48 @@ try {
     $idle.Dispose()
     (Get-Service CrossbowService).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(10))
     Start-Service CrossbowService
-    # Installing over the running service exercises stop-before-overwrite hooks.
-    Install-Crossbow
+    # Real file locks: preflight must fail without changing the installed EXE,
+    # and must wait for a delayed handle release (antivirus/terminating process).
+    $gui = Join-Path $env:ProgramFiles 'Crossbow/crossbow-desktop.exe'
+    $beforeHash = (Get-FileHash $gui).Hash
+    $helper = (Resolve-Path apps/desktop/src-tauri/windows/prepare-upgrade.ps1).Path
+    $lock = [IO.File]::Open($gui, 'Open', 'Read', 'Read')
+    try {
+        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -InstallDir (Split-Path $gui) -TimeoutSeconds 1
+        if ($LASTEXITCODE -eq 0) { throw 'Preflight accepted a locked executable' }
+    } finally { $lock.Dispose() }
+    if ((Get-FileHash $gui).Hash -ne $beforeHash) { throw 'Preflight modified the locked executable' }
+    $lock = [IO.File]::Open($gui, 'Open', 'Read', 'Read')
+    try {
+        $probe = Start-Process powershell.exe -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$helper`" -InstallDir `"$(Split-Path $gui)`"" -PassThru
+        Start-Sleep -Seconds 2
+        if ($probe.HasExited) { throw 'Preflight did not wait for locked EXE' }
+    } finally { $lock.Dispose() }
+    if (-not $probe.WaitForExit(20000)) { throw 'Preflight failed to resume after lock release' }
+    $probe.Refresh()
+    if ($probe.ExitCode -ne 0) { throw 'Preflight rejected released executable' }
+    # Install while the service AND an EXE at the exact installed GUI path run.
+    # Use an inert process fixture: no user profile, proxy, TUN or GUI interaction.
+    $fixtureDir = Join-Path $env:RUNNER_TEMP 'crossbow-upgrade-fixture'
+    New-Item -ItemType Directory -Force $fixtureDir | Out-Null
+    $source = Join-Path $fixtureDir 'fixture.cs'
+    Set-Content $source 'class Fixture { static void Main() { System.Threading.Thread.Sleep(120000); } }'
+    $foreignGui = Join-Path $fixtureDir 'crossbow-desktop.exe'
+    $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+    & $csc /nologo /target:winexe "/out:$foreignGui" $source
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot compile upgrade fixture' }
+    Copy-Item $foreignGui $gui -Force
+    $installedProcess = Start-Process $gui -PassThru
+    $foreignProcess = Start-Process $foreignGui -PassThru
+    try {
+        Install-Crossbow
+        if (-not $installedProcess.WaitForExit(10000)) { throw 'Old installed GUI survived upgrade' }
+        $foreignProcess.Refresh()
+        if ($foreignProcess.HasExited) { throw 'Installer killed unrelated same-name process' }
+        if ((Get-FileHash $gui).Hash -ne $beforeHash) { throw 'Installer did not restore the correct GUI executable' }
+    } finally {
+        Stop-Process -Id $installedProcess.Id, $foreignProcess.Id -Force -ErrorAction SilentlyContinue
+    }
     Write-Host 'Windows service installation, rejection, stop/restart and upgrade checks passed'
 } catch {
     Get-CimInstance Win32_Service -Filter "Name='CrossbowService'" |
