@@ -33,7 +33,6 @@ export function ControlRow({
     >
       <div
         id={id}
-        tabIndex={id ? -1 : undefined}
         className="cb-setting-row cb-control-row"
         role="group"
         aria-label={label}

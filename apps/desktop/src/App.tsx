@@ -217,7 +217,8 @@ export default function App() {
     if(target.page==="profiles")setConfigTab("sources");
   });
   useEffect(()=>{
-    if(!destination)return;
+    // Settings waits for its data and focuses the actual control, never the row.
+    if(!destination || destination.page === "settings")return;
     const id=destination.control??(destination.checkId?`cb-check-${destination.checkId}`:undefined);
     if(!id)return;
     const frame=requestAnimationFrame(()=>{const el=document.getElementById(id)??(destination.page==="diagnostics"?document.querySelector<HTMLElement>(".cb-diagnostics-page button"):null);el?.scrollIntoView({block:"center"});el?.focus({preventScroll:true});});

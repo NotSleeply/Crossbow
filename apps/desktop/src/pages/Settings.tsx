@@ -73,7 +73,14 @@ export default function SettingsPage({
   const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
   useEffect(()=>{
     if(!focusControl||!settingsReady)return;
-    const frame=requestAnimationFrame(()=>{const el=document.getElementById(focusControl);el?.scrollIntoView({block:"center"});(focusControl==="cb-port-setting"?portEditButton.current:el)?.focus({preventScroll:true})});
+    const frame = requestAnimationFrame(() => {
+      const row = document.getElementById(focusControl);
+      row?.scrollIntoView({ block: "center" });
+      const control = row?.querySelector<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]',
+      );
+      control?.focus({ preventScroll: true });
+    });
     return()=>cancelAnimationFrame(frame);
   },[focusControl,settingsReady,section]);
   const [savingCount, setSavingCount] = useState(0);

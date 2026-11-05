@@ -1,0 +1,12 @@
+{
+  "implementation": "41ca463",
+  "frontendBuild": "passed",
+  "visual": "pending; browser unavailable in prior check",
+  "ciOriginal": {
+    "run": 41866474214,
+    "job": 126701834927,
+    "steps": 0,
+    "cause": "hosted macOS arm64 runner not allocated; capacity constraints"
+  },
+  "newCi": "push triggers new run; not monitored"
+}
