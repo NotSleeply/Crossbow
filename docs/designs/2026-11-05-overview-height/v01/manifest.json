@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-05",
+  "version": "v01",
+  "issue": 295,
+  "base": "7147320071a3c8c3f702cfba496bfcfc174a282a",
+  "implementation": "6fa4becd907133be879725e15136d63fec18cc12",
+  "status": "implemented-visual-validation-pending",
+  "files": [
+    "SPEC.md",
+    "checks.json",
+    "source.zip",
+    "index.html",
+    "matrix.html",
+    "preview.tsx",
+    "mock-tauri.ts",
+    "vite.config.mts"
+  ],
+  "screenshots": [],
+  "sourceFiles": [
+    "apps/desktop/src/Layout.css",
+    "apps/desktop/src/index.css",
+    "apps/desktop/src/pages/Home.tsx",
+    "apps/desktop/src/components/ConnectionFlow.tsx",
+    "docs/UI-DESIGN.md",
+    "docs/designs/2026-11-05-overview-height/v01/SPEC.md",
+    "docs/designs/2026-11-05-overview-height/v01/preview.tsx",
+    "docs/designs/2026-11-05-overview-height/v01/index.html",
+    "docs/designs/2026-11-05-overview-height/v01/matrix.html",
+    "docs/designs/2026-11-05-overview-height/v01/mock-tauri.ts",
+    "docs/designs/2026-11-05-overview-height/v01/vite.config.mts"
+  ]
+}

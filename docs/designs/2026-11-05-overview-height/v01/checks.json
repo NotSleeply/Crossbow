@@ -1,0 +1,14 @@
+{
+  "implementation": "6fa4becd907133be879725e15136d63fec18cc12",
+  "baseline": "7147320071a3c8c3f702cfba496bfcfc174a282a",
+  "productionBuild": "passed",
+  "prototypeBuild": "passed",
+  "diffCheck": "passed",
+  "visual": {
+    "status": "pending",
+    "toolError": "Local browser use is disabled in Work settings",
+    "screenshots": []
+  },
+  "matrix": "matrix.html: live production-component fixtures, not verified results",
+  "ci": "not polled"
+}
