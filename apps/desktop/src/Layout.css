@@ -1,26 +1,44 @@
 /* Framed sheet: keep the established palette; put density where work happens. */
-/* Content-sized lead/path, bounded gaps, then chart. Never stretch blank gaps. */
+/* Share spare height with two bounded spacers. The chart shrinks first when
+   space is tight; once it reaches its preferred height, the spacers grow. */
 .cb-home-main {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: clamp(12px, 3cqh, 24px);
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   align-self: start;
   width: 100%;
   height: min(100cqh, 700px);
   max-height: 700px;
 }
+.cb-home-main::before,
+.cb-home-main::after {
+  content: "";
+  flex: 1 0 12px;
+  max-height: 72px;
+}
+.cb-home-main > .cb-home-lead {
+  order: 0;
+  flex: none;
+}
+.cb-home-main::before { order: 1; }
+.cb-home-main > .cb-home-path {
+  order: 2;
+  flex: none;
+}
+.cb-home-main::after { order: 3; }
 .cb-home-bottom {
-  display: grid;
-  grid-template-rows: auto minmax(132px, 1fr);
-  gap: 12px;
-  min-height: 0;
+  /* Let actions and chart participate in the same height budget as the lead
+     and path. The wrapper carries no semantics or visual surface. */
+  display: contents;
+}
+.cb-home-main .cb-home-actions {
+  order: 4;
+  margin-bottom: 12px;
 }
 .cb-home-bottom .cb-chart-only {
-  align-self: start;
-  height: 100%;
+  order: 5;
+  flex: 0 1 220px;
   min-height: 132px;
-  max-height: 300px;
+  max-height: 220px;
 }
 .cb-home-lead h2 {
   margin-top: 8px;
@@ -202,8 +220,7 @@
   margin-top: 20px;
 }
 @container home-layout (max-height:479px) {
-  .cb-home-main { gap: 12px; }
-  .cb-home-bottom { gap: 8px; }
+  .cb-home-main .cb-home-actions { margin-bottom: 8px; }
 }
 @container node-group (max-width:600px) {
   .cb-node-alive-label {

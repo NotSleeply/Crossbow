@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-05",
+  "version": "v02",
+  "issue": 307,
+  "base": "ab1299f263d890cf0eba4bea9a0422971a3d57c9",
+  "implementation": "f8dcf7fcf910490a5dbebf42f2f1dec6489151b1",
+  "status": "implemented-visual-validation-pending",
+  "input": "用户反馈：小窗最小间距，剩余高度给图表；高窗逐渐增大间距，当前图表过大。",
+  "files": [
+    "SPEC.md",
+    "checks.json",
+    "index.html",
+    "matrix.html",
+    "mock-tauri.ts",
+    "preview.tsx",
+    "source.zip",
+    "vite.config.mts",
+    "manifest.json"
+  ],
+  "screenshots": [],
+  "sourceFiles": [
+    "apps/desktop/src/Layout.css",
+    "apps/desktop/src/index.css",
+    "apps/desktop/src/pages/Home.tsx",
+    "apps/desktop/src/components/ConnectionFlow.tsx",
+    "docs/UI-DESIGN.md",
+    "docs/designs/2026-11-05-overview-height/v02/SPEC.md",
+    "docs/designs/2026-11-05-overview-height/v02/preview.tsx",
+    "docs/designs/2026-11-05-overview-height/v02/index.html",
+    "docs/designs/2026-11-05-overview-height/v02/matrix.html",
+    "docs/designs/2026-11-05-overview-height/v02/mock-tauri.ts",
+    "docs/designs/2026-11-05-overview-height/v02/vite.config.mts"
+  ],
+  "sourceSHA256": {
+    "apps/desktop/src/Layout.css": "c027f9099d47d5228223cb0cb0543f1055374acd9b22fd9517437234743cdcdf",
+    "apps/desktop/src/index.css": "4e497d8dc9468a6ca86adf0a1053cfb7b8184e6045fa776d7261292a81633fa3",
+    "apps/desktop/src/pages/Home.tsx": "461b196aadc69a4f614742e7a8c5c80521afbd7b453787c06d6a14e132078691",
+    "apps/desktop/src/components/ConnectionFlow.tsx": "72c1bedb0fc0cebe802d7ef3a495012f1bdb5204b927b18cbf29d47a5248b9bf",
+    "docs/UI-DESIGN.md": "5cd7b1b6e029b11423dcebc69bce942f4cd34971a537cea9771137d931a09271",
+    "docs/designs/2026-11-05-overview-height/v02/SPEC.md": "44ad54a9faa52202de30ec29d382e3ef196ac17d47b7a0e837985510cf90a8ec",
+    "docs/designs/2026-11-05-overview-height/v02/preview.tsx": "79223972c3ae727b45ef8cd2ec5524203d764c92a562686fcf510382c93059fe",
+    "docs/designs/2026-11-05-overview-height/v02/index.html": "ca666938714c544fc7420946e1c5ee6a40dd20a701ca46240d11e1465a4c2ec4",
+    "docs/designs/2026-11-05-overview-height/v02/matrix.html": "029febd54569bd9b8bd66f0e4b507c86e5dc6647ad97a1b45dc08224d9e11983",
+    "docs/designs/2026-11-05-overview-height/v02/mock-tauri.ts": "7dbd222589cee5563ecfa672db9722c40521402fa244234f703fc30def1b29c7",
+    "docs/designs/2026-11-05-overview-height/v02/vite.config.mts": "be558a7a32177842629c012caace0eb88c8b0db48a120266257dc20647ec7b1d"
+  }
+}
