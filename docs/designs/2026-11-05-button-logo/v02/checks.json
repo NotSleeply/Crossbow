@@ -1,0 +1,38 @@
+{
+  "productionCommit": "331905521c41e5a5a2c2016f4685d8bfe5e4ae71",
+  "assets": {
+    "status": "passed",
+    "count": 71,
+    "command": "node scripts/generate-brand-icons.cjs (includes verify-brand-icons.cjs)",
+    "coverage": [
+      "B1 original geometry",
+      "theme-specific opaque ink",
+      "sRGB ICC including ICNS and ICO representations",
+      "Dock centered safe area",
+      "iOS opaque AppIcon and catalog references",
+      "manifest SHA256"
+    ]
+  },
+  "desktopBuild": "passed: npm run build --prefix apps/desktop",
+  "siteBuild": "passed: npm run build --prefix apps/site",
+  "sitePreferencesTests": "passed: 5 tests; existing theme initialization/preferences coverage",
+  "nativeDock": {
+    "status": "passed",
+    "evidence": "previews/native-checks.txt",
+    "path": "formal production ICNS -> AppKit NSImage -> NSApplication icon -> sRGB bitmap",
+    "sizes": [
+      64,
+      96,
+      128
+    ]
+  },
+  "resourcePreview": {
+    "status": "rendered and visually inspected",
+    "file": "previews/production-assets.png",
+    "kind": "actual asset composition, not installed app screenshot"
+  },
+  "browserInteraction": "not reverified; local browser disabled in Work settings",
+  "fullNativeAppInstall": "not performed",
+  "windowsAndIosDeviceValidation": "not performed",
+  "ci": "not polled"
+}

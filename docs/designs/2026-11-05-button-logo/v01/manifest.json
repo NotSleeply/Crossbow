@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-05",
+  "version": "v01",
+  "issue": 301,
+  "status": "proposal",
+  "baseCommit": "dd771cbb3ac77d421516c94c03ad0f32b3552ebe",
+  "colors": {
+    "light": "#293345",
+    "fixedDark": "#293345",
+    "adaptiveDark": "#E7EAF2",
+    "dock": "#293345"
+  },
+  "nativeApplication": "temporary standalone AppKit preview; no install/config edits",
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "c69959a3aa13bd39e4178ad8b8d12b0dab38e4d62c2dce06a5ca5c70ae3b1d94"
+    },
+    {
+      "path": "app-preview.tsx",
+      "sha256": "c16e51ae89564aa7ad7e82b78aaac0c3ce5df82c1d2612b0f3a2edeb43547af8"
+    },
+    {
+      "path": "app.html",
+      "sha256": "1de788c96b9e573ec336539d8652fa84945a799636c2880cc0e1c4dcd01a936f"
+    },
+    {
+      "path": "assets/button-mark.png",
+      "sha256": "c015c20b86a8b946aabfdd0c14b70adc64ba84802ee0968ec86fad5f5f174fd3"
+    },
+    {
+      "path": "assets/button-mark.svg",
+      "sha256": "b2e5f318b76c4b901bf10dadc1b5e6af61b091cc5056a1deb48ac44455d8cb42"
+    },
+    {
+      "path": "assets/current-mark.png",
+      "sha256": "61de34202ffdc1f249fc9118de2a4d4171d6dfd8b1e15dd9caea124d04d31033"
+    },
+    {
+      "path": "assets/current-mark.svg",
+      "sha256": "b044f441b119c52632db1220d17963368ccf21f25032a89dce541c505922e094"
+    },
+    {
+      "path": "assets/dock-icon.icns",
+      "sha256": "ac6f6491f48b95bdced460f560393b9dcbd5d3bce490951f0a6ed7a46b445b2f"
+    },
+    {
+      "path": "assets/dock-icon.png",
+      "sha256": "5ab93420eece7126f4a2d1b0ba9908aaa4670f420cb59878a2c24b42290c0847"
+    },
+    {
+      "path": "assets/dock-icon.svg",
+      "sha256": "38ed747d1220e1a85e89bf4335fd581568101d74af1afd7373cab5204dd4d87b"
+    },
+    {
+      "path": "assets/inverse-mark.png",
+      "sha256": "9e28b2b0a6af78f6b9f97322a51130be23f8910fa4dec241de1122d5d270b383"
+    },
+    {
+      "path": "assets/inverse-mark.svg",
+      "sha256": "4c3756fb8bbb705ab1d9505c01a71678b4d942613284b0520569cee8a81fe9f6"
+    },
+    {
+      "path": "build-native.sh",
+      "sha256": "21629ba5d3543fe7ad39d7eed2cf9c3af47fe1cadd077f0cd19e5f622dab1db7"
+    },
+    {
+      "path": "checks.json",
+      "sha256": "c3323a9769e2901319b9f75b3092a9c443b1ef82328182758bcd62a4ad154455"
+    },
+    {
+      "path": "comparison.svg",
+      "sha256": "4d075e7c16e88b7a72c0e1bf03fb6c2c029072e69982ed0c6e8ff1d941af4aa3"
+    },
+    {
+      "path": "contrast.json",
+      "sha256": "b939cd56407f3ef13f8ed6fd7175e9673b165a2f8d665d908f12b5412903bf7f"
+    },
+    {
+      "path": "dock-preview.swift",
+      "sha256": "98b10117d9dc43d702987ab4bf7e5e47f84564472d8b44ffad77ed908c52488d"
+    },
+    {
+      "path": "generate.cjs",
+      "sha256": "7e27c2e61c4aa74bba07affa156f961d033d1c6fb3310cc9beedba275612c2a5"
+    },
+    {
+      "path": "index.html",
+      "sha256": "ae9cbd00e48efec88e08a45b87a2c6a7f005ca26e6ecdf5538c3f6119d6975f3"
+    },
+    {
+      "path": "mock-tauri.ts",
+      "sha256": "7dbd222589cee5563ecfa672db9722c40521402fa244234f703fc30def1b29c7"
+    },
+    {
+      "path": "native-probe.swift",
+      "sha256": "e0d2c9024b55f041ef7baea714e70111ec0ac93c022bf0a358aead34e6b5ac6c"
+    },
+    {
+      "path": "previews/comparison.png",
+      "sha256": "6c029998f81d29f854e43a9a30414af1ec8bd3fc0d4e7ead3e15d2357afa02a4"
+    },
+    {
+      "path": "previews/native-checks.txt",
+      "sha256": "965a9785f48166e4e2cd619a9737f139aaa7a36627f5eb1a0b620e0539a13d13"
+    },
+    {
+      "path": "source.zip",
+      "sha256": "38031602029bcc79a91446c95927649cde240838f7484e2c494cb7a9e00c30eb"
+    },
+    {
+      "path": "vite.config.mts",
+      "sha256": "fd4cb950f09ee05ccd080bb8817d26d5d35f42031320e22916908d4550386319"
+    }
+  ]
+}

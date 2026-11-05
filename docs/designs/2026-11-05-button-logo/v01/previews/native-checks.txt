@@ -1,0 +1,3 @@
+PASS native AppKit 64px: #293345 pixels=70, tile=52px, centred
+PASS native AppKit 96px: #293345 pixels=383, tile=78px, centred
+PASS native AppKit 128px: #293345 pixels=931, tile=104px, centred

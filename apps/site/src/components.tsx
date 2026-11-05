@@ -1,10 +1,13 @@
 import logoGlyph from "./assets/logo-glyph.png";
+import logoGlyphDark from "./assets/logo-glyph-dark.png";
+import { usePreferences } from "./preferences";
 
 /** 官网 Logo：用户确认的 B1 弧路，与应用及托盘共享矢量母版。 */
 export function Logo({ size = 24 }: { size?: number }) {
+  const { resolvedTheme } = usePreferences();
   return (
     <img
-      src={logoGlyph}
+      src={resolvedTheme === "dark" ? logoGlyphDark : logoGlyph}
       alt=""
       width={size}
       height={size}

@@ -1,0 +1,5 @@
+Command: swift docs/designs/2026-11-05-button-logo/v01/native-probe.swift apps/desktop/src-tauri/icons/dock-icon.icns
+Production commit: 331905521c41e5a5a2c2016f4685d8bfe5e4ae71
+PASS native AppKit 64px: #293345 pixels=70, tile=52px, centred
+PASS native AppKit 96px: #293345 pixels=383, tile=78px, centred
+PASS native AppKit 128px: #293345 pixels=931, tile=104px, centred

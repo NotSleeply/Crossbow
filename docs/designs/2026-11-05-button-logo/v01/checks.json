@@ -1,0 +1,22 @@
+{
+  "baseline": "dd771cbb3ac77d421516c94c03ad0f32b3552ebe",
+  "productionFilesChanged": false,
+  "assetGeometry": "colour-normalized SVG equals production B1 and Dock source",
+  "svgPreview": "rendered and visually inspected",
+  "nativeProbe": {
+    "sizes": [
+      64,
+      96,
+      128
+    ],
+    "color": "#293345",
+    "safeArea": "passed",
+    "log": "previews/native-checks.txt"
+  },
+  "nativeApp": "compiled, ad-hoc signed, launched; process observed",
+  "webBuild": "passed",
+  "browserInteraction": "not executed",
+  "actualDockScreenshot": "not captured",
+  "userVisualAcceptance": "pending",
+  "ci": "not monitored"
+}
