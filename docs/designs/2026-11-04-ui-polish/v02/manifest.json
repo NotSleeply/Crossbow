@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-05",
+  "version": "v02",
+  "issue": 291,
+  "pr": 292,
+  "implementation": "41ca463",
+  "status": "implemented-visual-validation-pending",
+  "files": [
+    "SPEC.md",
+    "checks.json",
+    "source.zip"
+  ],
+  "previews": [],
+  "prototype": "../v01/preview.tsx"
+}
