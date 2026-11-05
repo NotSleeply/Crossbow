@@ -837,9 +837,6 @@ summary:focus-visible {
   container: home-layout / size;
 }
 .cb-home-main {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   min-width: 0;
   min-height: 0;
 }
@@ -880,10 +877,8 @@ summary:focus-visible {
 .cb-home-path {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  flex: 1;
-  min-height: 148px;
-  gap: 14px;
+  min-height: 0;
+  gap: 12px;
 }
 .cb-path-heading {
   display: flex;
@@ -977,9 +972,6 @@ summary:focus-visible {
 .cb-chart-only {
   display: flex;
   flex-direction: column;
-  flex: 0 1 clamp(132px, 22vh, 186px);
-  height: clamp(132px, 22vh, 186px);
-  min-height: 112px;
   padding-top: 16px;
   border-top: 1px solid var(--cb-line);
 }
@@ -1400,9 +1392,6 @@ summary:focus-visible {
   .cb-home-layout {
     gap: 20px;
   }
-  .cb-home-main {
-    gap: 16px;
-  }
   .cb-home-lead h2 {
     font-size: 22px;
   }
@@ -1414,9 +1403,6 @@ summary:focus-visible {
   }
 }
 @container home-layout (max-height: 479px) {
-  .cb-home-main {
-    gap: 10px;
-  }
   .cb-home-lead h2 {
     font-size: 20px;
     margin: 6px 0 4px;
@@ -1426,7 +1412,6 @@ summary:focus-visible {
     line-height: 16px;
   }
   .cb-home-path {
-    min-height: 100px;
     gap: 6px;
   }
   .cb-path-heading h3,
@@ -1464,9 +1449,6 @@ summary:focus-visible {
   }
 
   .cb-chart-only {
-    flex-basis: 96px;
-    height: 96px;
-    min-height: 96px;
     padding-top: 8px;
   }
   .cb-chart-head {
