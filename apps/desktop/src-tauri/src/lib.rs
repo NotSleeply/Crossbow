@@ -1930,9 +1930,10 @@ fn update_state_get(app: AppHandle) -> Option<update_check::UpdateInfo> {
 
 #[tauri::command]
 async fn update_check_now(app: AppHandle) -> Result<Option<String>, String> {
+    // 手动检查是用户显式动作：发现新版本停在「发现新版本」状态，
+    // 等「下载」按钮确认后再下载。「自动下载」开关只作用于定时检查（#305）。
     tauri::async_runtime::spawn_blocking(move || {
-        let (_, auto_download) = update_check::update_settings(&app);
-        update_check::check_once(&app, auto_download, false)
+        update_check::check_once(&app, false, false)
     })
     .await
     .map_err(|e| e.to_string())?
