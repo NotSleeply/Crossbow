@@ -29,7 +29,7 @@ export const english = {
   "macOS / Windows 支持应用内更新；Linux 实验版手动下载": "In-app updates on macOS / Windows; manual downloads for the Linux preview",
   "查看发布与下载": "View release & downloads",
   "Linux 安装与支持范围 →": "Linux installation & support →",
-  "优化日志筛选与阅读体验，修复设置焦点和连接详情对齐，调整页面间距。": "Improve log filtering and reading, fix settings focus and connection detail alignment, and refine page spacing.",
+  "统一岩蓝 Logo 与各平台图标，优化小窗口下概览与图表的空间分配。": "Unify Slate blue branding and platform icons, and improve Overview and chart spacing in smaller windows.",
   "更新说明 ↗": "Release notes ↗",
   "iOS 正在真机开发验证中，暂未公开分发。安装或连接遇到问题，可先查看": "iOS is being tested on physical devices and is not publicly available yet. For installation or connection help, read the ",
   "让连接，清晰可见。": "See every connection clearly.",
