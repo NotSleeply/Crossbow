@@ -72,13 +72,18 @@ mod tests {
         }
     }
 
+    // Windows wall-clock resolution can give parallel tests the same timestamp.
+    // Never let one Scratch::drop remove another test's active working directory.
+    static NEXT_SCRATCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
     struct Scratch(PathBuf);
     impl Scratch {
         fn new() -> Self {
             let root = std::env::temp_dir()
                 .join(format!(
-                    "crossbow-core-path-{}-{}",
+                    "crossbow-core-path-{}-{}-{}",
                     std::process::id(),
+                    NEXT_SCRATCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
@@ -93,6 +98,18 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(self.0.parent().unwrap());
         }
+    }
+
+    #[test]
+    fn scratch_cleanup_does_not_remove_another_tests_working_directory() {
+        let first = Scratch::new();
+        let second = Scratch::new();
+        assert_ne!(first.0, second.0);
+        let marker = second.0.join("runtime.yaml");
+        std::fs::write(&marker, b"mixed-port: 0").unwrap();
+        drop(first);
+        assert!(second.0.is_dir());
+        assert_eq!(std::fs::read(marker).unwrap(), b"mixed-port: 0");
     }
 
     #[test]
@@ -136,7 +153,13 @@ mod tests {
             .unwrap()
             .arg("-t")
             .output()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                panic!(
+                    "cannot launch core {binary:?} in {:?} (directory exists: {}): {error}",
+                    scratch.0,
+                    scratch.0.is_dir()
+                )
+            });
         assert!(
             output.status.success(),
             "{}{}",
@@ -156,7 +179,13 @@ mod tests {
             .unwrap()
             .arg("-t")
             .output()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                panic!(
+                    "cannot launch core {binary:?} in {:?} (directory exists: {}): {error}",
+                    scratch.0,
+                    scratch.0.is_dir()
+                )
+            });
         let log = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),

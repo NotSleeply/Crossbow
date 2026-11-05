@@ -3336,6 +3336,34 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Also used by Windows updater: its process::exit bypasses RunEvent::Exit.
+pub(crate) fn cleanup_before_process_exit(app: &AppHandle, preserve_handoff: bool) {
+    if let Some(state) = app.try_state::<AppState>() {
+        // 退出时不允许 root 内核补杀弹授权框：杀不掉就留给系统，
+        // 下次启动的收养/预绑定检查会处理。
+        core_manager::ROOT_KILL_PROMPT_DISABLED
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        state.ws.unsubscribe_all();
+        let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
+        let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
+        let updating = state
+            .update_handoff
+            .load(std::sync::atomic::Ordering::SeqCst);
+        if !preserve_handoff || (!handoff && !updating) {
+            let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+            if tun_enabled {
+                // 特权内核停掉之后，立刻按记住的记录还原系统代理。
+                if state.core().stop() {
+                    recover_network_if_core_dead(&state);
+                }
+            } else {
+                state.core().stop();
+                recover_network_if_core_dead(&state);
+            }
+        }
+    }
+}
+
 /// Called after installation succeeds and before requesting an event-loop restart.
 /// Persisting the descriptor must succeed before Exit may skip normal cleanup.
 pub(crate) fn prepare_update_restart(app: &AppHandle) -> Result<(), String> {
@@ -3948,30 +3976,7 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(target_os = "linux")]
                     notifications::shutdown(app);
-                    if let Some(state) = app.try_state::<AppState>() {
-                        // 退出时不允许 root 内核补杀弹授权框：杀不掉就留给系统，
-                        // 下次启动的收养/预绑定检查会处理。
-                        core_manager::ROOT_KILL_PROMPT_DISABLED
-                            .store(true, std::sync::atomic::Ordering::SeqCst);
-                        state.ws.unsubscribe_all();
-                        let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
-                        let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
-                        let updating = state
-                            .update_handoff
-                            .load(std::sync::atomic::Ordering::SeqCst);
-                        if !handoff && !updating {
-                            let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-                            if tun_enabled {
-                                // 特权内核停掉之后，立刻按记住的记录还原系统代理。
-                                if state.core().stop() {
-                                    recover_network_if_core_dead(&state);
-                                }
-                            } else {
-                                state.core().stop();
-                                recover_network_if_core_dead(&state);
-                            }
-                        }
-                    }
+                    cleanup_before_process_exit(app, true);
                 }
                 _ => {}
             }

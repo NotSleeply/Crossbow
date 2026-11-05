@@ -70,6 +70,11 @@ pub fn spawn_checker(app: &AppHandle) {
 /// 未运行时直连（与旧行为一致）。
 fn updater_with_proxy(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     let mut builder = app.updater_builder();
+    #[cfg(target_os = "windows")]
+    {
+        let handle = app.clone();
+        builder = builder.on_before_exit(move || crate::cleanup_before_process_exit(&handle, false));
+    }
     if let Some(proxy) = updater_proxy(app) {
         builder = builder.proxy(proxy);
     }
@@ -260,10 +265,15 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
     update.install(bytes).map_err(|e| e.to_string())?;
-    // Explicitly persist handoff first. restart() on the main thread can skip
-    // Exit events; request_restart() allows our pidfile/stream cleanup to run.
-    crate::prepare_update_restart(app)?;
-    app.request_restart();
+    // Windows installation exits the process inside update.install(); the NSIS
+    // installer owns relaunch. Only macOS uses our restart/handoff below.
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Explicitly persist handoff first. restart() on the main thread can skip
+        // Exit events; request_restart() allows our pidfile/stream cleanup to run.
+        crate::prepare_update_restart(app)?;
+        app.request_restart();
+    }
     Ok(())
 }
 
