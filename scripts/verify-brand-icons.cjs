@@ -7,9 +7,9 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   const approved=read('docs/designs/2026-10-28-logo/v01/assets/b1.svg');
   const normalizeColor=svg=>svg.toString().replace(/color="#[a-fA-F0-9]+"/,'color="APPROVED"');
   assert.equal(normalizeColor(read('design/logo/current/mark.svg')),normalizeColor(approved),'B1 geometry must remain the approved original, not a V2 variation');
-  const brandColor='#3f52cf';
-  assert(read('design/logo/current/mark.svg').toString().includes('color="'+brandColor+'"'),'Master must use approved B color');
-  const rgb=[63,82,207];
+  const brandColor='#5c6f8b';
+  assert(read('design/logo/current/mark.svg').toString().includes('color="'+brandColor+'"'),'Master must use approved A Slate blue color');
+  const rgb=[1,3,5].map(i=>parseInt(brandColor.slice(i,i+2),16));
   for(const p of ['design/logo/current/mark-512.png','design/logo/current/mark-dark-512.png','apps/desktop/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph.png']){
     const {data}=await sharp(read(p)).ensureAlpha().raw().toBuffer({resolveWithObject:true});
     let opaque=0;for(let i=0;i<data.length;i+=4)if(data[i+3]===255){opaque++;assert.deepEqual([...data.subarray(i,i+3)],rgb,p+' uses a stale brand color');}
@@ -30,7 +30,18 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
     assert(m.icc && m.icc.equals(canonicalIcc),label+' must embed the canonical sRGB profile');
     return m;
   }
-  for(const f of manifest.files)if(f.path.endsWith('.png'))await checkPng(read(f.path),f.path);
+  async function checkBrandInk(bytes,label){
+    const {data,info}=await sharp(bytes).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    // In tiny favicon/native frames antialiasing can cover the entire stroke.
+    if(info.width<64)return;
+    let ink=0;
+    for(let i=0;i<data.length;i+=4)if(data[i+3]===255 && rgb.every((channel,k)=>data[i+k]===channel))ink++;
+    assert(ink>0,label+' must contain the approved brand ink, not just a valid ICC profile');
+  }
+  for(const f of manifest.files)if(f.path.endsWith('.png')){
+    await checkPng(read(f.path),f.path);
+    if(!/\/tray\/|mark-(black|white)|\/tray-icon\.png$/.test(f.path))await checkBrandInk(read(f.path),f.path);
+  }
   for(const f of manifest.files)assert.equal(crypto.createHash('sha256').update(read(f.path)).digest('hex'),f.sha256,f.path+' drifted; regenerate');
   for(const [p,n] of [['apps/desktop/src-tauri/icons/32x32.png',32],['apps/desktop/src-tauri/icons/128x128.png',128],['apps/desktop/src-tauri/icons/128x128@2x.png',256],['apps/desktop/src-tauri/icons/icon-source.png',1024],['apps/site/public/apple-touch-icon.png',180]]){
     const m=await sharp(read(p)).metadata();assert.equal(m.width,n,p);assert.equal(m.height,n,p);
@@ -50,7 +61,7 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
       const length=icns.readUInt32BE(o+4);assert(length>=8 && o+length<=icns.length,'Invalid ICNS chunk');
       const data=icns.subarray(o+8,o+length);
       if(isPng(data)){
-        const m=await checkPng(data,name+' '+icns.toString('ascii',o,o+4));frames++;
+        const m=await checkPng(data,name+' '+icns.toString('ascii',o,o+4));await checkBrandInk(data,name);frames++;
         if(name==='dock-icon.icns'){
           // Check the shipped representations, not just the SVG transform. Reject
           // full-bleed or off-centre tiles and colour drift after native encoding.
@@ -59,7 +70,7 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
           for(let y=0;y<info.height;y++)for(let x=0;x<info.width;x++){
             const p=(y*info.width+x)*4;
             if(pixels[p+3]>=128){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
-            if(pixels[p]===63 && pixels[p+1]===82 && pixels[p+2]===207 && pixels[p+3]===255)ink++;
+            if(rgb.every((channel,k)=>pixels[p+k]===channel) && pixels[p+3]===255)ink++;
           }
           const tolerance=2/info.width;
           assert(Math.abs((right-left+1)/info.width-.812)<tolerance,name+' tile width must retain Dock safe area');
@@ -78,7 +89,7 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
       const o=6+16*i,length=b.readUInt32LE(o+8),start=b.readUInt32LE(o+12);
       assert(start>=6+16*count && start+length<=b.length,'Invalid ICO entry');
       const data=b.subarray(start,start+length);assert(isPng(data),'Expected PNG-backed ICO');
-      const m=await checkPng(data,p+' entry '+i);
+      const m=await checkPng(data,p+' entry '+i);await checkBrandInk(data,p+' entry '+i);
       assert.equal(m.width,b[o]||256);assert.equal(m.height,b[o+1]||256);
     }
   }
