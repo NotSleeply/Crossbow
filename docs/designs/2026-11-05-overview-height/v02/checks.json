@@ -1,0 +1,15 @@
+{
+  "implementation": "f8dcf7fcf910490a5dbebf42f2f1dec6489151b1",
+  "baseline": "ab1299f263d890cf0eba4bea9a0422971a3d57c9",
+  "productionTypeScriptAndViteBuild": "passed",
+  "finalProductionStylePrototypeBuild": "passed",
+  "previewHttp": "passed for /preview.tsx and /matrix.html",
+  "diffCheck": "passed",
+  "visual": {
+    "status": "pending",
+    "reason": "CUA initialization and tab connection timed out",
+    "screenshots": []
+  },
+  "native": "not run (CSS layout only)",
+  "ci": "not polled"
+}
