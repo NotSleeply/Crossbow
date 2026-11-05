@@ -1,0 +1,74 @@
+name: Bug 报告 / Bug Report
+description: 反馈 Crossbow 的问题——一个 issue 只报一个问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请：
+        1. [搜索已有 issue](https://github.com/Richard-Zhang1019/Crossbow/issues?q=is%3Aissue+)，避免重复；
+        2. 一个 issue 只描述一个问题；
+        3. **版本号与诊断信息决定排查速度**——缺它们的问题大多只能来回追问。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？你期望发生什么？
+      placeholder: 简明扼要地说明现象与期望，不要只写"不能用"。
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      options:
+        - 内核启动 / 运行异常
+        - 代理不生效（系统代理 / TUN）
+        - 崩溃或白屏
+        - 订阅与配置
+        - 应用更新
+        - 界面显示
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Crossbow 版本
+      description: 设置 → 当前版本，或应用窗口右下角页脚。
+      placeholder: "例如 v0.13.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      options:
+        - macOS (Apple Silicon)
+        - Windows x64
+        - Linux x86_64（实验性）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从头到尾怎么操作会出现这个问题？概率如何（必现 / 偶现）？
+      placeholder: |
+        1. 打开 …
+        2. 点击 …
+        3. 出现 …
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断信息 / 日志
+      description: 诊断页导出的结果，或内核日志节选。**请务必脱敏订阅地址与 token**。
+      placeholder: 失败项、错误文本、相关日志片段……
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图
+      description: 有助于说明问题的截图（直接拖进来）。
