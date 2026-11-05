@@ -73,7 +73,7 @@ async function png(svg,size,to,opaque=false){let im=sharp(Buffer.from(svg)).resi
   }
   outputs.push('apps/desktop/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph.png','apps/site/src/assets/app-icon.png');
   const crypto=require('node:crypto');
-  put('design/logo/current/manifest.json',JSON.stringify({design:'B1 / original v01 arc',issue:202,source:'design/logo/current/mark.svg',colors:{light:brandColor,dark:brandColor,tile:'#f7f8fb'},colorSpace:'sRGB',embeddedIcc:true,files:outputs.map(p=>({path:p,sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,p))).digest('hex')}))},null,2)+'\n');
+  put('design/logo/current/manifest.json',JSON.stringify({design:'B1 / original v01 arc / A Slate blue',issue:297,source:'design/logo/current/mark.svg',colors:{light:brandColor,dark:brandColor,tile:'#f7f8fb'},colorSpace:'sRGB',embeddedIcc:true,files:outputs.map(p=>({path:p,sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,p))).digest('hex')}))},null,2)+'\n');
   cp.execFileSync(process.execPath,[path.join(__dirname,'verify-brand-icons.cjs')],{stdio:'inherit'});
   console.log('Generated B1 brand marks, desktop ICNS/ICO, template tray, web favicons and iOS asset catalogs.');
 })().catch(e=>{console.error(e.message);process.exit(1);});

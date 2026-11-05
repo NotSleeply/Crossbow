@@ -1,0 +1,11 @@
+{
+  "current": {"id":"current","name":"现用靛蓝","en":"CURRENT INDIGO","color":"#3F52CF"},
+  "proposals": [
+    {"id":"A","name":"岩蓝","en":"SLATE BLUE","color":"#5C6F8B","note":"推荐。保留蓝色识别感，降低饱和度，衔接界面的深灰蓝主按钮。"},
+    {"id":"B","name":"静靛","en":"QUIET INDIGO","color":"#5E6BA4","note":"保留更多原有靛蓝气质，向界面强调色靠拢，变化更温和。"},
+    {"id":"C","name":"钢蓝","en":"STEEL BLUE","color":"#5B778B","note":"偏冷的蓝灰，科技感更清晰，深色背景上辨识度更高。"},
+    {"id":"D","name":"石墨","en":"GRAPHITE","color":"#6A7280","note":"最中性的方向，融入灰阶界面，品牌色存在感更低。"},
+    {"id":"E","name":"雾靛","en":"DUSTY INDIGO","color":"#6974A3","note":"更柔和、明亮的灰靛，适合偏向深色界面的使用习惯。"},
+    {"id":"F","name":"青岩","en":"MINERAL TEAL","color":"#5C7C7A","note":"克制的蓝绿灰，辨识度更独立，也会引入新的品牌色方向。"}
+  ]
+}

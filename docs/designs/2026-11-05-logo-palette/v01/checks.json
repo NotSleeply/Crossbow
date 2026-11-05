@@ -1,0 +1,8 @@
+{
+  "assetRender": "SVG rendered through sharp; comparison/recommended PNGs visually inspected",
+  "geometry": "all seven mark/Dock variants match production geometry after normalizing colour",
+  "color": "expected opaque PNG RGB pixels verified within 1/255; embedded sRGB ICC verified",
+  "previewBuild": "passed; index/app entrypoints and static palette/assets included",
+  "appBrowser": "not executed; prior local browser restriction remains",
+  "productionChanges": false
+}

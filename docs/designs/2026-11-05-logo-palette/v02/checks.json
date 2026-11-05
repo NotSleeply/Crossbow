@@ -1,0 +1,22 @@
+{
+  "implementation": "88cdf04308d3bbeea3025f715e7cd783c018c00c",
+  "approved": "A / #5C6F8B",
+  "assetValidation": {
+    "passed": 70,
+    "checks": [
+      "B1 geometry",
+      "brand ink",
+      "sRGB ICC",
+      "ICNS/ICO containers",
+      "Dock safe area",
+      "iOS catalog/alpha",
+      "manifest SHA256"
+    ]
+  },
+  "desktopBuild": "passed",
+  "siteBuild": "passed",
+  "productionPreview": "actual files rendered and inspected",
+  "nativeInstalledApp": "not run",
+  "browser": "not run; known local browser restriction",
+  "ci": "not monitored"
+}
