@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-05",
+  "version": "v02",
+  "status": "implemented-awaiting-review",
+  "issue": 297,
+  "pr": 298,
+  "implementation": "88cdf04308d3bbeea3025f715e7cd783c018c00c",
+  "approvedColor": "#5C6F8B",
+  "productionManifest": "design/logo/current/manifest.json",
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "42904f9152a58d2627b6f5eece7776aad52c16c6eefb8dd29b8bb4aec408c4b0"
+    },
+    {
+      "path": "checks.json",
+      "sha256": "96649d064bb3e193f8dc5340b93d9e1579ac01e95cbe605762b80af444857f3b"
+    },
+    {
+      "path": "previews/production-assets.png",
+      "sha256": "510084dba7ab3dd32324dea60d31f3f3644630e03d3ff295e94ba1836e93a5fd"
+    },
+    {
+      "path": "production-assets.svg",
+      "sha256": "86576f090e9aeae5a94160c6d59c8b675587e4e6ff5aa6095aa57d6dcf30766c"
+    },
+    {
+      "path": "render.cjs",
+      "sha256": "bbc3d16cffb92b0ae772c05e853510cf5b052ce9839e230d07acf9a6b181a16f"
+    },
+    {
+      "path": "source.zip",
+      "sha256": "956f42b1e17ab7150bcfe41e82ebc1963f06f1984d17f8efe5f4b7266ad55bf8"
+    }
+  ]
+}
