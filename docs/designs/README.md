@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-05 | 主按钮同色 Logo：明暗主题与原生 Dock 预览 | v01 | 提案，未替换正式品牌资源 | [说明/运行](2026-11-05-button-logo/v01/SPEC.md) · [配色对比](2026-11-05-button-logo/v01/previews/comparison.png) · [源稿](2026-11-05-button-logo/v01/source.zip) · [原生校验](2026-11-05-button-logo/v01/previews/native-checks.txt) | #301 |
 | 2026-11-05 | B1 / A 岩蓝正式品牌资源替换 | v02 | 用户已确认，已实现待 PR 评审 | [说明](2026-11-05-logo-palette/v02/SPEC.md) · [正式资源预览](2026-11-05-logo-palette/v02/previews/production-assets.png) · [源稿](2026-11-05-logo-palette/v02/source.zip) · [校验](2026-11-05-logo-palette/v02/checks.json) | #297 / PR #298 |
 | 2026-11-05 | B1 Logo 配色：六个低饱和灰蓝提案 | v01 | A 已确认；正式资源见 v02 | [规格/运行](2026-11-05-logo-palette/v01/SPEC.md) · [六色预览](2026-11-05-logo-palette/v01/previews/comparison.png) · [现用与 A](2026-11-05-logo-palette/v01/previews/recommended.png) · [源稿](2026-11-05-logo-palette/v01/source.zip) | #297 |
 | 2026-11-05 | 概览左侧：有限留白与图表优先的高度分配 | v01 | 已实现，实际视觉验收待补 | [说明/运行](2026-11-05-overview-height/v01/SPEC.md) · [源稿](2026-11-05-overview-height/v01/source.zip) · [矩阵入口](2026-11-05-overview-height/v01/matrix.html) · [检查](2026-11-05-overview-height/v01/checks.json) | #295 |
