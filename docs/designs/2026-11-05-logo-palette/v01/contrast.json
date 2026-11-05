@@ -1,0 +1,65 @@
+[
+  {
+    "id": "current",
+    "color": "#3F52CF",
+    "white": 6.33,
+    "lightChrome": 5.55,
+    "darkChrome": 2.93,
+    "darkSurface": 2.69,
+    "darkPanel": 2.39
+  },
+  {
+    "id": "A",
+    "color": "#5C6F8B",
+    "white": 5.12,
+    "lightChrome": 4.49,
+    "darkChrome": 3.63,
+    "darkSurface": 3.33,
+    "darkPanel": 2.96
+  },
+  {
+    "id": "B",
+    "color": "#5E6BA4",
+    "white": 5.1,
+    "lightChrome": 4.48,
+    "darkChrome": 3.64,
+    "darkSurface": 3.34,
+    "darkPanel": 2.97
+  },
+  {
+    "id": "C",
+    "color": "#5B778B",
+    "white": 4.71,
+    "lightChrome": 4.13,
+    "darkChrome": 3.94,
+    "darkSurface": 3.62,
+    "darkPanel": 3.21
+  },
+  {
+    "id": "D",
+    "color": "#6A7280",
+    "white": 4.85,
+    "lightChrome": 4.25,
+    "darkChrome": 3.83,
+    "darkSurface": 3.52,
+    "darkPanel": 3.12
+  },
+  {
+    "id": "E",
+    "color": "#6974A3",
+    "white": 4.54,
+    "lightChrome": 3.98,
+    "darkChrome": 4.09,
+    "darkSurface": 3.76,
+    "darkPanel": 3.34
+  },
+  {
+    "id": "F",
+    "color": "#5C7C7A",
+    "white": 4.55,
+    "lightChrome": 3.99,
+    "darkChrome": 4.08,
+    "darkSurface": 3.75,
+    "darkPanel": 3.33
+  }
+]
