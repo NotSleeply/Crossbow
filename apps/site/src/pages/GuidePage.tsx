@@ -62,7 +62,7 @@ export default function GuidePage() {
           {/* taste-skill-ignore: ordered procedure, not decorative numbering. */}<Step n="01" title={t("下载内核")}>
              {t("设置 → 内核引擎 → 选择 sing-box → 点「下载内核」（约 20MB，内置镜像加速；已下载的内核不会重复下载）。")} </Step>
           {/* taste-skill-ignore: ordered procedure, not decorative numbering. */}<Step n="02" title={t("一键切换")}>
-             {t("下载完成后点「启用」。切换会热重启内核：订阅按引擎自动转换格式（sing-box 输出 JSON 并注入 Clash 兼容 API），托盘速率、连接观测无缝衔接。")} </Step>
+             {t("在「设置 → 网络与内核」选择目标引擎，按提示下载缺失内核；安装完成后应用目标引擎。运行中的内核会重新加载或重启，配置按引擎转换格式。")} </Step>
           {/* taste-skill-ignore: ordered procedure, not decorative numbering. */}<Step n="03" title={t("注意")}>
              {t("切换前确认当前订阅的节点类型被目标内核支持（绝大多数常见协议两者都支持；个别小众协议建议留在 mihomo）。规则集（geoip/geosite）在 sing-box 下会自动下载并每日自更新。")} </Step>
         </Card>
@@ -70,7 +70,7 @@ export default function GuidePage() {
         <Card>
           <H2>{t("JS 覆写：把订阅改成你想要的样子")}</H2>
           <p style={{ color: "var(--dim)", fontSize: 15, lineHeight: 1.75, margin: "10px 0 4px" }}>
-             {t("配置页 → 覆写组 → 新建「JS 脚本」，编写")} <code style={{ font: "12px var(--mono)" }}>function main(config)</code>{t("， 返回改造后的配置。沙箱执行、无网络无文件副作用，保存时自动试运行。")} </p>
+             {t("配置 → 覆写链 → 新建覆写 → 选择「JS 脚本」，编写")} <code style={{ font: "12px var(--mono)" }}>function main(config)</code>{t("， 返回改造后的配置。沙箱执行、无网络无文件副作用，保存时自动试运行。")} </p>
           <Code>{language === "en" ? CODE_FILTER_EN : CODE_FILTER}</Code>
           {/* taste-skill-ignore: ordered procedure, not decorative numbering. */}<Step n="01" title={t("编写并绑定")}>
              {t("新建脚本 → 粘贴代码 → 保存（自动校验，语法/运行时错误当场报）→ 勾选「绑定到当前订阅」并启用。")} </Step>
@@ -98,9 +98,10 @@ export default function GuidePage() {
         <Card>
           <H2>{t("混合端口与绕过")}</H2>
           <p style={{ color: "var(--dim)", fontSize: 15, lineHeight: 1.75, margin: "10px 0 4px" }}>
-             {t("混合监听端口（HTTP + SOCKS5 共用）默认 7897，可在设置中修改——修改后内核运行中会自动热重启。 绕过列表内置本机与局域网直连（127.0.0.1 / localhost / 内网段 / *.local）。")} </p>
+             {t("混合监听端口供 HTTP 与 SOCKS5 共用，默认 7897。在「设置 → 网络与内核」点击端口旁的「修改」，编辑后点击「应用」或按 Enter；Escape 可取消，失去焦点不会保存。运行中的内核可能短暂重启，系统代理绕过本机与局域网地址。")} </p>
           <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.7 }}>
              {t("提示：若 7897 被其他代理工具占用（常见于 Clash Verge 等），开启时会明确报错——换一个端口即可。")} </p>
+          <p className="guide-intro">{t("需要给同一网络的设备提供代理时，可开启「允许局域网连接」，使用本机局域网 IP 与混合端口。该选项会监听 0.0.0.0，请仅在可信网络开启，并确认系统防火墙规则。")}</p>
         </Card>
 
         <Card id="linux">
@@ -137,6 +138,59 @@ export default function GuidePage() {
           <H2>{t("用通知中心追踪需要处理的问题")}</H2>
           <p className="guide-intro">{t("点击顶部铃铛查看最近通知。未读与待处理是不同状态：全部已读不会解决故障；进入诊断或设置完成修复后，原记录会显示已恢复。")}</p>
           <p className="guide-intro">{t("主题、语言与普通设置成功时不再重复提醒。进度通知收起后任务继续，出错时可查看脱敏详情。记录仅在本次会话中保留，排查长期问题请同时查看日志。")}</p>
+        </Card>
+
+        <Card id="subscriptions">
+          <H2>{t("订阅更新：知道更新了什么")}</H2>
+          <p className="guide-intro">{t("在「配置 → 配置来源」选择订阅，先看更新状态，再决定是否手动更新。")}</p>
+          <Step n="01" title={t("查看更新时间")}>
+            {t("详情显示上次成功、下次更新或失败后的重试时间。自动更新可关闭，也可选择 6、12 或 24 小时间隔。")}
+          </Step>
+          <Step n="02" title={t("失败与节点变化")}>
+            {t("更新失败时保留原配置，并展示最近失败原因；成功后可查看新增、移除和变化的节点数量，快速判断订阅内容是否改变。")}
+          </Step>
+        </Card>
+
+        <Card id="recovery">
+          <H2>{t("从配置快照恢复")}</H2>
+          <p className="guide-intro">{t("配置保存前自动保留最近五份快照。在「配置」页面点击「配置恢复」，按时间和内容选择恢复点。")}</p>
+          <Step n="01" title={t("先确认范围")}>
+            {t("恢复会替换订阅、本地配置、覆写链与当前配置选择；外观、端口、内核和接管设置保留。快照列表会显示配置与覆写数量。")}
+          </Step>
+          <Step n="02" title={t("恢复后检查连接")}>
+            {t("恢复前会保留当前版本，运行中的内核可能短暂重新加载或重启；完成后检查当前配置、节点与诊断结果。升级前仍建议自行备份数据目录。")}
+          </Step>
+        </Card>
+
+        <Card id="troubleshooting">
+          <H2>{t("连接不通时，按证据排查")}</H2>
+          <p className="guide-intro">{t("内核运行、接管配置与网络连通性是不同状态。首页显示运行中，不代表浏览器已经可以访问目标网站。")}</p>
+          <Step n="01" title={t("先看诊断的第一个阻塞项")}>
+            {t("打开「监测 → 诊断」或顶部「诊断」，逐项查看检查中、通过、失败与跳过。先处理优先展示的阻塞项，按可用修复操作或配置入口处理，再重新检查。")}
+          </Step>
+          <Step n="02" title={t("用连接和日志定位规则")}>
+            {t("在「监测 → 连接」搜索目标、规则、链路或进程，点击行查看并复制完整详情。在「日志」中多选级别、筛选关键词；暂停跟随阅读，复制单条或导出当前筛选的脱敏日志。")}
+          </Step>
+          <Step n="03" title={t("站点测试要看测试上下文")}>
+            {t("节点页的站点连通性测试保留时间与出口。切换链路后应重新测试；HTTP 限制响应表示目标作出响应但限制访问，不等于连接失败，也不代表浏览器一定走代理。")}
+          </Step>
+        </Card>
+
+        <Card id="updates">
+          <H2>{t("应用内更新：检查、下载与安装")}</H2>
+          <p className="guide-intro">{t("macOS / Windows 在「设置 → 应用与更新」检查版本。Linux 实验版需手动下载新归档。")}</p>
+          <Step n="01" title={t("手动检查后再确认下载")}>
+            {t("「检查更新」只检查版本；发现新版后点击「下载」，完成后按提示重启安装。即使开启自动下载，手动检查仍会等待下载确认。")}
+          </Step>
+          <Step n="02" title={t("按需设置后台更新")}>
+            {t("自动检查与自动下载可以分别设置；自动检查在启动后约 30 秒和之后每 6 小时执行，自动下载仅作用于这类定时检查。")}
+          </Step>
+        </Card>
+
+        <Card id="windows">
+          <H2>{t("Windows 安装与 TUN 服务")}</H2>
+          <p className="guide-intro">{t("Windows x64 安装包附带 CrossbowService，TUN 依赖该服务。安装或更新提示文件被占用时，先关闭其他 Crossbow 实例，按安装器提示重试；服务缺失时使用完整安装包修复。安装包签名与支持范围以发布说明为准。")}</p>
+          <p className="guide-intro"><a href={`${REPO}/blob/main/docs/WINDOWS-INSTALL.md`} target="_blank" rel="noopener noreferrer">{t("查看 Windows 安装、服务与升级说明 ↗")}</a></p>
         </Card>
 
         <Card>
