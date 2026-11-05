@@ -7,21 +7,29 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   const approved=read('docs/designs/2026-10-28-logo/v01/assets/b1.svg');
   const normalizeColor=svg=>svg.toString().replace(/color="#[a-fA-F0-9]+"/,'color="APPROVED"');
   assert.equal(normalizeColor(read('design/logo/current/mark.svg')),normalizeColor(approved),'B1 geometry must remain the approved original, not a V2 variation');
-  const brandColor='#5c6f8b';
-  assert(read('design/logo/current/mark.svg').toString().includes('color="'+brandColor+'"'),'Master must use approved A Slate blue color');
+  const brandColor='#293345',darkBrandColor='#e7eaf2';
+  assert(read('design/logo/current/mark.svg').toString().includes('color="'+brandColor+'"'),'Master must use approved primary button ink');
   const rgb=[1,3,5].map(i=>parseInt(brandColor.slice(i,i+2),16));
-  for(const p of ['design/logo/current/mark-512.png','design/logo/current/mark-dark-512.png','apps/desktop/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph.png']){
+  const darkRgb=[1,3,5].map(i=>parseInt(darkBrandColor.slice(i,i+2),16));
+  const isDarkMark=p=>/mark-dark|logo-glyph-dark|logo-dark@/.test(p);
+  const marks=['design/logo/current/mark-512.png','design/logo/current/mark-dark-512.png','apps/desktop/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph.png','apps/site/src/assets/logo-glyph-dark.png'];
+  for(const scale of [1,2,3])for(const mode of ['light','dark'])marks.push(`apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-${mode}@${scale}x.png`);
+  for(const p of marks){
+    const expected=isDarkMark(p)?darkRgb:rgb;
     const {data}=await sharp(read(p)).ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    let opaque=0;for(let i=0;i<data.length;i+=4)if(data[i+3]===255){opaque++;assert.deepEqual([...data.subarray(i,i+3)],rgb,p+' uses a stale brand color');}
+    let opaque=0;for(let i=0;i<data.length;i+=4)if(data[i+3]===255){opaque++;assert.deepEqual([...data.subarray(i,i+3)],expected,p+' uses a stale brand color');}
     assert(opaque>0,p+' must contain opaque brand ink');
   }
-  for(const scale of [1,2,3])assert.deepEqual(read('apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@'+scale+'x.png'),read('apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@'+scale+'x.png'),'iOS theme logos must use the same ink');
-  assert.equal(read('apps/site/public/favicon.svg').toString(),read('design/logo/current/mark.svg').toString(),'Favicon must use the same brand color in both themes');
+  assert.equal(normalizeColor(read('design/logo/current/mark-dark.svg')),normalizeColor(approved),'Dark mark must retain approved geometry');
+  assert(read('design/logo/current/mark-dark.svg').toString().includes(darkBrandColor),'Dark SVG must use inverse primary ink');
+  assert.equal(read('apps/site/public/favicon.svg').toString(),read('design/logo/current/app-icon.svg').toString(),'SVG favicon must retain the fixed light tile');
   const css=read('apps/desktop/src/index.css').toString();
   assert(css.includes('--cb-brand: '+brandColor),'Desktop brand token must match master');
+  assert(/:root\.dark\s*\{[^}]*--cb-brand: #e7eaf2;/s.test(css),'Dark desktop brand token must use inverse primary ink');
   assert(/\.cb-logo-glyph\s*\{[^}]*background:\s*var\(--cb-brand\)/s.test(css),'Desktop logo must not inherit the theme accent');
   const manifest=JSON.parse(read('design/logo/current/manifest.json'));
-  assert.equal(manifest.colors.light,brandColor);assert.equal(manifest.colors.dark,brandColor);
+  assert.equal(manifest.colors.light,brandColor);assert.equal(manifest.colors.dark,darkBrandColor);
+  assert.equal(manifest.colors.standalone,brandColor);
   assert.equal(manifest.colorSpace,'sRGB');assert.equal(manifest.embeddedIcc,true);
   const canonicalIcc=(await sharp(read('apps/desktop/src-tauri/icons/icon-source.png')).metadata()).icc;
   assert(canonicalIcc && canonicalIcc.length>128,'Master PNG must contain an ICC profile');
@@ -30,17 +38,17 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
     assert(m.icc && m.icc.equals(canonicalIcc),label+' must embed the canonical sRGB profile');
     return m;
   }
-  async function checkBrandInk(bytes,label){
+  async function checkBrandInk(bytes,label,expected=rgb){
     const {data,info}=await sharp(bytes).ensureAlpha().raw().toBuffer({resolveWithObject:true});
     // In tiny favicon/native frames antialiasing can cover the entire stroke.
     if(info.width<64)return;
     let ink=0;
-    for(let i=0;i<data.length;i+=4)if(data[i+3]===255 && rgb.every((channel,k)=>data[i+k]===channel))ink++;
+    for(let i=0;i<data.length;i+=4)if(data[i+3]===255 && expected.every((channel,k)=>data[i+k]===channel))ink++;
     assert(ink>0,label+' must contain the approved brand ink, not just a valid ICC profile');
   }
   for(const f of manifest.files)if(f.path.endsWith('.png')){
     await checkPng(read(f.path),f.path);
-    if(!/\/tray\/|mark-(black|white)|\/tray-icon\.png$/.test(f.path))await checkBrandInk(read(f.path),f.path);
+    if(!/\/tray\/|mark-(black|white)|\/tray-icon\.png$/.test(f.path))await checkBrandInk(read(f.path),f.path,isDarkMark(f.path)?darkRgb:rgb);
   }
   for(const f of manifest.files)assert.equal(crypto.createHash('sha256').update(read(f.path)).digest('hex'),f.sha256,f.path+' drifted; regenerate');
   for(const [p,n] of [['apps/desktop/src-tauri/icons/32x32.png',32],['apps/desktop/src-tauri/icons/128x128.png',128],['apps/desktop/src-tauri/icons/128x128@2x.png',256],['apps/desktop/src-tauri/icons/icon-source.png',1024],['apps/site/public/apple-touch-icon.png',180]]){

@@ -13,7 +13,7 @@
   --cb-text-dim: #596777;
   --cb-faint: #626e7d;
   --cb-accent: #455ab5;
-  --cb-brand: #5c6f8b;
+  --cb-brand: #293345;
   --cb-accent-soft: #eff2fc;
   --cb-accent-line: #8592c9;
   --cb-ok: #267659;
@@ -39,6 +39,7 @@
   --cb-text-dim: #adb2be;
   --cb-faint: #989fac;
   --cb-accent: #b7b4ed;
+  --cb-brand: #e7eaf2;
   --cb-accent-soft: #2d2d40;
   --cb-accent-line: #8e88bb;
   --cb-ok: #8acdaf;
@@ -2717,7 +2718,7 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-/* B1 uses the same approved brand ink in light and dark themes. */
+/* B1 follows the primary button ink; the mask retains the approved geometry. */
 .cb-logo-glyph {
   display: block;
   flex: none;

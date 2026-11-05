@@ -1,10 +1,11 @@
 {
-  "design": "B1 / original v01 arc / A Slate blue",
-  "issue": 297,
+  "design": "B1 / original v01 arc / primary button adaptive ink",
+  "issue": 301,
   "source": "design/logo/current/mark.svg",
   "colors": {
-    "light": "#5c6f8b",
-    "dark": "#5c6f8b",
+    "light": "#293345",
+    "dark": "#e7eaf2",
+    "standalone": "#293345",
     "tile": "#f7f8fb"
   },
   "colorSpace": "sRGB",
@@ -12,83 +13,83 @@
   "files": [
     {
       "path": "design/logo/current/app/icon-1024.png",
-      "sha256": "c5e72e53eccfee03f5f55ba13fce62b5d26ece1f6ccc56ea7bb93e5c6359c901"
+      "sha256": "c340471988c04135dfa74696d623f7f30f9f64c3e11b47022fe67ddcfec24679"
     },
     {
       "path": "design/logo/current/app/icon-128.png",
-      "sha256": "ba98aaa80c826717252b7472e4fe851ba92f5658f43bdbf79a66c371bce2edf0"
+      "sha256": "f2618a6eea241e5180c4ca110f36c4602cb690680bbfbf9dfe2497a695002830"
     },
     {
       "path": "design/logo/current/app/icon-16.png",
-      "sha256": "f9ae285409cdf0e25474de6ed162d7ecceb95305ca19e55ff627045a8822030a"
+      "sha256": "8418e92da33b59f5897923f3a59c5371758326d864e080d766c47199fddd3e8e"
     },
     {
       "path": "design/logo/current/app/icon-256.png",
-      "sha256": "b9ed618a8aa77c9b5d64a4c2748109f92d4782ea9762614f81f8bbb08a9e0bd8"
+      "sha256": "962377fdecd9ef7e2c65a3374a6e52d3dc086e300530569ff8f63cafdc74f2d6"
     },
     {
       "path": "design/logo/current/app/icon-32.png",
-      "sha256": "1490ae6774fb3d90b74b7c487cf3cdfc32e7470701fe8beb451d5452e187b47f"
+      "sha256": "d6eeba075552125ebd6542ace9a5f6f3bc87801f8407ed9b392c986653464338"
     },
     {
       "path": "design/logo/current/app/icon-512.png",
-      "sha256": "87e346164767bb3e50597e94b8c62b885788ab45d4c6beb5fba54af9614de063"
+      "sha256": "ff49c42a6a295ffff58fd278fbe277064fb5737452e0ad3cfff433c1dfbde00b"
     },
     {
       "path": "design/logo/current/app/icon-64.png",
-      "sha256": "4cc4bf3bb82f0e051e3938c8b5391a480561c2ec646df895848742365bfb4e15"
+      "sha256": "e1cca34731898e646f6ccfae7efb757c289f18f48feb34107ce2f59c6bcfea3b"
     },
     {
       "path": "design/logo/current/app-icon-dark.svg",
-      "sha256": "cd4f72f219a6725fedf8a9dfb2e967011ad883517651f98b383ed37d3ea30283"
+      "sha256": "65b049c2b47b1adf7c924f6c12d2745121093563751f7ee09177a19df3a29d67"
     },
     {
       "path": "design/logo/current/app-icon-ios.svg",
-      "sha256": "5df61f52e8c0b734b4c68e2e2218bdf47805be691fc889cfb2c7962a2d3ecca9"
+      "sha256": "7fe4e0ebe7ea3ac32cd640e40db8bb2b47ebd360202e64b7099113070d5c2881"
     },
     {
       "path": "design/logo/current/app-icon.svg",
-      "sha256": "551e02080a378317867c5e5ea7aa2741db4f0b0c07a2cc353298d83c5df4047b"
+      "sha256": "1e9e8eaafbddbefc44f32eea40f8fbfef4e4e4dcfae6a7350f48dc8030cbaca6"
     },
     {
       "path": "design/logo/current/dock-icon.svg",
-      "sha256": "01751407e424302ce98d49ed67f083d01d19eff51a3d5b09b5768eb4ce564731"
+      "sha256": "38ed747d1220e1a85e89bf4335fd581568101d74af1afd7373cab5204dd4d87b"
     },
     {
       "path": "design/logo/current/favicon/apple-touch-icon.png",
-      "sha256": "9886f5024b9aecd7651d55f9529b25f851dddcb2ee71b262505ec78ef0ad4f64"
+      "sha256": "7d736c1e7094fe7b87f74a9b0e89381591803fefea3883d45685a8defc6b8f22"
     },
     {
       "path": "design/logo/current/favicon/favicon-16.png",
-      "sha256": "f9ae285409cdf0e25474de6ed162d7ecceb95305ca19e55ff627045a8822030a"
+      "sha256": "8418e92da33b59f5897923f3a59c5371758326d864e080d766c47199fddd3e8e"
     },
     {
       "path": "design/logo/current/favicon/favicon-192.png",
-      "sha256": "61b6e2f8e119c15b2780c077e66f24de5767fadd06908ae592178e8edca01797"
+      "sha256": "766ec3722672eda9d423fe64fbbbdbed50afa894523598435cfecf90256da49f"
     },
     {
       "path": "design/logo/current/favicon/favicon-256.png",
-      "sha256": "b9ed618a8aa77c9b5d64a4c2748109f92d4782ea9762614f81f8bbb08a9e0bd8"
+      "sha256": "962377fdecd9ef7e2c65a3374a6e52d3dc086e300530569ff8f63cafdc74f2d6"
     },
     {
       "path": "design/logo/current/favicon/favicon-32.png",
-      "sha256": "1490ae6774fb3d90b74b7c487cf3cdfc32e7470701fe8beb451d5452e187b47f"
+      "sha256": "d6eeba075552125ebd6542ace9a5f6f3bc87801f8407ed9b392c986653464338"
     },
     {
       "path": "design/logo/current/favicon/favicon-48.png",
-      "sha256": "d30129dacdb64d8f3c4bccbc4fd47af4eb8ab7e52d470e93c0e2f3454adbaf7d"
+      "sha256": "cc545f695a70dad1cab921a8a61ed0fec25b2788f54a38e8f48f7795aa1cf786"
     },
     {
       "path": "design/logo/current/favicon/favicon.ico",
-      "sha256": "a8c983949d199c42106971a13e0f12914afa270777dff507d0d6bd70acb298ec"
+      "sha256": "9bb37ee42c37e7d0057a5610f840d909169d03d3382d84ff60c1d423f0ec1e66"
     },
     {
       "path": "design/logo/current/favicon/favicon.svg",
-      "sha256": "c8d0565e035caf3a06a739f56174514e6455b141830dba286a5f2fb0b8e1e6b3"
+      "sha256": "1e9e8eaafbddbefc44f32eea40f8fbfef4e4e4dcfae6a7350f48dc8030cbaca6"
     },
     {
       "path": "design/logo/current/mark-512.png",
-      "sha256": "61de34202ffdc1f249fc9118de2a4d4171d6dfd8b1e15dd9caea124d04d31033"
+      "sha256": "c015c20b86a8b946aabfdd0c14b70adc64ba84802ee0968ec86fad5f5f174fd3"
     },
     {
       "path": "design/logo/current/mark-black-512.png",
@@ -100,11 +101,11 @@
     },
     {
       "path": "design/logo/current/mark-dark-512.png",
-      "sha256": "61de34202ffdc1f249fc9118de2a4d4171d6dfd8b1e15dd9caea124d04d31033"
+      "sha256": "9e28b2b0a6af78f6b9f97322a51130be23f8910fa4dec241de1122d5d270b383"
     },
     {
       "path": "design/logo/current/mark-dark.svg",
-      "sha256": "c8d0565e035caf3a06a739f56174514e6455b141830dba286a5f2fb0b8e1e6b3"
+      "sha256": "710b84449f20594d30b1462346b88d78ff9fcfd96c3e29771ba2815c4400582a"
     },
     {
       "path": "design/logo/current/mark-white-512.png",
@@ -116,7 +117,7 @@
     },
     {
       "path": "design/logo/current/mark.svg",
-      "sha256": "c8d0565e035caf3a06a739f56174514e6455b141830dba286a5f2fb0b8e1e6b3"
+      "sha256": "b2e5f318b76c4b901bf10dadc1b5e6af61b091cc5056a1deb48ac44455d8cb42"
     },
     {
       "path": "design/logo/current/tray/black-16.png",
@@ -184,31 +185,31 @@
     },
     {
       "path": "apps/desktop/src-tauri/icons/128x128.png",
-      "sha256": "ba98aaa80c826717252b7472e4fe851ba92f5658f43bdbf79a66c371bce2edf0"
+      "sha256": "f2618a6eea241e5180c4ca110f36c4602cb690680bbfbf9dfe2497a695002830"
     },
     {
       "path": "apps/desktop/src-tauri/icons/128x128@2x.png",
-      "sha256": "b9ed618a8aa77c9b5d64a4c2748109f92d4782ea9762614f81f8bbb08a9e0bd8"
+      "sha256": "962377fdecd9ef7e2c65a3374a6e52d3dc086e300530569ff8f63cafdc74f2d6"
     },
     {
       "path": "apps/desktop/src-tauri/icons/32x32.png",
-      "sha256": "1490ae6774fb3d90b74b7c487cf3cdfc32e7470701fe8beb451d5452e187b47f"
+      "sha256": "d6eeba075552125ebd6542ace9a5f6f3bc87801f8407ed9b392c986653464338"
     },
     {
       "path": "apps/desktop/src-tauri/icons/dock-icon.icns",
-      "sha256": "94ffa0fcbfe13eb50cee9b46938b855650372166ca4f7ef5809f709dcfbc6ab3"
+      "sha256": "ac6f6491f48b95bdced460f560393b9dcbd5d3bce490951f0a6ed7a46b445b2f"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon-source.png",
-      "sha256": "c5e72e53eccfee03f5f55ba13fce62b5d26ece1f6ccc56ea7bb93e5c6359c901"
+      "sha256": "c340471988c04135dfa74696d623f7f30f9f64c3e11b47022fe67ddcfec24679"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon.icns",
-      "sha256": "b9cc64372cec58780ff9ba1fd824234ad22bbcd1e4c22d5baae51fcee66b74e3"
+      "sha256": "b7151be52bb3148fd00b7ea02e9a13fe7d90709b45ebed1cd0225021724ef7bf"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon.ico",
-      "sha256": "a8c983949d199c42106971a13e0f12914afa270777dff507d0d6bd70acb298ec"
+      "sha256": "9bb37ee42c37e7d0057a5610f840d909169d03d3382d84ff60c1d423f0ec1e66"
     },
     {
       "path": "apps/desktop/src-tauri/icons/tray-icon.png",
@@ -216,31 +217,31 @@
     },
     {
       "path": "apps/site/public/apple-touch-icon.png",
-      "sha256": "9886f5024b9aecd7651d55f9529b25f851dddcb2ee71b262505ec78ef0ad4f64"
+      "sha256": "7d736c1e7094fe7b87f74a9b0e89381591803fefea3883d45685a8defc6b8f22"
     },
     {
       "path": "apps/site/public/favicon-16.png",
-      "sha256": "f9ae285409cdf0e25474de6ed162d7ecceb95305ca19e55ff627045a8822030a"
+      "sha256": "8418e92da33b59f5897923f3a59c5371758326d864e080d766c47199fddd3e8e"
     },
     {
       "path": "apps/site/public/favicon-192.png",
-      "sha256": "61b6e2f8e119c15b2780c077e66f24de5767fadd06908ae592178e8edca01797"
+      "sha256": "766ec3722672eda9d423fe64fbbbdbed50afa894523598435cfecf90256da49f"
     },
     {
       "path": "apps/site/public/favicon-32.png",
-      "sha256": "1490ae6774fb3d90b74b7c487cf3cdfc32e7470701fe8beb451d5452e187b47f"
+      "sha256": "d6eeba075552125ebd6542ace9a5f6f3bc87801f8407ed9b392c986653464338"
     },
     {
       "path": "apps/site/public/favicon.ico",
-      "sha256": "a8c983949d199c42106971a13e0f12914afa270777dff507d0d6bd70acb298ec"
+      "sha256": "9bb37ee42c37e7d0057a5610f840d909169d03d3382d84ff60c1d423f0ec1e66"
     },
     {
       "path": "apps/site/public/favicon.svg",
-      "sha256": "c8d0565e035caf3a06a739f56174514e6455b141830dba286a5f2fb0b8e1e6b3"
+      "sha256": "1e9e8eaafbddbefc44f32eea40f8fbfef4e4e4dcfae6a7350f48dc8030cbaca6"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
-      "sha256": "f7c245f5a4276f19949f8132bdeb7701938e8d3ffcde67b9231f34780363d6e5"
+      "sha256": "ebcc9444d197b4d28d444cfd8763847586c74cd5f05b3d24a03412f0abb27ba9"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
@@ -256,39 +257,43 @@
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@1x.png",
-      "sha256": "247f4cdd17f583d752a67937aecfc364bec889259db9bde5cd0f4cf004122eaf"
+      "sha256": "abc9e11be31f2743f8898a6fa38fd0036d1c8e351b199da6b2f9462b469fd5ff"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@2x.png",
-      "sha256": "01575cacf946880968b3ddac833fd723fc1e87dd4e0ce278ccdd52ac7b702d4b"
+      "sha256": "b0ad8904c8ff1df4d871624166fc0eed426085dc383cfa8aec7e3643cc105576"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@3x.png",
-      "sha256": "262aabf2fb0fd3d6f1fa166e1204ee652786008c088a0b599c4120af0e0e6cac"
+      "sha256": "f84f6bc33b8856963eea13d22c5b5b1a5b02e3a25c664e40fd3786181b53d051"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@1x.png",
-      "sha256": "247f4cdd17f583d752a67937aecfc364bec889259db9bde5cd0f4cf004122eaf"
+      "sha256": "8f9bc8751e0b2019a9c4f1f8e1245f746da391716768a65957af9a0b76ed00a5"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@2x.png",
-      "sha256": "01575cacf946880968b3ddac833fd723fc1e87dd4e0ce278ccdd52ac7b702d4b"
+      "sha256": "379a383262e0e91c15040c6fd284d2b04e06d6e9bde1c1e1e89ff49310101888"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@3x.png",
-      "sha256": "262aabf2fb0fd3d6f1fa166e1204ee652786008c088a0b599c4120af0e0e6cac"
+      "sha256": "ebfe157eb00a6fe24fec3a62adbc5b884b0463fe616954664ff0b0f72928ecd0"
     },
     {
       "path": "apps/desktop/src/assets/logo-glyph.png",
-      "sha256": "61de34202ffdc1f249fc9118de2a4d4171d6dfd8b1e15dd9caea124d04d31033"
+      "sha256": "c015c20b86a8b946aabfdd0c14b70adc64ba84802ee0968ec86fad5f5f174fd3"
     },
     {
       "path": "apps/site/src/assets/logo-glyph.png",
-      "sha256": "61de34202ffdc1f249fc9118de2a4d4171d6dfd8b1e15dd9caea124d04d31033"
+      "sha256": "c015c20b86a8b946aabfdd0c14b70adc64ba84802ee0968ec86fad5f5f174fd3"
+    },
+    {
+      "path": "apps/site/src/assets/logo-glyph-dark.png",
+      "sha256": "9e28b2b0a6af78f6b9f97322a51130be23f8910fa4dec241de1122d5d270b383"
     },
     {
       "path": "apps/site/src/assets/app-icon.png",
-      "sha256": "87e346164767bb3e50597e94b8c62b885788ab45d4c6beb5fba54af9614de063"
+      "sha256": "ff49c42a6a295ffff58fd278fbe277064fb5737452e0ad3cfff433c1dfbde00b"
     }
   ]
 }

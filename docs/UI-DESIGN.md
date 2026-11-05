@@ -55,8 +55,10 @@ iOS 使用 NavigationStack、TabView、系统文件选择器与动态字体；�
 - 连接详情的标签、值和复制按钮按整行垂直居中；文本行高统一 20px，长进程路径自然换行，不截断可复制内容（#291 / PR #292 补充）。
 
 
-## 正式品牌色（#297 / A 岩蓝，2026-11-05）
+## 正式品牌色（#301 / 主按钮配色，2026-11-05）
 
-用户确认 B1 保留原始弧路/箭头，正式颜色统一为 **#5C6F8B**。浅色、深色、应用内 Logo、macOS Dock、Windows/Linux 应用图标、iOS 和官网使用同一品牌墨色；`--cb-brand` 独立于界面强调色，禁止跟随明暗 accent 自动变色。黑/白托盘模板保留单色，交由系统着色。
+用户确认 B1 保留原始弧路/箭头，应用内 Logo 随主按钮的明暗色切换：浅色 **#293345**、深色 **#E7EAF2**。桌面 `--cb-brand` 与主题主按钮墨色一致，不跟随蓝紫强调色；官网按已解析主题选择对应 PNG，iOS 使用明暗 imageset。系统主题变化同样遵循这套规则。
 
-唯一母版为 `design/logo/current/mark.svg`，使用 `scripts/generate-brand-icons.cjs` 生成正式资源；`scripts/verify-brand-icons.cjs` 校验 A 色、原始 B1 几何、所有生产位图/ICNS/ICO 的实际墨色、sRGB ICC、目录引用及 Dock 安全区。Dock 保留 9px 平移与 82% 缩放，避免重现图标视觉尺寸过大的问题。历史设计稿用于追溯，不随正式颜色覆盖。
+macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favicon / Apple touch 均保留 **#F7F8FB 浅色底板 + #293345 标志**，不因所在桌面/浏览器主题变色。`app-icon-dark.svg` 仅为深底反白的矢量展示导出，不用于原生应用图标。黑/白托盘模板保留单色，交由系统着色。
+
+唯一几何母版为 `design/logo/current/mark.svg`，使用 `scripts/generate-brand-icons.cjs` 生成正式资源；`scripts/verify-brand-icons.cjs` 校验明暗色、原始 B1 几何、生产位图/ICNS/ICO 的实际墨色、sRGB ICC、目录引用及 Dock 安全区。Dock 保留 9px 平移与 82% 缩放，避免重现图标视觉尺寸过大的问题。此决定替代 #297 的 A 岩蓝同色规范，旧设计稿保留追溯；最新实现档案为 `docs/designs/2026-11-05-button-logo/v02/`（PR #302）。
