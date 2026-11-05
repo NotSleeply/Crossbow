@@ -29,7 +29,7 @@ export const english = {
   "macOS / Windows 支持应用内更新；Linux 实验版手动下载": "In-app updates on macOS / Windows; manual downloads for the Linux preview",
   "查看发布与下载": "View release & downloads",
   "Linux 安装与支持范围 →": "Linux installation & support →",
-  "修复配置切换与旧内核端口交接，简化概览、节点和设置界面。": "Fix configuration switching and port handover from the previous core, and simplify Overview, Nodes, and Settings.",
+  "优化日志筛选与阅读体验，修复设置焦点和连接详情对齐，调整页面间距。": "Improve log filtering and reading, fix settings focus and connection detail alignment, and refine page spacing.",
   "更新说明 ↗": "Release notes ↗",
   "iOS 正在真机开发验证中，暂未公开分发。安装或连接遇到问题，可先查看": "iOS is being tested on physical devices and is not publicly available yet. For installation or connection help, read the ",
   "让连接，清晰可见。": "See every connection clearly.",
