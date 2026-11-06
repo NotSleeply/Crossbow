@@ -766,6 +766,14 @@ fn recover_config_network(state: &AppState) -> Result<(), String> {
     } else {
         Ok(())
     };
+    #[cfg(target_os = "macos")]
+    if tun {
+        state.core().log_decision(&format!(
+            "tun cleanup: system_proxy_restored={} {}",
+            proxy.is_ok() && tun_proxy.is_ok(),
+            core_manager::tun_route_diagnostics(),
+        ));
+    }
     match (proxy, tun_proxy) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(a), Err(b)) => Err(format!("系统代理恢复失败：{a}；TUN 代理恢复失败：{b}")),
