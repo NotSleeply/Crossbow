@@ -1,6 +1,6 @@
 /* Framed sheet: keep the established palette; put density where work happens. */
-/* Share spare height with two bounded spacers. The chart shrinks first when
-   space is tight; once it reaches its preferred height, the spacers grow. */
+/* Reserve the minimum height of each section first, then grow the chart
+   and spacers together until they reach their individual limits. */
 .cb-home-main {
   display: flex;
   flex-direction: column;
@@ -12,7 +12,7 @@
 .cb-home-main::before,
 .cb-home-main::after {
   content: "";
-  flex: 1 0 12px;
+  flex: 1 0 18px;
   max-height: 72px;
 }
 .cb-home-main > .cb-home-lead {
@@ -32,13 +32,18 @@
 }
 .cb-home-main .cb-home-actions {
   order: 4;
-  margin-bottom: 12px;
+}
+.cb-home-bottom::before {
+  content: "";
+  order: 5;
+  flex: 0.5 0 14px;
+  max-height: 24px;
 }
 .cb-home-bottom .cb-chart-only {
-  order: 5;
-  flex: 0 1 220px;
-  min-height: 132px;
-  max-height: 220px;
+  order: 6;
+  flex: 5 0 120px;
+  min-height: 120px;
+  max-height: 200px;
 }
 .cb-home-lead h2 {
   margin-top: 8px;
@@ -218,9 +223,6 @@
 }
 .cb-settings-group + .cb-settings-group {
   margin-top: 20px;
-}
-@container home-layout (max-height:479px) {
-  .cb-home-main .cb-home-actions { margin-bottom: 8px; }
 }
 @container node-group (max-width:600px) {
   .cb-node-alive-label {

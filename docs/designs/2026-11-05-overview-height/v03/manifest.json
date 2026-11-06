@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-06",
+  "version": "v03",
+  "issue": 318,
+  "base": "773dc96db6a5a4d31e74c7c67183d65ea5163d3c",
+  "implementation": "df55528ee7924f5b0b3b095a28d3943e6706fa72",
+  "input": "v0.13.5 最小窗口和放大窗口用户截图，以及固定路径图标与同步伸缩的补充要求",
+  "status": "implemented-visual-validation-pending",
+  "files": [
+    "SPEC.md",
+    "checks.json",
+    "index.html",
+    "manifest.json",
+    "matrix.html",
+    "preview.tsx",
+    "source.zip",
+    "vite.config.mts"
+  ],
+  "screenshots": [],
+  "sourceSHA256": {
+    "apps/desktop/src/Layout.css": "d832bf40ba6be9f3eecacc439a281e00152c32f877af68ca2e0427b4c84dbcc0",
+    "apps/desktop/src/index.css": "2acdb3900241ea67e2521c4d140d91047008f1f2413cf1184e2eb881d316d8ed",
+    "apps/desktop/src/pages/Home.tsx": "461b196aadc69a4f614742e7a8c5c80521afbd7b453787c06d6a14e132078691",
+    "apps/desktop/src/components/ConnectionFlow.tsx": "72c1bedb0fc0cebe802d7ef3a495012f1bdb5204b927b18cbf29d47a5248b9bf",
+    "docs/UI-DESIGN.md": "16d0fc8a92b15e8bf1235c073dbc4651266a93712d9a4c98fab8ef407289b235",
+    "docs/designs/2026-11-05-overview-height/v02/preview.tsx": "79223972c3ae727b45ef8cd2ec5524203d764c92a562686fcf510382c93059fe",
+    "docs/designs/2026-11-05-overview-height/v02/mock-tauri.ts": "7dbd222589cee5563ecfa672db9722c40521402fa244234f703fc30def1b29c7",
+    "docs/designs/2026-11-05-overview-height/v02/vite.config.mts": "be558a7a32177842629c012caace0eb88c8b0db48a120266257dc20647ec7b1d",
+    "docs/designs/2026-11-05-overview-height/v03/SPEC.md": "c1a2633a27e8ac43929c3096f2be1a9da9536772c46654659ce5c262305fa190",
+    "docs/designs/2026-11-05-overview-height/v03/index.html": "ca666938714c544fc7420946e1c5ee6a40dd20a701ca46240d11e1465a4c2ec4",
+    "docs/designs/2026-11-05-overview-height/v03/matrix.html": "b557ea706092ae142547c3242cefe5440312613f52fbeb2e120c7ed2e6da00fb",
+    "docs/designs/2026-11-05-overview-height/v03/preview.tsx": "55ca034104d83786bb93f628d0412d1cd3af414d3175226a152a37f42d1ef554",
+    "docs/designs/2026-11-05-overview-height/v03/vite.config.mts": "7dbd286df1aeec299cfc7fc83ee5076dac086cf080e0dd8ba298d5e586d652f0"
+  }
+}
