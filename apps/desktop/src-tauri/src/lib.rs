@@ -3597,7 +3597,7 @@ fn deelevate_if_needed() {
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.elapsed().ok())
-        .map(|elapsed| elapsed < Duration::from_secs(120))
+        .map(|elapsed| elapsed < std::time::Duration::from_secs(120))
         .unwrap_or(false);
     if fresh {
         // 刚降权过仍被提权（UAC 关闭环境）：不再循环，直接运行。
