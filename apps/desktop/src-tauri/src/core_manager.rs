@@ -1525,6 +1525,21 @@ fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
             return;
         }
         shared.notify(CoreStatus::Running);
+    // TUN 健康自检（#330）：仅 macOS（gvisor 栈卡死实测场景），配置启用 TUN 时启动。
+    #[cfg(target_os = "macos")]
+    {
+        let tun_on = shared
+            .config_cache
+            .lock()
+            .ok()
+            .and_then(|c| c.clone())
+            .map(|cfg| cfg.contains("tun:\n  enable: true"))
+            .unwrap_or(false);
+        if tun_on {
+            let h = shared.clone();
+            std::thread::spawn(move || tun_health_monitor(h));
+        }
+    }
     } else {
         if shared.inner.lock().unwrap().stopping {
             return;
@@ -1874,6 +1889,102 @@ fn append_core_log(work_dir: &std::path::Path, line: &str) {
     }
 }
 
+/// 从渲染后的配置提取 mixed-port（自检 P1 走代理通道用）。
+fn mixed_port_from_config(cfg: &str) -> Option<u16> {
+    for line in cfg.lines() {
+        if let Some(rest) = line.trim().strip_prefix("mixed-port:") {
+            return rest.trim().parse().ok();
+        }
+    }
+    None
+}
+
+/// P2：TUN 通道探测——auto-route 下直连国外 IP 必经 TUN；栈僵死时连接超时。
+fn tun_probe_connect() -> bool {
+    let addr: std::net::SocketAddr = "1.1.1.1:443".parse().unwrap();
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5)).is_ok()
+}
+
+/// P1：代理通道探测——经混合端口访问 204 端点（内核+当前节点健康即通过）。
+fn core_proxy_probe(mixed_port: u16) -> bool {
+    let Ok(proxy) = ureq::Proxy::new(&format!("http://127.0.0.1:{mixed_port}")) else {
+        return false;
+    };
+    let agent = ureq::AgentBuilder::new()
+        .proxy(proxy)
+        .try_proxy_from_env(false)
+        .timeout(Duration::from_secs(8))
+        .build();
+    matches!(
+        agent.head("http://www.gstatic.com/generate_204").call(),
+        Ok(_) | Err(ureq::Error::Status(_, _))
+    )
+}
+
+/// 判定：代理通道健康（P1 通过）且 TUN 通道连续失败达到阈值
+/// → gvisor 栈僵死，需要重启内核恢复。
+fn tun_probe_should_restart(p1_ok: bool, consecutive_p2_failures: u32, threshold: u32) -> bool {
+    p1_ok && consecutive_p2_failures >= threshold
+}
+
+/// TUN 健康自检（#330）：Running 且 TUN 启用期间每 60s 对比探测代理通道与
+/// TUN 通道；通道正常而 TUN 连续 3 次失败 → 判定 gvisor 栈僵死，SIGTERM
+/// 优雅重启内核（走既有崩溃自动重启链路拉起新内核并恢复 TUN）。
+#[cfg(target_os = "macos")]
+fn tun_health_monitor(shared: Arc<Shared>) {
+    let Some(mixed_port) = shared
+        .config_cache
+        .lock()
+        .ok()
+        .and_then(|c| c.clone())
+        .and_then(|cfg| mixed_port_from_config(&cfg))
+    else {
+        return;
+    };
+    let mut failures = 0u32;
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+        if shared.inner.lock().unwrap().stopping {
+            return;
+        }
+        let p1 = core_proxy_probe(mixed_port);
+        let p2 = tun_probe_connect();
+        failures = if p2 { 0 } else { failures + 1 };
+        if !tun_probe_should_restart(p1, failures, 3) {
+            continue;
+        }
+        eprintln!(
+            "tun health: proxy path ok but tun probe failed x{failures}; restarting core"
+        );
+        shared.notify(CoreStatus::Crashed(
+            "TUN 无响应（国外流量连续超时而代理通道正常）——已自动重启内核恢复 TUN".into(),
+        ));
+        let pid = shared
+            .inner
+            .lock()
+            .unwrap()
+            .child
+            .as_ref()
+            .map(|c| c.id());
+        if let Some(pid) = pid {
+            // SIGTERM 让 mihomo 恢复路由；宽限 5s，仍存活再兜底强杀
+            unsafe {
+                let _ = libc::kill(pid as i32, libc::SIGTERM);
+            }
+            for _ in 0..50 {
+                if !pid_is_alive(pid) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if pid_is_alive(pid) {
+                kill_pid(pid);
+            }
+        }
+        return; // watch 循环检测到退出后走崩溃自动重启
+    }
+}
+
 /// 判断内核日志行是否为错误/致命级别
 /// （mihomo logfmt、sing-box JSON、大写 FATAL、panic）。
 fn is_error_line(line: &str) -> bool {
@@ -1988,6 +2099,32 @@ pub(crate) mod tests {
         assert!(!out.contains('\n'));
         assert!(out.chars().count() <= 11);
         assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn tun_probe_should_restart_truth_table() {
+        // 通道不健康：绝不重启（节点挂了不是 TUN 栈的问题）
+        assert!(!tun_probe_should_restart(false, 3, 3));
+        // 通道健康但未达阈值：不重启
+        assert!(!tun_probe_should_restart(true, 2, 3));
+        // 通道健康 + 连续失败达标：重启
+        assert!(tun_probe_should_restart(true, 3, 3));
+        assert!(tun_probe_should_restart(true, 5, 3));
+    }
+
+    #[test]
+    fn mixed_port_from_config_parses_first_occurrence() {
+        let cfg = "mixed-port: 7898\nallow-lan: false\ntun:\n  enable: true\n";
+        assert_eq!(mixed_port_from_config(cfg), Some(7898));
+        assert_eq!(mixed_port_from_config("no port here"), None);
+    }
+
+    #[test]
+    fn config_cache_contains_tun_block_detection() {
+        let cfg = "mixed-port: 7898\ntun:\n  enable: true\n  stack: gvisor\n";
+        assert!(cfg.contains("tun:\n  enable: true"));
+        let cfg_off = "mixed-port: 7898\ntun:\n  enable: false\n";
+        assert!(!cfg_off.contains("tun:\n  enable: true"));
     }
 
     #[cfg(unix)]
