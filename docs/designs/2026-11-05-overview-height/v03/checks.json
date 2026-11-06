@@ -1,0 +1,11 @@
+{
+  "implementation": "df55528ee7924f5b0b3b095a28d3943e6706fa72",
+  "productionBuild": "passed",
+  "prototypeBuild": "passed",
+  "previewHttp": "passed",
+  "diffCheck": "passed",
+  "visual": {
+    "status": "pending",
+    "reason": "Browser control initialization timed out"
+  }
+}
