@@ -215,6 +215,39 @@ impl Shared {
         Ok(())
     }
 
+    /// 先 SIGTERM（mihomo 退出钩子会恢复 TUN 路由/系统代理），宽限 5s；
+    /// 仍存活（trap 或 root 内核 EPERM）再 SIGKILL。返回是否确认退出。
+    /// SIGKILL 跳过清理会让默认路由指向死掉的 utun，整机断网到重启（#323）。
+    #[cfg(unix)]
+    fn graceful_terminate(child: &mut std::process::Child) -> bool {
+        let pid = child.id();
+        unsafe {
+            let _ = libc::kill(pid as i32, libc::SIGTERM);
+        }
+        for _ in 0..100 {
+            match child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
+        let _ = child.kill(); // SIGTERM 超时 → SIGKILL 兜底
+        for _ in 0..20 {
+            match child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
+        false // 仍存活（root 内核 EPERM）：调用方走管理员补杀流程
+    }
+
+    #[cfg(not(unix))]
+    fn graceful_terminate(child: &mut std::process::Child) -> bool {
+        let _ = child.kill();
+        matches!(child.wait(), Ok(_))
+    }
+
     fn kill_child(&self) -> bool {
         let (child, external) = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -227,20 +260,27 @@ impl Shared {
         };
 
         let stopped = if let Some(mut child) = child {
-            let _ = child.kill();
-            // setuid 内核以 root 运行：普通用户 SIGKILL 报 EPERM，child.wait() 会
-            // 永久阻塞。轮询确认退出；超时仍存活则管理员授权补杀（macOS），
-            // 用户拒绝授权时放弃句柄（进程交给 launchd，绝不阻塞停止流程）。
+            // SIGTERM 优先让内核走退出钩子恢复 TUN 路由/系统代理（#323）；
+            // graceful_terminate 内部含 SIGKILL 兜底与确认轮询。
+            let mut gone = Self::graceful_terminate(&mut child);
+            // setuid 内核以 root 运行：普通用户 SIGTERM/SIGKILL 均 EPERM。
+            // 超时仍存活则管理员授权补杀（macOS），用户拒绝授权时放弃句柄
+            // （进程交给 launchd，绝不阻塞停止流程）。
             let pid = child.id();
-            let mut gone = false;
-            for _ in 0..40 {
-                match child.try_wait() {
-                    Ok(Some(_)) => {
-                        gone = true;
-                        break;
+            if !gone {
+                #[cfg(target_os = "macos")]
+                if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+                    escalate_admin_kill(pid);
+                }
+                for _ in 0..40 {
+                    match child.try_wait() {
+                        Ok(Some(_)) => {
+                            gone = true;
+                            break;
+                        }
+                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                        Err(_) => break,
                     }
-                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                    Err(_) => break,
                 }
             }
             if !gone {
@@ -923,6 +963,14 @@ pub static ROOT_KILL_PROMPT_DISABLED: std::sync::atomic::AtomicBool =
 fn kill_pid(pid: u32) {
     #[cfg(unix)]
     unsafe {
+        // 先 SIGTERM 让内核恢复 TUN 路由（#323），宽限 1s；仍存活再 SIGKILL。
+        let _ = libc::kill(pid as i32, libc::SIGTERM);
+        for _ in 0..10 {
+            if libc::kill(pid as i32, 0) != 0 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         let _ = libc::kill(pid as i32, libc::SIGKILL);
     }
     #[cfg(not(unix))]
@@ -1940,6 +1988,26 @@ pub(crate) mod tests {
         assert!(!out.contains('\n'));
         assert!(out.chars().count() <= 11);
         assert!(out.ends_with('…'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn graceful_terminate_escalates_when_sigterm_ignored() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap \"\" TERM; while :; do sleep 1; done"])
+            .spawn()
+            .unwrap();
+        assert!(Shared::graceful_terminate(&mut child));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn graceful_terminate_cooperative_exit() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "while :; do sleep 1; done"])
+            .spawn()
+            .unwrap();
+        assert!(Shared::graceful_terminate(&mut child));
     }
 
     #[test]
