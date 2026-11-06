@@ -142,6 +142,31 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         dns.insert(Value::from("ipv6"), Value::from(rt.native_ipv6));
         patch.insert(Value::from("tun"), Value::Mapping(tun));
         patch.insert(Value::from("dns"), Value::Mapping(dns));
+        // 域名嗅探（#331 后续）：客户端可能拿到被污染的真实解析（内核 DNS
+        // 卡死期间 fallback、或应用自带解析），连接会按污染 IP 直连——证书
+        // 不匹配/超时。SNI/Host 嗅探 + override-destination 让 mihomo 从
+        // 握手恢复真实域名，按域名走规则并在节点侧干净解析，污染 IP 无害化。
+        let mut sniff = Mapping::new();
+        sniff.insert(Value::from("enable"), Value::from(true));
+        sniff.insert(Value::from("override-destination"), Value::from(true));
+        sniff.insert(Value::from("force-dns-mapping"), Value::from(true));
+        sniff.insert(Value::from("parse-pure-ip"), Value::from(true));
+        let mut sniff_tls = Mapping::new();
+        sniff_tls.insert(
+            Value::from("ports"),
+            Value::Sequence(vec![Value::from(443), Value::from(8443)]),
+        );
+        let mut sniff_http = Mapping::new();
+        sniff_http.insert(
+            Value::from("ports"),
+            Value::Sequence(vec![Value::from(80), Value::from("8080-8880")]),
+        );
+        sniff_http.insert(Value::from("override-destination"), Value::from(true));
+        let mut sniff_protocols = Mapping::new();
+        sniff_protocols.insert(Value::from("TLS"), Value::Mapping(sniff_tls));
+        sniff_protocols.insert(Value::from("HTTP"), Value::Mapping(sniff_http));
+        sniff.insert(Value::from("sniff"), Value::Mapping(sniff_protocols));
+        patch.insert(Value::from("sniffer"), Value::Mapping(sniff));
     }
     // 节点选择持久化：内核侧记住手工选择（等价「固定节点」），重启不丢。
     let mut profile = Mapping::new();
@@ -229,6 +254,18 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
                     "192.168.0.0/16", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12",
                 ],
             }));
+        }
+        // 域名嗅探（同 mihomo sniffer，#331 后续）：污染解析无害化——
+        // sniff action 放规则最前，恢复域名后后续规则按域名匹配。
+        // route/rules 缺失时自动创建，保证任何配置都注入。
+        if v.get_mut("route").map(serde_json::Value::take).map(|r| r.is_object()).unwrap_or(true) {
+            v["route"] = json!({"rules": []});
+        }
+        if !v["route"]["rules"].is_array() {
+            v["route"]["rules"] = json!([]);
+        }
+        if let Some(rules) = v["route"]["rules"].as_array_mut() {
+            rules.insert(0, json!({"action": "sniff"}));
         }
     }
     serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
@@ -438,6 +475,10 @@ mod tun_tests {
         assert!(out.contains("dns-hijack:"));
         assert!(out.contains("tcp://any:53"));
         assert!(out.contains("enhanced-mode: fake-ip"), "TUN 需 DNS 劫持");
+        // 域名嗅探（#331 后续）：污染解析无害化
+        assert!(out.contains("sniffer:"), "TUN 需注入 sniffer 段");
+        assert!(out.contains("parse-pure-ip: true"));
+        assert!(out.contains("override-destination: true"));
         // 双栈（#59）：inet6 地址 + v6 分流路由 + DNS 放行 AAAA
         assert!(out.contains("fdfe:dcba:9876::1/126"));
         assert!(out.contains("inet6-route-address:"));
@@ -475,5 +516,8 @@ mod tun_tests {
             inb.iter().any(|i| i["type"] == "tun" && i["auto_route"] == true),
             "应追加 tun inbound"
         );
+        // 域名嗅探（#331 后续）：sniff action 在规则最前
+        let rules = v["route"]["rules"].as_array().unwrap();
+        assert_eq!(rules[0], serde_json::json!({"action": "sniff"}));
     }
 }
