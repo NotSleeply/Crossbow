@@ -12,6 +12,7 @@ import {
   type PlatformCapabilities,
 } from "../ipc";
 import Select from "../components/Select";
+import type { NavigationTarget } from "../workflow";
 import { useT } from "../i18n";
 import { PageHead } from "./Home";
 
@@ -20,11 +21,11 @@ import { PageHead } from "./Home";
 export default function SettingsPage({
   section = "network",
   capabilities,
-  focusControl,
+  focusTarget,
 }: {
   section?: "network" | "appearance" | "logs" | "app";
   capabilities: PlatformCapabilities | null;
-  focusControl?:string;
+  focusTarget: NavigationTarget | null;
 }) {
   const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
@@ -72,6 +73,7 @@ export default function SettingsPage({
   const settingsReady = requiredSettings.every(key => settingsKnown.has(key) && !settingsErrors.has(key));
   const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
   useEffect(()=>{
+    const focusControl = focusTarget?.control;
     if(!focusControl||!settingsReady)return;
     const frame = requestAnimationFrame(() => {
       const row = document.getElementById(focusControl);
@@ -82,7 +84,7 @@ export default function SettingsPage({
       control?.focus({ preventScroll: true });
     });
     return()=>cancelAnimationFrame(frame);
-  },[focusControl,settingsReady,section]);
+  },[focusTarget,settingsReady,section]);
   const [savingCount, setSavingCount] = useState(0);
   const settingsGate = useRef(createReadGate());
   const dirtyPort = useRef(false);
@@ -666,11 +668,11 @@ export default function SettingsPage({
                 ? updateState.downloaded
                   ? t("settings.updateReady")
                   : updateState.progress
-                    ? `${t("settings.updateProgress")} ${Math.round(
-                        (updateState.progress[0] /
-                          Math.max(updateState.progress[1], 1)) *
-                          100,
-                      )}%`
+                    ? updateState.progress[1] > 0
+                      ? `${t("settings.updateProgress")} ${Math.min(100, Math.floor(
+                          (updateState.progress[0] / updateState.progress[1]) * 100,
+                        ))}%`
+                      : t("settings.updateProgress")
                     : t("settings.newVersion", { v: updateState.version })
                 : updateChecked
                   ? t("settings.upToDate")

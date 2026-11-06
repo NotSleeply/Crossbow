@@ -1,4 +1,5 @@
 import ProfileSwitcher from "./components/ProfileSwitcher";
+import { UpdateEntry } from "./components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "./workflow";
 import { ButtonBase, Button } from "./components/Button";
 import { notify } from "./notifications/service";
@@ -273,6 +274,13 @@ export default function App() {
           ))}
         </nav>
         <div className="cb-global-tools">
+          {capabilities?.app_update && (
+            <UpdateEntry onOpen={() => {
+              setPage("settings");
+              setSettingSection("app");
+              setDestination({ page: "settings", settingSection: "app", control: "cb-update-status" });
+            }} />
+          )}
           <ProfileSwitcher currentName={profileName} onManage={()=>{setConfigTab("sources");go("profiles")}}/>
           <Button
             context="toolbar"
@@ -350,7 +358,7 @@ export default function App() {
                   </ButtonBase>
                 ))}
               </nav>
-              <SettingsPage section={settingSection} capabilities={capabilities} focusControl={destination?.control} />
+              <SettingsPage section={settingSection} capabilities={capabilities} focusTarget={destination} />
             </div>
           )}
         </div>

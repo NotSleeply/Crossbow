@@ -114,30 +114,11 @@ button:not(:disabled):hover {
   box-shadow: none;
 }
 
-/* A quiet update strip: one 32px row, without a nested icon tile or badge. */
-.cb-update-banner {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid var(--cb-line);
-  border-radius: 7px;
-  background: var(--cb-surface);
-  color: var(--cb-text);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 120ms, background-color 120ms;
-}
-.cb-update-banner:hover {
-  border-color: var(--cb-accent-line);
-  background: var(--cb-surface-2);
-}
-.cb-update-banner:focus-visible {
-  outline: 2px solid var(--cb-accent);
-  outline-offset: 2px;
+/* Keep update feedback in the toolbar, at the same height as its neighbours. */
+.cb-global-tools .cb-update-entry {
+  --button-line: var(--cb-accent-line);
+  --button-ink: var(--cb-text);
+  --button-hover: var(--cb-accent-soft);
 }
 .cb-update-icon {
   display: grid;
@@ -147,48 +128,30 @@ button:not(:disabled):hover {
   height: 16px;
   color: var(--cb-accent);
 }
-.cb-update-content {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-}
-.cb-update-title {
-  flex: none;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  white-space: nowrap;
-}
-.cb-update-version {
-  min-width: 0;
-  color: var(--cb-text-dim);
-  font-size: 11px;
-  line-height: 16px;
-  white-space: nowrap;
+.cb-update-meta {
+  max-width: 76px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.cb-update-percent {
-  flex: none;
   color: var(--cb-text-dim);
   font-size: 11px;
-  line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
-.cb-update-action {
-  display: flex;
-  align-items: center;
-  flex: none;
-  gap: 5px;
-  color: var(--cb-accent);
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 500;
+@media (max-width: 1260px) {
+  .cb-update-entry .cb-update-title { display: none; }
+  .cb-global-tools:has(> .cb-update-entry) .cb-source-pick { max-width: 108px; }
+  .cb-global-nav:has(.cb-update-entry) { gap: 20px; }
+  .cb-global-nav:has(.cb-update-entry) .cb-primary-nav { gap: 18px; }
 }
-.cb-update-action > span { display: flex; }
+@media (max-width: 1000px) {
+  .cb-global-tools .cb-update-entry {
+    width: var(--button-height);
+    padding-inline: 0;
+  }
+  .cb-update-entry .cb-update-meta { display: none; }
+  .cb-global-nav:has(.cb-update-entry) { gap: 14px; }
+  .cb-global-nav:has(.cb-update-entry) .cb-primary-nav { gap: 12px; }
+  .cb-global-tools:has(> .cb-update-entry) { gap: 10px; }
+}
 .cb-progress-ring {
   display: inline-flex;
   flex: none;

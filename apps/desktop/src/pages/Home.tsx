@@ -14,13 +14,11 @@ import {
   type OutboundInfo,
   type Profile,
   type SysProxyStatus,
-  type UpdateState,
   type PlatformCapabilities,
 } from "../ipc";
 import { fmtBytes } from "../format";
 import { useT } from "../i18n";
 import { Icon } from "../components/Icon";
-import { UpdateBanner } from "../components/UpdateBanner";
 import { ConnectionFlow } from "../components/ConnectionFlow";
 
 import { cumulativeTotals, createReadGate } from "../stateReliability";
@@ -51,7 +49,6 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
   const [connCount, setConnCount] = useState<number | null>(null);
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
-  const [update, setUpdate] = useState<UpdateState | null>(null);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
 
@@ -63,26 +60,6 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
     setReadErrors(old => { const next = new Set(old); next.delete(key); return next; });
   }, []);
   const eventReceived = (key: string) => { readGate.current.invalidate(key); confirm(key); };
-
-  useEffect(() => {
-    let active = true;
-    let receivedEvent = false;
-    const un = ipc.onUpdateState((state) => {
-      if (!active) return;
-      receivedEvent = true;
-      setUpdate(state);
-    });
-    void un
-      .then(() => ipc.updateStateGet())
-      .then((state) => {
-        if (active && !receivedEvent) setUpdate(state);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-      void un.then((f) => f());
-    };
-  }, []);
 
   // Conflict feedback shares the same queue and is deduplicated across polls.
   useEffect(() => {
@@ -361,7 +338,6 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   return (
     <div className="cb-home-page">
       <PageHead title={t("studio.workbench")} />
-      {update && <UpdateBanner update={update} onOpen={() => go("settings")} />}
       <div className="cb-home-layout">
         <section className="cb-home-main">
           <div className="cb-home-lead">
