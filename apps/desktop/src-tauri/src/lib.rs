@@ -3038,6 +3038,9 @@ fn run_tray_delay_test(handle: &AppHandle) {
         drop(tray);
         let data = tray_menu_data(&state);
         tray_speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+        // URLTest may pick a different member during testing. Re-read the
+        // controller selection instead of deriving it from measured delays.
+        refresh_tray_nodes(&h, true);
     });
 }
 

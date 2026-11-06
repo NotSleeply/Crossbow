@@ -834,6 +834,14 @@ define_class!(
     unsafe impl NSMenuDelegate for TrayMenuObserver {
         #[unsafe(method(menuWillOpen:))]
         fn menu_will_open(&self, menu: &NSMenu) {
+            // Tracking begins on the parent menu. Refresh when AppKit actually
+            // opens the node submenu, even if it never posts its own tracking event.
+            if (0..menu.numberOfItems()).any(|index| {
+                menu.itemAtIndex(index)
+                    .is_some_and(|item| is_delay_test_item(&item))
+            }) {
+                crate::refresh_tray_nodes(self.ivars(), true);
+            }
             for index in 0..menu.numberOfItems() {
                 if let Some(view) = menu.itemAtIndex(index).and_then(|item| item.view()) {
                     let pending = view.viewWithTag(ROW_VIEW_BADGE_TAG).is_some_and(|badge| badge.isHidden());
@@ -893,14 +901,6 @@ define_class!(
             );
             let (menu_width, badge_tab) = node_menu_layout(&data.rows);
             update_menu_items(&menu, &data.rows, data.testing, menu_width, badge_tab);
-            // 菜单关闭期间的 refresh_tray 触达不到 NSStatusItem 的菜单。
-            let is_node_submenu = (0..menu.numberOfItems()).any(|index| {
-                menu.itemAtIndex(index)
-                    .is_some_and(|item| is_delay_test_item(&item))
-            });
-            if is_node_submenu {
-                crate::refresh_tray_nodes(handle, true);
-            }
         }
     }
 );
