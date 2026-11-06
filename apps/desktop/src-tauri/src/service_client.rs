@@ -181,6 +181,21 @@ pub mod imp {
         }
     }
 
+    /// 服务实际拉起的内核。描述文件和 external_binary 必须记这份路径，
+    /// 不能记界面选中的数据目录副本或带平台后缀的侧车。
+    pub fn pinned_core_path() -> Result<PathBuf, String> {
+        let pinned = service_exe()?
+            .parent()
+            .ok_or("missing install dir")?
+            .join("mihomo.exe");
+        if !pinned.is_file() {
+            return Err(
+                "Windows TUN 需要完整安装包中随附的 mihomo 内核；当前缺少该文件，请修复安装".into(),
+            );
+        }
+        pinned.canonicalize().map_err(|e| e.to_string())
+    }
+
     /// 服务按设计只运行安装目录内的钉定 mihomo 副本（管理员保护）。引擎
     /// 解析出的内核可能是数据目录下载副本或旧版残留（升级后常见），但同属
     /// CI 钉版的 mihomo——TUN 会话统一改用钉定副本，不再要求路径逐字节相等
@@ -194,17 +209,8 @@ pub mod imp {
                 "Windows TUN 仅支持 mihomo 内核；当前引擎是 sing-box，请先在设置中切换".into(),
             );
         }
-        let pinned = service_exe()?
-            .parent()
-            .ok_or("missing install dir")?
-            .join("mihomo.exe");
-        if !pinned.is_file() {
-            return Err(
-                "Windows TUN 需要完整安装包中随附的 mihomo 内核；当前缺少该文件，请修复安装".into(),
-            );
-        }
+        let pinned = pinned_core_path()?;
         running()?;
-        let pinned = pinned.canonicalize().map_err(|e| e.to_string())?;
         Ok(move |config: &Path, log: &Path| start_core(&pinned, config, log))
     }
 

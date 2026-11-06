@@ -83,6 +83,61 @@ struct Shared {
     /// 本次启动链的最终配置内容；spawn（含崩溃重启）每次都据此重写
     /// config.yaml，避免换引擎后旧管理器复用新引擎的配置文件。
     config_cache: Mutex<Option<String>>,
+    /// 测试注入服务停止。生产构建不带这个钩子，避免测试替身进入发布二进制。
+    #[cfg(test)]
+    service_stop_hook: Mutex<Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>>,
+}
+
+impl Shared {
+    /// 生产路径请 Windows 服务停内核。测试可注入替身，避免连到本机真实管道。
+    fn request_service_stop(&self) -> Result<(), String> {
+        #[cfg(test)]
+        if let Some(hook) = self
+            .service_stop_hook
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return hook();
+        }
+        #[cfg(windows)]
+        {
+            return crate::service_client::stop_core();
+        }
+        #[cfg(not(windows))]
+        {
+            Err("service stop is only available on Windows".into())
+        }
+    }
+
+    /// 重启或就绪超时前收走服务托管租约。成功时清掉 PID 和描述文件。
+    fn release_hosted_before_kill(&self) -> Result<crate::core_restart::Cleanup, String> {
+        let (has_child, pid, binary) = {
+            let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            (
+                inner.child.is_some(),
+                inner.external_pid,
+                inner.external_binary.clone(),
+            )
+        };
+        let cleanup = crate::core_restart::cleanup_before_restart(
+            has_child,
+            pid,
+            binary.as_deref(),
+            || self.request_service_stop(),
+            || pid.is_some_and(pid_is_alive),
+        )?;
+        if cleanup == crate::core_restart::Cleanup::Released {
+            {
+                let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.external_pid = None;
+                inner.external_binary = None;
+                inner.detached = false;
+            }
+            let _ = std::fs::remove_file(Self::descriptor_path(&self.work_dir));
+        }
+        Ok(cleanup)
+    }
 }
 
 impl Drop for Shared {
@@ -319,6 +374,8 @@ impl CoreManager {
                 opts: Mutex::new(CoreOptions::default()),
                 callback: Mutex::new(None),
                 config_cache: Mutex::new(None),
+                #[cfg(test)]
+                service_stop_hook: Mutex::new(None),
                 inner: Mutex::new(Inner {
                     child: None,
                     status: CoreStatus::Stopped,
@@ -339,6 +396,14 @@ impl CoreManager {
     #[allow(dead_code)]
     pub fn set_options(&self, opts: CoreOptions) {
         *self.shared.opts.lock().unwrap() = opts;
+    }
+
+    #[cfg(test)]
+    fn set_service_stop_hook(
+        &self,
+        hook: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    ) {
+        *self.shared.service_stop_hook.lock().unwrap() = Some(Arc::new(hook));
     }
 
     pub fn set_callback(&self, cb: Callback) {
@@ -466,12 +531,18 @@ impl CoreManager {
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
             return Err(msg);
         }
+        // 服务托管租约必须先请服务停。kill_child 对没有身份的活 PID 会直接拒绝，
+        // 如果写在服务停止前面，SYSTEM 内核会把后续启动永久卡住（#343）。
+        if let Err(msg) = self.shared.release_hosted_before_kill() {
+            self.shared.notify(CoreStatus::Crashed(msg.clone()));
+            return Err(msg);
+        }
         let has_tracked_process = {
             let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.child.is_some() || inner.external_pid.is_some()
         };
         if has_tracked_process && !self.shared.kill_child() {
-            let msg = "无法确认上一次内核已退出，已中止新启动".to_string();
+            let msg = crate::core_restart::RESTART_BLOCKED.to_string();
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
             return Err(msg);
         }
@@ -490,7 +561,7 @@ impl CoreManager {
             // Windows SYSTEM 内核 GUI 杀不动：先请服务停（服务没托管它时
             // 回 Err，照常走常规 kill_external——普通内核路径不变）
             #[cfg(target_os = "windows")]
-            let stopped_via_service = crate::service_client::stop_core().is_ok();
+            let stopped_via_service = self.shared.request_service_stop().is_ok();
             #[cfg(not(target_os = "windows"))]
             let stopped_via_service = false;
             if !stopped_via_service
@@ -667,19 +738,21 @@ impl CoreManager {
                         return Err(error);
                     }
                 };
+                // 描述文件必须记服务实际拉起的二进制。记成界面选中的另一份内核时，
+                // 下次收养会把仍在运行的 SYSTEM 进程当成已经退出。
+                #[cfg(windows)]
+                let actual_binary = crate::service_client::pinned_core_path()
+                    .unwrap_or_else(|_| self.shared.binary_path.clone());
+                #[cfg(target_os = "linux")]
+                let actual_binary = crate::linux_service::binary_path();
+                #[cfg(not(any(windows, target_os = "linux")))]
+                let actual_binary = self.shared.binary_path.clone();
                 {
                     let mut inner = self.shared.inner.lock().unwrap();
                     inner.external_pid = Some(pid);
                     inner.detached = true;
-                    #[cfg(target_os = "linux")]
-                    {
-                        inner.external_binary = Some(crate::linux_service::binary_path());
-                    }
+                    inner.external_binary = Some(actual_binary.clone());
                 }
-                #[cfg(target_os = "linux")]
-                let actual_binary = crate::linux_service::binary_path();
-                #[cfg(not(target_os = "linux"))]
-                let actual_binary = self.shared.binary_path.clone();
                 if let Err(error) = self
                     .shared
                     .write_descriptor(pid, port, &secret, &actual_binary)
@@ -817,7 +890,7 @@ impl CoreManager {
         // Windows TUN 内核以 SYSTEM 运行，GUI 杀不动：先请服务停
         #[cfg(target_os = "windows")]
         {
-            if crate::service_client::stop_core().is_ok() {
+            if self.shared.request_service_stop().is_ok() {
                 {
                     let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
                     inner.stopping = true;
@@ -1613,6 +1686,11 @@ fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
         }
         shared.notify(CoreStatus::Running);
     } else {
+        if shared.inner.lock().unwrap().stopping {
+            return;
+        }
+        // 超时后先请服务收走仍在跑的内核。收不走就留下租约，下次启动走同一条清理。
+        let _ = shared.release_hosted_before_kill();
         if shared.inner.lock().unwrap().stopping {
             return;
         }
@@ -2536,6 +2614,130 @@ pub(crate) mod tests {
             std::thread::sleep(Duration::from_millis(100));
         }
         panic!("expected Crashed, got {:?}", mgr.status());
+    }
+
+    /// #343 的标准回归：服务托管租约没有二进制身份时，再次启动必须先请服务停。
+    /// 服务停失败时不能对活着的 PID 发信号；服务确认停掉后，不能再卡在同一句错误上。
+    #[cfg(windows)]
+    #[test]
+    fn crashed_service_lease_without_binary_is_released_only_through_the_service() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("mihomo.exe");
+        std::fs::write(&bin, b"not-a-real-core").unwrap();
+        let mgr = CoreManager::new(bin, dir.path().to_path_buf());
+        let mut sleeper = crate::process::command("powershell")
+            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn sleeper");
+        let pid = sleeper.id();
+        assert!(pid_is_alive(pid), "sleeper exited before the restart check");
+        {
+            let mut inner = mgr.shared.inner.lock().unwrap();
+            inner.status = CoreStatus::Crashed("服务托管内核启动失败/超时".into());
+            inner.external_pid = Some(pid);
+            inner.external_binary = None;
+            inner.detached = true;
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_hook = calls.clone();
+        mgr.set_service_stop_hook(move || {
+            calls_for_hook.fetch_add(1, Ordering::SeqCst);
+            Err("no core".into())
+        });
+        let err = mgr
+            .start(
+                "proxies: []\nrules:\n  - MATCH,DIRECT\n",
+                &RuntimeConfig {
+                    mixed_port: free_port().unwrap(),
+                    ..RuntimeConfig::default()
+                },
+            )
+            .unwrap_err();
+        assert!(err.contains(crate::core_restart::RESTART_BLOCKED), "{err}");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(pid_is_alive(pid), "refused signal must leave the unverified process alive");
+        assert_eq!(mgr.shared.inner.lock().unwrap().external_pid, Some(pid));
+
+        let calls_for_release = calls.clone();
+        mgr.set_service_stop_hook(move || {
+            calls_for_release.fetch_add(1, Ordering::SeqCst);
+            let _ = crate::process::command("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            for _ in 0..50 {
+                if !pid_is_alive(pid) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(())
+        });
+        match mgr.start(
+            "proxies: []\nrules:\n  - MATCH,DIRECT\n",
+            &RuntimeConfig {
+                mixed_port: free_port().unwrap(),
+                ..RuntimeConfig::default()
+            },
+        ) {
+            Ok(()) => {}
+            Err(err) => assert!(!err.contains(crate::core_restart::RESTART_BLOCKED), "{err}"),
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(mgr.shared.inner.lock().unwrap().external_pid.is_none());
+        let _ = sleeper.kill();
+        let _ = sleeper.wait();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn service_spawn_records_the_binary_the_service_actually_launches() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("engine-mihomo.exe");
+        std::fs::write(&bin, b"not-a-real-core").unwrap();
+        let mgr = CoreManager::new(bin.clone(), dir.path().to_path_buf());
+        mgr.set_options(CoreOptions {
+            readiness_timeout_secs: 30,
+            ensure_geo_files: false,
+            ..CoreOptions::default()
+        });
+        let mut sleeper = crate::process::command("powershell")
+            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn sleeper");
+        let pid = sleeper.id();
+        let result = mgr.start_with_spawner(
+            "proxies: []\nrules:\n  - MATCH,DIRECT\n",
+            &RuntimeConfig {
+                mixed_port: free_port().unwrap(),
+                ..RuntimeConfig::default()
+            },
+            Box::new(move |_, _| Ok(pid)),
+        );
+        let recorded = result.as_ref().ok().and_then(|_| {
+            mgr.shared.inner.lock().unwrap().external_binary.clone()
+        });
+        mgr.set_service_stop_hook(move || {
+            let _ = crate::process::command("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            Ok(())
+        });
+        let _ = mgr.stop();
+        let _ = sleeper.kill();
+        let _ = sleeper.wait();
+        let expected = crate::service_client::pinned_core_path().unwrap_or(bin);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(recorded.unwrap(), expected);
     }
 
     /// Network-free integration: real mihomo, private ports and temporary files.

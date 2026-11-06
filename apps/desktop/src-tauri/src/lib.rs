@@ -21,6 +21,7 @@ mod macos_icon;
 mod coexist;
 mod config_transition;
 mod core_manager;
+mod core_restart;
 mod diagnose;
 mod site_tests;
 #[cfg(windows)]
