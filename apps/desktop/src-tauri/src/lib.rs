@@ -3585,9 +3585,32 @@ fn deelevate_if_needed() {
     if std::env::var_os(SKIP_ENV).is_some() || !is_elevated() {
         return;
     }
+    // explorer.exe 转交启动请求给常驻 shell 时环境变量不会传给目标进程
+    // （UAC 关闭的机器上目标仍带完整管理员令牌），单靠 env 防循环会无限
+    // 重启（#325）。改用 ProgramData 标记 + 时间窗兜底：跨账号、跨 shell
+    // 交接都稳定；120s 过期避免误伤后续手动提权运行。
+    let marker = deelevate_marker_path();
+    if let Some(dir) = marker.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let fresh = std::fs::metadata(&marker)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.elapsed().ok())
+        .map(|elapsed| elapsed < std::time::Duration::from_secs(120))
+        .unwrap_or(false);
+    if fresh {
+        // 刚降权过仍被提权（UAC 关闭环境）：不再循环，直接运行。
+        let _ = std::fs::remove_file(&marker);
+        eprintln!("elevated again within deelevate window; continuing as-is");
+        return;
+    }
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
+    if std::fs::write(&marker, b"1").is_err() {
+        return; // 标记写不进去就无法防循环，宁可直接提权运行
+    }
     let spawned = std::process::Command::new("explorer.exe")
         .arg(&exe)
         .env(SKIP_ENV, "1")
@@ -3601,8 +3624,19 @@ fn deelevate_if_needed() {
         // 本实例尚未打开 store/内核，无孤儿资源。
         std::process::exit(0);
     }
-    // explorer 派生失败（shell 未运行等）→ 继续提权运行，可用性优先。
+    // explorer 派生失败（shell 未运行等）→ 回滚标记，继续提权运行，可用性优先。
+    let _ = std::fs::remove_file(&marker);
     eprintln!("deelevate relaunch failed; continuing elevated");
+}
+
+#[cfg(target_os = "windows")]
+fn deelevate_marker_path() -> std::path::PathBuf {
+    // %ProgramData%（跨账号共享可写）；环境变量缺失时回退默认路径。
+    std::env::var_os("ProgramData")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("C:\\ProgramData"))
+        .join("Crossbow")
+        .join("deelevate.marker")
 }
 
 #[cfg(target_os = "windows")]
