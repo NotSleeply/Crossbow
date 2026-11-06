@@ -60,6 +60,8 @@ struct Inner {
     /// 手动停止标记：watch 线程看到退出时不重启。
     stopping: bool,
     restarts: VecDeque<Instant>,
+    #[cfg(target_os = "macos")]
+    tun_health_restart: Option<(u32, Instant)>,
     /// (port, secret)
     controller: Option<(u16, String)>,
     /// 轻量交接中：内核不再归本进程所有（退出时不杀）。
@@ -150,7 +152,12 @@ impl Shared {
         }
     }
 
-    fn spawn_child(&self) -> Result<(), String> {
+    fn spawn_child(&self, previous: Option<u32>) -> Result<Option<(u32, u16, String)>, String> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.stopping || inner.detached || inner.child.as_ref().map(Child::id) != previous {
+            return Ok(None);
+        }
+        let (port, secret) = inner.controller.clone().ok_or("controller state missing")?;
         let config_path = self.work_dir.join("config.yaml");
         // 每次拉起（含崩溃自动重启）都重写配置：内容来自本次启动链的缓存，
         // 保证磁盘文件与当前管理的内核/引擎严格一致。
@@ -190,18 +197,13 @@ impl Shared {
         cmd.stdout(log_file).stderr(log_err);
         let child = cmd.spawn().map_err(|e| format!("spawn core: {e}"))?;
         let pid = child.id();
-        {
-            let mut inner = self.inner.lock().unwrap();
-            // 自有子进程接管：收养角色终结，外部 pid 监视线程据此静默退场
-            inner.external_pid = None;
-            inner.detached = false;
-            inner.child = Some(child);
+        inner.external_pid = None;
+        inner.detached = false;
+        inner.child = Some(child);
+        if let Err(error) = self.write_descriptor(pid, port, &secret, &self.binary_path) {
+            eprintln!("could not persist core descriptor: {error}");
         }
-        if let Some((port, secret)) = self.inner.lock().unwrap().controller.clone() {
-            if let Err(error) = self.write_descriptor(pid, port, &secret, &self.binary_path) {
-                eprintln!("could not persist core descriptor: {error}");
-            }
-        }
+        drop(inner);
         append_decision(
             &self.work_dir,
             &format!(
@@ -212,40 +214,7 @@ impl Shared {
                     .unwrap_or_default(),
             ),
         );
-        Ok(())
-    }
-
-    /// 先 SIGTERM（mihomo 退出钩子会恢复 TUN 路由/系统代理），宽限 5s；
-    /// 仍存活（trap 或 root 内核 EPERM）再 SIGKILL。返回是否确认退出。
-    /// SIGKILL 跳过清理会让默认路由指向死掉的 utun，整机断网到重启（#323）。
-    #[cfg(unix)]
-    fn graceful_terminate(child: &mut std::process::Child) -> bool {
-        let pid = child.id();
-        unsafe {
-            let _ = libc::kill(pid as i32, libc::SIGTERM);
-        }
-        for _ in 0..100 {
-            match child.try_wait() {
-                Ok(Some(_)) => return true,
-                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                Err(_) => break,
-            }
-        }
-        let _ = child.kill(); // SIGTERM 超时 → SIGKILL 兜底
-        for _ in 0..20 {
-            match child.try_wait() {
-                Ok(Some(_)) => return true,
-                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                Err(_) => break,
-            }
-        }
-        false // 仍存活（root 内核 EPERM）：调用方走管理员补杀流程
-    }
-
-    #[cfg(not(unix))]
-    fn graceful_terminate(child: &mut std::process::Child) -> bool {
-        let _ = child.kill();
-        matches!(child.wait(), Ok(_))
+        Ok(Some((pid, port, secret)))
     }
 
     fn kill_child(&self) -> bool {
@@ -260,48 +229,35 @@ impl Shared {
         };
 
         let stopped = if let Some(mut child) = child {
-            // SIGTERM 优先让内核走退出钩子恢复 TUN 路由/系统代理（#323）；
-            // graceful_terminate 内部含 SIGKILL 兜底与确认轮询。
-            let mut gone = Self::graceful_terminate(&mut child);
-            // setuid 内核以 root 运行：普通用户 SIGTERM/SIGKILL 均 EPERM。
-            // 超时仍存活则管理员授权补杀（macOS），用户拒绝授权时放弃句柄
-            // （进程交给 launchd，绝不阻塞停止流程）。
             let pid = child.id();
-            if !gone {
-                #[cfg(target_os = "macos")]
-                if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
-                    escalate_admin_kill(pid);
-                }
-                for _ in 0..40 {
-                    match child.try_wait() {
-                        Ok(Some(_)) => {
-                            gone = true;
-                            break;
-                        }
-                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                        Err(_) => break,
-                    }
-                }
-            }
-            if !gone {
-                #[cfg(target_os = "macos")]
-                if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
-                    escalate_admin_kill(pid);
-                }
-                for _ in 0..40 {
-                    match child.try_wait() {
-                        Ok(Some(_)) => {
-                            gone = true;
-                            break;
-                        }
-                        Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                        Err(_) => break,
-                    }
-                }
-                if !gone {
-                    eprintln!("core kill: pid {pid} survived SIGKILL (root?); giving up handle");
+            #[cfg(unix)]
+            let mut exited = || child.try_wait().is_ok_and(|status| status.is_some());
+            #[cfg(unix)]
+            let outcome = terminate_unix(pid, &mut exited, || true, TERM_GRACE);
+            #[cfg(target_os = "macos")]
+            let mut outcome = outcome;
+            #[cfg(not(unix))]
+            let gone = {
+                let _ = child.kill();
+                let mut exited = || child.try_wait().is_ok_and(|status| status.is_some());
+                wait_for_exit(&mut exited, KILL_GRACE)
+            };
+            #[cfg(target_os = "macos")]
+            if outcome == StopOutcome::PermissionDenied {
+                if let Some(admin) = process_start(pid)
+                    .and_then(|started| escalate_admin_stop(pid, &self.binary_path, &started))
+                {
+                    outcome = if wait_for_exit(&mut exited, KILL_GRACE) {
+                        admin
+                    } else {
+                        StopOutcome::Unconfirmed
+                    };
                 }
             }
+            #[cfg(unix)]
+            let gone = outcome.confirmed();
+            #[cfg(unix)]
+            append_decision(&self.work_dir, &format!("core stop: pid={pid} outcome={outcome:?}"));
             if gone {
                 let _ = child.wait();
                 true
@@ -326,7 +282,7 @@ impl Shared {
                     }
                 }
             } else {
-                kill_external(pid, binary.as_deref())
+                kill_external_checked(pid, binary.as_deref(), Some(&self.work_dir))
             };
             #[cfg(not(target_os = "linux"))]
             let stopped = kill_external_checked(pid, binary.as_deref(), Some(&self.work_dir));
@@ -368,6 +324,8 @@ impl CoreManager {
                     status: CoreStatus::Stopped,
                     stopping: false,
                     restarts: VecDeque::new(),
+                    #[cfg(target_os = "macos")]
+                    tun_health_restart: None,
                     controller: None,
                     detached: false,
                     external_pid: None,
@@ -590,10 +548,12 @@ impl CoreManager {
             candidates.sort();
             candidates.dedup();
             let mut note = String::new();
+            let mut stop_failed = false;
             for (pid, path) in find_leftover_core_pids(&candidates) {
-                if kill_external(pid, Some(&path)) {
+                if kill_external_checked(pid, Some(&path), Some(&self.shared.work_dir)) {
                     note.push_str(&format!("已清理本应用残留内核 pid={pid}（{}）；", path.display()));
                 } else {
+                    stop_failed = true;
                     note.push_str(&format!(
                         "残留内核 pid={pid}（{}）清理失败（可能取消了管理员授权）；",
                         path.display()
@@ -604,7 +564,8 @@ impl CoreManager {
             // The privileged fallback only targets this app's own binary paths.
             if wait_for_mixed_port(&try_bind, Duration::from_secs(5)).is_err()
                 && port_has_listener(address)
-                && escalate_clear_port(engine_rt.mixed_port)
+                && !stop_failed
+                && escalate_clear_port(engine_rt.mixed_port, &candidates, &self.shared.work_dir)
             {
                 note.push_str("已通过管理员权限清理端口上的残留内核；");
             }
@@ -689,7 +650,7 @@ impl CoreManager {
             inner.restarts.clear();
         }
         match spawner {
-            None => spawn_and_watch(self.shared.clone()),
+            None => spawn_and_watch(self.shared.clone(), None),
             Some(spawner) => {
                 // 与 spawn_child 相同约定：配置写盘 + 日志路径，交给服务拉起
                 let config_path = self.shared.work_dir.join("config.yaml");
@@ -929,17 +890,17 @@ fn port_has_listener(address: SocketAddr) -> bool {
 }
 
 /// 拉起子进程 + 就绪探测 + 监视线程（重启时复用，不重写配置文件）。
-fn spawn_and_watch(shared: Arc<Shared>) {
-    shared.notify(CoreStatus::Starting);
-    if let Err(e) = shared.spawn_child() {
-        shared.notify(CoreStatus::Crashed(e));
-        return;
+fn spawn_and_watch(shared: Arc<Shared>, previous: Option<u32>) {
+    match shared.spawn_child(previous) {
+        Ok(Some((pid, port, secret))) => {
+            if previous.is_some() {
+                shared.notify(CoreStatus::Starting);
+            }
+            std::thread::spawn(move || watch(shared, pid, port, secret));
+        }
+        Ok(None) => {} // stop() 或另一条启动链已接管
+        Err(error) => shared.notify(CoreStatus::Crashed(error)),
     }
-    let Some((port, secret)) = shared.inner.lock().unwrap().controller.clone() else {
-        shared.notify(CoreStatus::Crashed("controller state missing".into()));
-        return;
-    };
-    std::thread::spawn(move || watch(shared, port, secret));
 }
 
 /// 活性探测：进程是否存在（kill 0）。
@@ -959,26 +920,89 @@ fn kill_pid_probe(_pid: u32) -> bool {
 pub static ROOT_KILL_PROMPT_DISABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 杀掉不属于本进程的内核 pid（收养场景）。unix 用 SIGKILL，其余平台降级。
-fn kill_pid(pid: u32) {
-    #[cfg(unix)]
-    unsafe {
-        // 先 SIGTERM 让内核恢复 TUN 路由（#323），宽限 1s；仍存活再 SIGKILL。
-        let _ = libc::kill(pid as i32, libc::SIGTERM);
-        for _ in 0..10 {
-            if libc::kill(pid as i32, 0) != 0 {
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+const KILL_GRACE: Duration = Duration::from_secs(2);
+#[cfg(unix)]
+const TERM_GRACE: Duration = Duration::from_secs(5);
+
+fn wait_for_exit(mut exited: impl FnMut() -> bool, grace: Duration) -> bool {
+    let deadline = Instant::now() + grace;
+    loop {
+        if exited() {
+            return true;
         }
-        let _ = libc::kill(pid as i32, libc::SIGKILL);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(50)));
     }
-    #[cfg(not(unix))]
-    {
-        let _ = crate::process::command("taskkill")
-            .args(["/F", "/PID", &pid.to_string()])
-            .output();
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StopOutcome {
+    AlreadyGone,
+    Terminated,
+    Killed,
+    PermissionDenied,
+    Unconfirmed,
+}
+
+#[cfg(unix)]
+impl StopOutcome {
+    fn confirmed(self) -> bool {
+        matches!(self, Self::AlreadyGone | Self::Terminated | Self::Killed)
     }
+}
+
+#[cfg(unix)]
+fn signal_pid(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
+    let pid = i32::try_from(pid)
+        .ok()
+        .filter(|&pid| pid > 0)
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    if unsafe { libc::kill(pid, signal) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn terminate_unix(
+    pid: u32,
+    mut exited: impl FnMut() -> bool,
+    verified: impl Fn() -> bool,
+    term_grace: Duration,
+) -> StopOutcome {
+    if exited() {
+        return StopOutcome::AlreadyGone;
+    }
+    for (signal, grace, outcome) in [
+        (libc::SIGTERM, term_grace, StopOutcome::Terminated),
+        (libc::SIGKILL, KILL_GRACE, StopOutcome::Killed),
+    ] {
+        if exited() {
+            return StopOutcome::AlreadyGone;
+        }
+        if !verified() {
+            return if exited() { StopOutcome::AlreadyGone } else { StopOutcome::Unconfirmed };
+        }
+        match signal_pid(pid, signal) {
+            Ok(()) => {}
+            Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                return StopOutcome::PermissionDenied;
+            }
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => {
+                return if exited() { StopOutcome::AlreadyGone } else { StopOutcome::Unconfirmed };
+            }
+            Err(_) => return StopOutcome::Unconfirmed,
+        }
+        if wait_for_exit(&mut exited, grace) {
+            return outcome;
+        }
+    }
+    StopOutcome::Unconfirmed
 }
 
 #[cfg(unix)]
@@ -1017,32 +1041,79 @@ fn privileged_shell_script(command: &str) -> String {
     )
 }
 
-/// root 内核对普通用户 SIGKILL 免疫（EPERM）：SIGKILL 后仍存活时，
-/// 请管理员授权补杀。仅在确有 root 内核残留时才会弹授权框。
+// Shared by the privileged PID and port cleanup paths. The expected executable
+// and start time are checked again after the grace period before escalation.
 #[cfg(target_os = "macos")]
-fn escalate_admin_kill(pid: u32) {
-    let script = format!("kill -9 {pid}");
-    let out = crate::process::command("osascript")
-        .args(["-e", &privileged_shell_script(&script)])
-        .output();
-    if let Err(e) = out {
-        eprintln!("admin kill {pid}: osascript failed: {e}");
-    } else if !out.unwrap().status.success() {
-        eprintln!("admin kill {pid}: user denied or failed");
+const ADMIN_STOP_FUNCTION: &str = r#"
+process_path() { /bin/ps -p "$1" -o comm=; }
+process_start() { LC_ALL=C /bin/ps -p "$1" -o lstart=; }
+same_process() {
+    [ "$(process_path "$1")" = "$2" ] && [ "$(process_start "$1")" = "$3" ]
+}
+stop_core() {
+    [ -n "$3" ] && same_process "$1" "$2" "$3" || return 1
+    /bin/kill -TERM "$1" || return 1
+    i=0
+    while [ "$i" -lt 20 ]; do
+        same_process "$1" "$2" "$3" || { /bin/echo TERM; return 0; }
+        /bin/sleep 0.25
+        i=$((i + 1))
+    done
+    same_process "$1" "$2" "$3" || { /bin/echo TERM; return 0; }
+    /bin/kill -KILL "$1" || return 1
+    i=0
+    while [ "$i" -lt 8 ]; do
+        same_process "$1" "$2" "$3" || { /bin/echo KILL; return 0; }
+        /bin/sleep 0.25
+        i=$((i + 1))
+    done
+    return 1
+}
+"#;
+
+#[cfg(target_os = "macos")]
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(target_os = "macos")]
+fn run_admin_stop(script: &str) -> Option<String> {
+    if ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
+        return None;
+    }
+    let out = crate::process::command("/usr/bin/osascript")
+        .args(["-e", &privileged_shell_script(script)])
+        .output()
+        .ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn process_start(pid: u32) -> Option<String> {
+    let started = crate::process::command("/bin/ps")
+        .env("LC_ALL", "C")
+        .args(["-p", &pid.to_string(), "-o", "lstart="])
+        .output()
+        .ok()?;
+    let value = std::str::from_utf8(&started.stdout).ok()?.trim_end_matches('\n');
+    (started.status.success() && !value.trim().is_empty()).then(|| value.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn escalate_admin_stop(pid: u32, expected: &Path, started: &str) -> Option<StopOutcome> {
+    let expected = std::fs::canonicalize(expected).ok()?;
+    let script = format!(
+        "{ADMIN_STOP_FUNCTION}\nstop_core {pid} {} {}",
+        shell_quote(expected.to_str()?), shell_quote(started),
+    );
+    match run_admin_stop(&script).as_deref() {
+        Some("TERM") => Some(StopOutcome::Terminated),
+        Some("KILL") => Some(StopOutcome::Killed),
+        _ => None,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn escalate_admin_kill(_pid: u32) {}
-
-/// 杀外部内核并确认真正退出；SIGKILL 无效（root 内核）时管理员补杀。
-/// `expected`：进程身份校验路径（proc_pidpath / /proc/exe 比对）。
-/// 缺少身份信息时只在 PID 已不存在的情况下报告完成，不发送信号或提权。
-/// 返回是否确认已退出。
-fn kill_external(pid: u32, expected: Option<&std::path::Path>) -> bool {
-    kill_external_checked(pid, expected, None)
-}
-
+/// Stop a verified external process and preserve its descriptor on failure.
 fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Path>) -> bool {
     let Some(expected) = expected else {
         if !pid_is_alive(pid) {
@@ -1052,6 +1123,8 @@ fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Pa
         return false;
     };
     // A permissions error is not proof that a privileged process has exited.
+    #[cfg(target_os = "macos")]
+    let started = process_start(pid);
     let gone = || process_matches_binary(pid, expected) == Some(false) || !pid_is_alive(pid);
     if gone() {
         return true;
@@ -1061,25 +1134,36 @@ fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Pa
         eprintln!("core kill: cannot verify external process identity; retaining descriptor");
         return false;
     }
-    kill_pid(pid);
-    for _ in 0..40 {
-        if gone() {
-            return true;
+    #[cfg(unix)]
+    {
+        let verified = || {
+            #[cfg(target_os = "macos")]
+            if started.is_none() || process_start(pid) != started { return false; }
+            process_matches_binary(pid, expected) == Some(true)
+                || work_dir.is_some_and(|dir| verified_updated_core(pid, expected, dir))
+        };
+        let outcome = terminate_unix(pid, gone, verified, TERM_GRACE);
+        #[cfg(target_os = "macos")]
+        let outcome = if outcome == StopOutcome::PermissionDenied {
+            match started.as_deref().and_then(|started| escalate_admin_stop(pid, expected, started)) {
+                Some(admin) if wait_for_exit(gone, KILL_GRACE) => admin,
+                _ => outcome,
+            }
+        } else {
+            outcome
+        };
+        if let Some(dir) = work_dir {
+            append_decision(dir, &format!("external core stop: pid={pid} outcome={outcome:?}"));
         }
-        std::thread::sleep(Duration::from_millis(50));
+        outcome.confirmed()
     }
-    // 2 秒仍存活：root 内核，SIGKILL 对普通用户 EPERM——授权补杀
-    if !ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
-        escalate_admin_kill(pid);
+    #[cfg(not(unix))]
+    {
+        let _ = crate::process::command("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+        wait_for_exit(gone, KILL_GRACE)
     }
-    for _ in 0..40 {
-        if gone() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    eprintln!("core kill: external pid {pid} still alive after admin kill");
-    false
 }
 
 // Tauri's macOS updater moves the running bundle into a temporary directory,
@@ -1286,39 +1370,42 @@ fn windows_port_listeners(_port: u16) -> Vec<(u32, String)> {
     Vec::new()
 }
 
-/// 端口被占且普通权限查不到占用者（root 内核对非 root 完全不可见：
-/// lsof/proc_pidpath 全瞎）时，用管理员权限在 root 上下文里定位端口
-/// 监听者，且仅当其命令行含内核特征时才杀。返回是否清理成功。
+/// The privileged port lookup may see listeners hidden from the GUI user.
+/// Only exact executable paths from this installation are eligible.
 #[cfg(target_os = "macos")]
-fn escalate_clear_port(port: u16) -> bool {
-    // 脚本刻意不含双引号与反斜杠，免去 AppleScript 字符串转义；
-    // 仅当监听者命令行含内核特征时才杀，避免误伤其他程序。
-    let shell = format!(
-        "pids=$(lsof -t -n -i TCP:{port} -sTCP:LISTEN 2>/dev/null); killed=0; for p in $pids; do c=$(ps -p $p -o command=); case $c in *com.crossbow.app/tun-binaries/*|*com.richard.crossbow/tun-binaries/*|*/Crossbow.app/Contents/MacOS/mihomo*|*/Crossbow.app/Contents/MacOS/sing-box*) kill -9 $p && killed=1;; esac; done; test $killed -eq 1"
-    );
-    let apple = privileged_shell_script(&shell);
-    let out = crate::process::command("osascript")
-        .arg("-e")
-        .arg(apple)
-        .output();
-    match out {
-        Ok(o) if o.status.success() => true,
-        Ok(o) => {
-            eprintln!(
-                "admin clear port {port}: denied or failed: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            );
-            false
-        }
-        Err(e) => {
-            eprintln!("admin clear port {port}: {e}");
-            false
+fn escalate_clear_port(port: u16, candidates: &[PathBuf], work_dir: &Path) -> bool {
+    let paths = candidates.iter()
+        .filter_map(|path| std::fs::canonicalize(path).ok())
+        .filter_map(|path| path.to_str().map(shell_quote))
+        .collect::<Vec<_>>();
+    if paths.is_empty() { return false; }
+    let script = format!(r#"{ADMIN_STOP_FUNCTION}
+pids=$(/usr/sbin/lsof -t -nP -i TCP:{port} -sTCP:LISTEN 2>/dev/null)
+stopped=0
+for p in $pids; do
+    case "$p" in ''|*[!0-9]*) continue ;; esac
+    actual=$(process_path "$p")
+    case "$actual" in
+        {paths})
+            started=$(process_start "$p")
+            /usr/sbin/lsof -t -nP -a -p "$p" -i TCP:{port} -sTCP:LISTEN 2>/dev/null | /usr/bin/grep -Fxq "$p" || continue
+            stop_core "$p" "$actual" "$started" && stopped=1
+            ;;
+    esac
+done
+test "$stopped" -eq 1
+"#, paths = paths.join("|"));
+    let result = run_admin_stop(&script);
+    if let Some(outcomes) = &result {
+        for outcome in outcomes.lines().filter(|line| matches!(*line, "TERM" | "KILL")) {
+            append_decision(work_dir, &format!("port cleanup: port={port} outcome={outcome}"));
         }
     }
+    result.is_some()
 }
 
 #[cfg(not(target_os = "macos"))]
-fn escalate_clear_port(_port: u16) -> bool {
+fn escalate_clear_port(_port: u16, _candidates: &[PathBuf], _work_dir: &Path) -> bool {
     false
 }
 
@@ -1525,21 +1612,6 @@ fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
             return;
         }
         shared.notify(CoreStatus::Running);
-    // TUN 健康自检（#330）：仅 macOS（gvisor 栈卡死实测场景），配置启用 TUN 时启动。
-    #[cfg(target_os = "macos")]
-    {
-        let tun_on = shared
-            .config_cache
-            .lock()
-            .ok()
-            .and_then(|c| c.clone())
-            .map(|cfg| cfg.contains("tun:\n  enable: true"))
-            .unwrap_or(false);
-        if tun_on {
-            let h = shared.clone();
-            std::thread::spawn(move || tun_health_monitor(h));
-        }
-    }
     } else {
         if shared.inner.lock().unwrap().stopping {
             return;
@@ -1548,7 +1620,7 @@ fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
     }
 }
 
-fn watch(shared: Arc<Shared>, port: u16, secret: String) {
+fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     let opts = shared.opts.lock().unwrap().clone();
 
     // 首次启动：GeoIP 数据库缺失/过小时先从镜像下载（mihomo 自带的
@@ -1567,8 +1639,8 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
     let child_gone = || {
         let mut inner = shared.inner.lock().unwrap();
         match inner.child.as_mut() {
-            Some(c) => c.try_wait().ok().flatten().is_some(),
-            None => true,
+            Some(c) if c.id() == pid => c.try_wait().ok().flatten().is_some(),
+            _ => true,
         }
     };
     if !probe.wait_ready(
@@ -1576,13 +1648,13 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
         || shared.inner.lock().unwrap().stopping,
         child_gone,
     ) {
-        let stopping = shared.inner.lock().unwrap().stopping;
+        let stopping = {
+            let inner = shared.inner.lock().unwrap();
+            inner.stopping || inner.child.as_ref().map(Child::id) != Some(pid)
+        };
+        if stopping { return; }
         // 无论打断原因，先收走子进程（stop 打断路径若不杀，刚拉起的内核会变孤儿）
         shared.kill_child();
-        if stopping {
-            // 收尾已由 stop() 上报 Stopped，这里静默退出
-            return;
-        }
         let summary = core_error_summary(&shared.work_dir, 200)
             .unwrap_or_else(|| {
                 format!(
@@ -1595,15 +1667,26 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
         )));
         return;
     }
+    {
+        let inner = shared.inner.lock().unwrap();
+        if inner.stopping || inner.child.as_ref().map(Child::id) != Some(pid) { return; }
+    }
     shared.notify(CoreStatus::Running);
+    #[cfg(target_os = "macos")]
+    if let Some(mixed_port) = shared.config_cache.lock().unwrap()
+        .as_deref().and_then(tun_health_port)
+    {
+        let weak = Arc::downgrade(&shared);
+        std::thread::spawn(move || tun_health_monitor(weak, pid, mixed_port));
+    }
 
     // 子进程始终留在共享状态（stop/pid 都依赖它）；这里只轮询退出状态。
     loop {
         let exit = {
             let mut inner = shared.inner.lock().unwrap();
             match inner.child.as_mut() {
-                Some(c) => c.try_wait().ok().flatten(),
-                None => return, // stop() 已收走并上报
+                Some(c) if c.id() == pid => c.try_wait().ok().flatten(),
+                _ => return, // 已停止或换核
             }
         };
         let Some(exit) = exit else {
@@ -1613,26 +1696,29 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
         if shared.inner.lock().unwrap().stopping {
             return; // stop() 负责上报 Stopped
         }
-        let summary = core_error_summary(&shared.work_dir, 200)
-            .unwrap_or_else(|| "内核无错误输出（详见监测→日志）".into());
-        let reason = match exit.code() {
-            Some(code) => format!("内核异常退出（code {code}）：{summary}"),
-            None => format!("内核被信号终止：{summary}"),
-        };
-        shared.notify(CoreStatus::Crashed(reason));
+        #[cfg(target_os = "macos")]
+        let planned = shared.inner.lock().unwrap().tun_health_restart
+            .is_some_and(|(target, _)| target == pid)
+            && exit.code() == Some(0);
+        #[cfg(not(target_os = "macos"))]
+        let planned = false;
+        let restart = allow_restart(&shared);
+        if planned && restart {
+            append_decision(&shared.work_dir, &format!("tun health: pid={pid} exited cleanly; restarting"));
+        } else {
+            let summary = core_error_summary(&shared.work_dir, 200)
+                .unwrap_or_else(|| "内核无错误输出（详见监测→日志）".into());
+            let reason = match exit.code() {
+                Some(code) => format!("内核异常退出（code {code}）：{summary}"),
+                None => format!("内核被信号终止：{summary}"),
+            };
+            shared.notify(CoreStatus::Crashed(reason));
+        }
 
-        // 崩溃自动重启：窗口限次，退避 800ms。
-        if allow_restart(&shared) {
+        // 崩溃或自检触发的正常退出都使用既有重启预算。
+        if restart {
             std::thread::sleep(Duration::from_millis(800));
-            if !shared.inner.lock().unwrap().stopping {
-                {
-                    let mut inner = shared.inner.lock().unwrap();
-                    inner.detached = false;
-                    inner.external_pid = None;
-                    inner.external_binary = None;
-                }
-                spawn_and_watch(shared);
-            }
+            spawn_and_watch(shared, Some(pid));
         }
         return;
     }
@@ -1889,99 +1975,141 @@ fn append_core_log(work_dir: &std::path::Path, line: &str) {
     }
 }
 
-/// 从渲染后的配置提取 mixed-port（自检 P1 走代理通道用）。
-fn mixed_port_from_config(cfg: &str) -> Option<u16> {
-    for line in cfg.lines() {
-        if let Some(rest) = line.trim().strip_prefix("mixed-port:") {
-            return rest.trim().parse().ok();
-        }
+/// Only probe mihomo's gVisor automatic routing setup. A TUN setting in an
+/// unrelated YAML block (or a sing-box JSON profile) must not start this worker.
+#[cfg(target_os = "macos")]
+fn tun_health_port(cfg: &str) -> Option<u16> {
+    let cfg: serde_yaml::Value = serde_yaml::from_str(cfg).ok()?;
+    let tun = &cfg["tun"];
+    if tun["enable"].as_bool() != Some(true)
+        || tun["auto-route"].as_bool() != Some(true)
+        || tun["stack"].as_str() != Some("gvisor")
+    {
+        return None;
     }
-    None
+    u16::try_from(cfg["mixed-port"].as_u64()?).ok().filter(|&port| port != 0)
 }
 
-/// P2：TUN 通道探测——auto-route 下直连国外 IP 必经 TUN；栈僵死时连接超时。
-fn tun_probe_connect() -> bool {
-    let addr: std::net::SocketAddr = "1.1.1.1:443".parse().unwrap();
-    std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5)).is_ok()
+#[cfg(target_os = "macos")]
+const TUN_PROBE_HOSTS: [&str; 2] = ["1.1.1.1", "8.8.8.8"];
+
+#[cfg(target_os = "macos")]
+fn route_fields(host: &str) -> Option<(String, String)> {
+    let output = crate::process::command("/sbin/route").args(["-n", "get", host]).output().ok()?;
+    if !output.status.success() { return None; }
+    let text = std::str::from_utf8(&output.stdout).ok()?;
+    let field = |name| text.lines().find_map(|line| line.trim().strip_prefix(name).map(str::trim));
+    Some((field("interface:")?.to_string(), field("gateway:").unwrap_or("").to_string()))
 }
 
-/// P1：代理通道探测——经混合端口访问 204 端点（内核+当前节点健康即通过）。
-fn core_proxy_probe(mixed_port: u16) -> bool {
+#[cfg(target_os = "macos")]
+fn capture_interface(host: &str) -> Option<String> {
+    let (interface, gateway) = route_fields(host)?;
+    let unit = interface.strip_prefix("utun")?;
+    (!unit.is_empty() && unit.bytes().all(|c| c.is_ascii_digit()) && gateway == "198.18.0.1")
+        .then_some(interface)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn tun_route_diagnostics() -> String {
+    let default = route_fields("default").map(|(interface, _)| interface)
+        .unwrap_or_else(|| "unavailable".into());
+    let capture = capture_interface(TUN_PROBE_HOSTS[0]).unwrap_or_else(|| "none/unknown".into());
+    format!("default_interface={default} sample_capture_interface={capture}")
+}
+
+#[cfg(target_os = "macos")]
+fn logged_tun_interface(log: &str) -> Option<&str> {
+    log.lines().rev().find_map(|line| {
+        let (_, adapter) = line.split_once("Tun adapter listening at: ")?;
+        let (interface, address) = adapter.split_once('(')?;
+        let unit = interface.strip_prefix("utun")?;
+        (!unit.is_empty() && unit.bytes().all(|c| c.is_ascii_digit())
+            && address.starts_with("[198.18.0.1/")).then_some(interface)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn tun_path_differs(mixed_port: u16, own_interface: &str) -> bool {
     let Ok(proxy) = ureq::Proxy::new(&format!("http://127.0.0.1:{mixed_port}")) else {
         return false;
     };
-    let agent = ureq::AgentBuilder::new()
-        .proxy(proxy)
-        .try_proxy_from_env(false)
-        .timeout(Duration::from_secs(8))
-        .build();
-    matches!(
-        agent.head("http://www.gstatic.com/generate_204").call(),
-        Ok(_) | Err(ureq::Error::Status(_, _))
-    )
+    let builder = || ureq::AgentBuilder::new().try_proxy_from_env(false)
+        .timeout(Duration::from_secs(4)).redirects(0);
+    let direct = builder().build();
+    let mixed = builder().proxy(proxy).build();
+    let reachable = |agent: &ureq::Agent, url: &str| matches!(
+        agent.head(url).call(), Ok(_) | Err(ureq::Error::Status(_, _))
+    );
+    TUN_PROBE_HOSTS.iter().all(|host| {
+        let routed_here = || capture_interface(host).as_deref() == Some(own_interface);
+        let url = format!("https://{host}/");
+        routed_here() && !reachable(&direct, &url) && reachable(&mixed, &url) && routed_here()
+    })
 }
 
-/// 判定：代理通道健康（P1 通过）且 TUN 通道连续失败达到阈值
-/// → gvisor 栈僵死，需要重启内核恢复。
-fn tun_probe_should_restart(p1_ok: bool, consecutive_p2_failures: u32, threshold: u32) -> bool {
-    p1_ok && consecutive_p2_failures >= threshold
-}
-
-/// TUN 健康自检（#330）：Running 且 TUN 启用期间每 60s 对比探测代理通道与
-/// TUN 通道；通道正常而 TUN 连续 3 次失败 → 判定 gvisor 栈僵死，SIGTERM
-/// 优雅重启内核（走既有崩溃自动重启链路拉起新内核并恢复 TUN）。
 #[cfg(target_os = "macos")]
-fn tun_health_monitor(shared: Arc<Shared>) {
-    let Some(mixed_port) = shared
-        .config_cache
-        .lock()
-        .ok()
-        .and_then(|c| c.clone())
-        .and_then(|cfg| mixed_port_from_config(&cfg))
-    else {
-        return;
-    };
-    let mut failures = 0u32;
+fn current_tun_child(inner: &Inner, pid: u32) -> bool {
+    !inner.stopping && !inner.detached && inner.status == CoreStatus::Running
+        && inner.child.as_ref().map(Child::id) == Some(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) {
+    use std::io::Read;
+    let mut failures = 0;
     loop {
         std::thread::sleep(Duration::from_secs(60));
-        if shared.inner.lock().unwrap().stopping {
-            return;
-        }
-        let p1 = core_proxy_probe(mixed_port);
-        let p2 = tun_probe_connect();
-        failures = if p2 { 0 } else { failures + 1 };
-        if !tun_probe_should_restart(p1, failures, 3) {
-            continue;
-        }
-        eprintln!(
-            "tun health: proxy path ok but tun probe failed x{failures}; restarting core"
-        );
-        shared.notify(CoreStatus::Crashed(
-            "TUN 无响应（国外流量连续超时而代理通道正常）——已自动重启内核恢复 TUN".into(),
-        ));
-        let pid = shared
-            .inner
-            .lock()
-            .unwrap()
-            .child
-            .as_ref()
-            .map(|c| c.id());
-        if let Some(pid) = pid {
-            // SIGTERM 让 mihomo 恢复路由；宽限 5s，仍存活再兜底强杀
-            unsafe {
-                let _ = libc::kill(pid as i32, libc::SIGTERM);
+        let Some(shared) = weak.upgrade() else { return; };
+        if !current_tun_child(&shared.inner.lock().unwrap(), pid) { return; }
+
+        // Both endpoints must fail only over the captured path. Outages that
+        // affect the mixed port too, network changes and missing routes reset
+        // the streak rather than causing a restart.
+        let mut startup_log = Vec::new();
+        let differs = std::fs::File::open(shared.work_dir.join("core-stdio.log"))
+            .and_then(|file| file.take(128 * 1024).read_to_end(&mut startup_log))
+            .is_ok()
+            && logged_tun_interface(&String::from_utf8_lossy(&startup_log))
+                .is_some_and(|interface| tun_path_differs(mixed_port, interface));
+        failures = if differs { failures + 1 } else { 0 };
+        if failures < 3 { continue; }
+        failures = 0;
+
+        let outcome = {
+            let mut inner = shared.inner.lock().unwrap();
+            if !current_tun_child(&inner, pid) { return; }
+            if inner.tun_health_restart.is_some_and(|(_, when)| when.elapsed() < Duration::from_secs(900)) {
+                continue;
             }
-            for _ in 0..50 {
-                if !pid_is_alive(pid) {
-                    break;
+            // try_wait also catches an exit that the watcher has already reaped.
+            let Some(child) = inner.child.as_mut() else { return; };
+            if !matches!(child.try_wait(), Ok(None)) { return; }
+            // Hold the ownership lock through the signal so a manual stop or
+            // handoff cannot race a probe result. Never force-kill automatically.
+            let result = signal_pid(pid, libc::SIGTERM);
+            if result.is_ok() {
+                inner.tun_health_restart = Some((pid, Instant::now()));
+            }
+            result
+        };
+        match outcome {
+            Ok(()) => {
+                append_decision(&shared.work_dir, &format!("tun health: pid={pid} capture probes failed; sent SIGTERM"));
+                drop(shared);
+                std::thread::sleep(TERM_GRACE);
+                if let Some(shared) = weak.upgrade() {
+                    if current_tun_child(&shared.inner.lock().unwrap(), pid) {
+                        append_decision(&shared.work_dir, &format!("tun health: pid={pid} did not exit in time; no automatic SIGKILL"));
+                    }
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                return;
             }
-            if pid_is_alive(pid) {
-                kill_pid(pid);
+            Err(error) => {
+                append_decision(&shared.work_dir, &format!("tun health: pid={pid} SIGTERM failed: {error}"));
+                return;
             }
         }
-        return; // watch 循环检测到退出后走崩溃自动重启
     }
 }
 
@@ -2101,50 +2229,98 @@ pub(crate) mod tests {
         assert!(out.ends_with('…'));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn tun_probe_should_restart_truth_table() {
-        // 通道不健康：绝不重启（节点挂了不是 TUN 栈的问题）
-        assert!(!tun_probe_should_restart(false, 3, 3));
-        // 通道健康但未达阈值：不重启
-        assert!(!tun_probe_should_restart(true, 2, 3));
-        // 通道健康 + 连续失败达标：重启
-        assert!(tun_probe_should_restart(true, 3, 3));
-        assert!(tun_probe_should_restart(true, 5, 3));
+    fn tun_probe_requires_mihomo_gvisor_and_auto_route() {
+        let cfg = "mixed-port: 7898\ntun: {enable: true, stack: gvisor, auto-route: true}";
+        assert_eq!(tun_health_port(cfg), Some(7898));
+        assert_eq!(tun_health_port(&cfg.replace("enable: true", "enable: false")), None);
+        assert_eq!(tun_health_port(&cfg.replace("auto-route: true", "auto-route: false")), None);
+        assert_eq!(tun_health_port(&cfg.replace("gvisor", "system")), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn tun_probe_uses_only_the_adapter_reported_by_its_core() {
+        let log = "level=info msg=\"[TUN] Tun adapter listening at: utun8([198.18.0.1/30]), stack: gvisor\"";
+        assert_eq!(logged_tun_interface(log), Some("utun8"));
+        assert_eq!(logged_tun_interface(&log.replace("198.18.0.1", "10.0.0.1")), None);
+        assert_eq!(logged_tun_interface(&log.replace("utun8", "en0")), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_stop_script_rechecks_process_start_before_signalling() {
+        let mut child = Command::new("/bin/sleep").arg("10").spawn().unwrap();
+        let pid = child.id();
+        let started = process_start(pid).unwrap();
+        let script = |started: &str| format!(
+            "{ADMIN_STOP_FUNCTION}\nstop_core {pid} /bin/sleep {}",
+            shell_quote(started),
+        );
+        let wrong = Command::new("/bin/sh").args(["-c", &script("stale")]).output().unwrap();
+        assert!(!wrong.status.success());
+        assert!(child.try_wait().unwrap().is_none());
+
+        // The script's success check waits for disappearance. Reap the
+        // child concurrently, as launchd would for an orphaned core.
+        let reaper = std::thread::spawn(move || child.wait().unwrap());
+        let correct = Command::new("/bin/sh").args(["-c", &script(&started)]).output().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(reaper.join().unwrap().signal(), Some(libc::SIGTERM));
+        assert!(correct.status.success());
+        assert_eq!(String::from_utf8_lossy(&correct.stdout).trim(), "TERM");
     }
 
     #[test]
-    fn mixed_port_from_config_parses_first_occurrence() {
-        let cfg = "mixed-port: 7898\nallow-lan: false\ntun:\n  enable: true\n";
-        assert_eq!(mixed_port_from_config(cfg), Some(7898));
-        assert_eq!(mixed_port_from_config("no port here"), None);
+    fn stale_restart_cannot_spawn_after_stop_or_replace_another_core() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::from("should-not-be-launched"), dir.path().into());
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.controller = Some((12345, String::new()));
+            inner.stopping = true;
+        }
+        assert!(manager.shared.spawn_child(None).unwrap().is_none());
+        manager.shared.inner.lock().unwrap().stopping = false;
+        assert!(manager.shared.spawn_child(Some(1)).unwrap().is_none());
+        assert!(!manager.config_path().exists());
     }
 
-    #[test]
-    fn config_cache_contains_tun_block_detection() {
-        let cfg = "mixed-port: 7898\ntun:\n  enable: true\n  stack: gvisor\n";
-        assert!(cfg.contains("tun:\n  enable: true"));
-        let cfg_off = "mixed-port: 7898\ntun:\n  enable: false\n";
-        assert!(!cfg_off.contains("tun:\n  enable: true"));
+    #[cfg(unix)]
+    fn test_stop_child(trap: &str) -> (StopOutcome, std::process::ExitStatus) {
+        use std::io::{BufRead, BufReader};
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", &format!("{trap}; echo ready; while :; do /bin/sleep 0.05; done")])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Synchronize with the installed handler instead of signalling a shell
+        // that may not have reached trap yet.
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+        assert_eq!(ready.trim(), "ready");
+        let outcome = terminate_unix(child.id(),
+            || child.try_wait().unwrap().is_some(), || true, Duration::from_millis(500));
+        assert!(outcome.confirmed());
+        (outcome, child.wait().unwrap())
     }
 
     #[cfg(unix)]
     #[test]
     fn graceful_terminate_escalates_when_sigterm_ignored() {
-        let mut child = std::process::Command::new("sh")
-            .args(["-c", "trap \"\" TERM; while :; do sleep 1; done"])
-            .spawn()
-            .unwrap();
-        assert!(Shared::graceful_terminate(&mut child));
+        use std::os::unix::process::ExitStatusExt;
+        let (outcome, status) = test_stop_child("trap '' TERM");
+        assert_eq!(outcome, StopOutcome::Killed);
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
     }
 
     #[cfg(unix)]
     #[test]
     fn graceful_terminate_cooperative_exit() {
-        let mut child = std::process::Command::new("sh")
-            .args(["-c", "while :; do sleep 1; done"])
-            .spawn()
-            .unwrap();
-        assert!(Shared::graceful_terminate(&mut child));
+        let (outcome, status) = test_stop_child("trap 'exit 23' TERM");
+        assert_eq!(outcome, StopOutcome::Terminated);
+        assert_eq!(status.code(), Some(23));
     }
 
     #[test]
@@ -2455,8 +2631,15 @@ pub(crate) mod tests {
         let code = String::from_utf8_lossy(&out.stdout).to_string();
         assert_eq!(code, "204", "proxy roundtrip failed: {code}");
 
-        mgr.stop();
+        assert!(mgr.stop());
         assert_eq!(mgr.status(), CoreStatus::Stopped);
+        #[cfg(unix)]
+        {
+            let decision = std::fs::read_to_string(dir.path().join("core-decision.log")).unwrap();
+            assert!(decision.contains("outcome=Terminated"));
+            let stdio = std::fs::read_to_string(dir.path().join("core-stdio.log")).unwrap();
+            assert!(stdio.contains("Mihomo shutting down"));
+        }
     }
 
     /// 回归：崩溃自动重启必须用本启动链缓存的内容重写 config.yaml。
