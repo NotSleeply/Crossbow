@@ -1395,17 +1395,6 @@ summary:focus-visible {
   }
   .cb-home-lead h2 {
     font-size: 22px;
-  }
-  .cb-route-flow b {
-    font-size: 13px;
-  }
-  .cb-chart-head > div:first-child {
-    display: block;
-  }
-}
-@container home-layout (max-height: 479px) {
-  .cb-home-lead h2 {
-    font-size: 20px;
     margin: 6px 0 4px;
   }
   .cb-home-lead p {
@@ -1413,42 +1402,27 @@ summary:focus-visible {
     line-height: 16px;
   }
   .cb-home-path {
-    gap: 6px;
-  }
-  .cb-path-heading h3,
-  .cb-path-heading > span {
-    font-size: 11px;
+    gap: 8px;
   }
   .cb-route-mark {
-    height: 36px;
-    width: 48px;
     margin-bottom: 2px;
-  }
-  .cb-route-mark svg {
-    width: 28px;
-    height: 28px;
   }
   .cb-route-flow > div {
     gap: 4px;
   }
   .cb-route-flow b {
-    font-size: 12px;
-    line-height: 17px;
+    font-size: 13px;
+    line-height: 18px;
   }
   .cb-route-flow small {
     font-size: 11px;
     line-height: 16px;
   }
-  .cb-route-line {
-    width: calc(35.294118% - 48px);
+  .cb-chart-head > div:first-child {
+    display: block;
   }
-  .cb-route-line:nth-child(2) {
-    left: calc(14.705882% + 24px);
-  }
-  .cb-route-line:nth-child(4) {
-    left: calc(50% + 24px);
-  }
-
+}
+@container home-layout (max-height: 479px) {
   .cb-chart-only {
     padding-top: 8px;
   }
