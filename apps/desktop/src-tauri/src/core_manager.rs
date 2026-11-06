@@ -80,6 +80,9 @@ struct Shared {
     opts: Mutex<CoreOptions>,
     callback: Mutex<Option<Callback>>,
     inner: Mutex<Inner>,
+    /// 启停与服务探测收尾共用；不能让服务停的迟到回包清掉下一批次的租约。
+    /// 锁序为 lifecycle -> inner，网络就绪探测期间不持有 lifecycle。
+    lifecycle: Mutex<()>,
     /// 本次启动链的最终配置内容；spawn（含崩溃重启）每次都据此重写
     /// config.yaml，避免换引擎后旧管理器复用新引擎的配置文件。
     config_cache: Mutex<Option<String>>,
@@ -89,16 +92,27 @@ struct Shared {
 }
 
 impl Shared {
+    fn external_start_is_current(&self, pid: u32, probe: &ControllerProbe) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        !inner.stopping
+            && inner.external_pid == Some(pid)
+            && inner.controller.as_ref().is_some_and(|(port, secret)| {
+                *port == probe.port && secret == &probe.secret
+            })
+    }
+
     /// 生产路径请 Windows 服务停内核。测试可注入替身，避免连到本机真实管道。
     fn request_service_stop(&self) -> Result<(), String> {
         #[cfg(test)]
-        if let Some(hook) = self
-            .service_stop_hook
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
         {
-            return hook();
+            let hook = self
+                .service_stop_hook
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            if let Some(hook) = hook {
+                return hook();
+            }
         }
         #[cfg(windows)]
         {
@@ -110,7 +124,8 @@ impl Shared {
         }
     }
 
-    /// 重启或就绪超时前收走服务托管租约。成功时清掉 PID 和描述文件。
+    /// 重启或就绪超时前收走服务托管租约。调用方持有 lifecycle，
+    /// 保证服务停止和清掉 PID/描述文件期间不会开始下一批次。
     fn release_hosted_before_kill(&self) -> Result<crate::core_restart::Cleanup, String> {
         let (has_child, pid, binary) = {
             let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -373,6 +388,7 @@ impl CoreManager {
                 work_dir,
                 opts: Mutex::new(CoreOptions::default()),
                 callback: Mutex::new(None),
+                lifecycle: Mutex::new(()),
                 config_cache: Mutex::new(None),
                 #[cfg(test)]
                 service_stop_hook: Mutex::new(None),
@@ -498,6 +514,11 @@ impl CoreManager {
         engine_rt: &RuntimeConfig,
         spawner: Option<Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>>,
     ) -> Result<(), String> {
+        let _lifecycle = self
+            .shared
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let result = self.start_attempt(base_config, engine_rt, spawner);
         if let Err(error) = &result {
             if self.status() == CoreStatus::Starting {
@@ -516,7 +537,7 @@ impl CoreManager {
         // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
         // 被旧探测超时路径误杀/误报。
         if self.status() == CoreStatus::Starting {
-            if !self.stop() {
+            if !self.stop_locked() {
                 return Err("无法确认上一次启动的内核已退出，已中止新启动".into());
             }
         }
@@ -763,7 +784,7 @@ impl CoreManager {
                 // 可监视；死亡可感知性由 #20 健康监测的控制器探测兜底）
                 let shared = self.shared.clone();
                 std::thread::spawn(move || {
-                    probe_external_core(shared, port, secret);
+                    probe_external_core(shared, pid, port, secret);
                 });
                 #[cfg(target_os = "linux")]
                 watch_linux_service(self.shared.clone(), pid);
@@ -862,6 +883,16 @@ impl CoreManager {
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
     pub fn stop(&self) -> bool {
+        let _lifecycle = self
+            .shared
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        self.stop_locked()
+    }
+
+    /// 调用方已持有 lifecycle；启动替换 Starting 批次时也走同一条停止路径。
+    fn stop_locked(&self) -> bool {
         #[cfg(target_os = "linux")]
         {
             self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).stopping = true;
@@ -1673,27 +1704,32 @@ fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
 }
 
 /// 服务托管内核的就绪探测（watch() 的无子进程变体）：置 Running 或 Crashed。
-fn probe_external_core(shared: Arc<Shared>, port: u16, secret: String) {
+fn probe_external_core(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     let timeout = Duration::from_secs(shared.opts.lock().unwrap().readiness_timeout_secs);
     let probe = ControllerProbe { port, secret };
-    if probe.wait_ready(
+    let ready = probe.wait_ready(
         timeout,
-        || shared.inner.lock().unwrap().stopping,
+        || !shared.external_start_is_current(pid, &probe),
         || false,
-    ) {
-        if shared.inner.lock().unwrap().stopping {
-            return;
-        }
+    );
+    finish_external_probe(&shared, pid, &probe, ready);
+}
+
+/// 等到 lifecycle 后再次核对本批次。探测取消、HTTP 迟到和服务停止回包
+/// 都不能跨过 stop/start 接管下一批次；通知也必须在这次交接完成前发出。
+fn finish_external_probe(shared: &Shared, pid: u32, probe: &ControllerProbe, ready: bool) {
+    let _lifecycle = shared
+        .lifecycle
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if !shared.external_start_is_current(pid, probe) {
+        return;
+    }
+    if ready {
         shared.notify(CoreStatus::Running);
     } else {
-        if shared.inner.lock().unwrap().stopping {
-            return;
-        }
         // 超时后先请服务收走仍在跑的内核。收不走就留下租约，下次启动走同一条清理。
         let _ = shared.release_hosted_before_kill();
-        if shared.inner.lock().unwrap().stopping {
-            return;
-        }
         shared.notify(CoreStatus::Crashed("服务托管内核启动失败/超时".into()));
     }
 }
@@ -2614,6 +2650,224 @@ pub(crate) mod tests {
             std::thread::sleep(Duration::from_millis(100));
         }
         panic!("expected Crashed, got {:?}", mgr.status());
+    }
+
+    fn record_test_external_start(manager: &CoreManager, pid: u32, port: u16, secret: &str) {
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.status = CoreStatus::Starting;
+            inner.stopping = false;
+            inner.external_pid = Some(pid);
+            inner.external_binary = Some(manager.shared.binary_path.clone());
+            inner.detached = true;
+            inner.controller = Some((port, secret.into()));
+        }
+        manager
+            .shared
+            .write_descriptor(pid, port, secret, &manager.shared.binary_path)
+            .unwrap();
+    }
+
+    /// 替身租约用已退出的进程，测试不会给任何活进程发信号。
+    fn exited_test_pid() -> u32 {
+        #[cfg(unix)]
+        let mut child = crate::process::command("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        #[cfg(windows)]
+        let mut child = crate::process::command("cmd.exe")
+            .args(["/C", "exit", "0"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    #[test]
+    fn stale_service_probe_cannot_stop_or_publish_over_a_new_start() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(std::env::current_exe().unwrap(), dir.path().into());
+        let pid = std::process::id();
+        record_test_external_start(&manager, pid, 18080, "new-start");
+        let descriptor = std::fs::read(Shared::descriptor_path(dir.path())).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let service_calls = calls.clone();
+        manager.set_service_stop_hook(move || {
+            service_calls.fetch_add(1, Ordering::SeqCst);
+            Err("must not stop a newer start".into())
+        });
+        let notices = Arc::new(AtomicUsize::new(0));
+        let callback_notices = notices.clone();
+        manager.set_callback(Arc::new(move |_| {
+            callback_notices.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // 分别覆盖 PID 改变、PID 复用，以及 PID/端口同时复用。
+        for (old_pid, old_port, old_secret) in [
+            (pid + 1, 18080, "new-start"),
+            (pid, 18081, "new-start"),
+            (pid, 18080, "old-start"),
+        ] {
+            for status in [CoreStatus::Starting, CoreStatus::Running] {
+                manager.shared.inner.lock().unwrap().status = status.clone();
+                let old_probe = ControllerProbe {
+                    port: old_port,
+                    secret: old_secret.into(),
+                };
+                assert!(!manager.shared.external_start_is_current(old_pid, &old_probe));
+                for ready in [false, true] {
+                    finish_external_probe(&manager.shared, old_pid, &old_probe, ready);
+                    assert_eq!(manager.status(), status);
+                    assert_eq!(manager.pid(), Some(pid));
+                    assert_eq!(
+                        std::fs::read(Shared::descriptor_path(dir.path())).unwrap(),
+                        descriptor
+                    );
+                }
+            }
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(notices.load(Ordering::SeqCst), 0);
+
+        // 当前批次成功仍然正常上报，而旧批次连等待窗口也不再消耗。
+        let current = ControllerProbe {
+            port: 18080,
+            secret: "new-start".into(),
+        };
+        finish_external_probe(&manager.shared, pid, &current, true);
+        assert_eq!(manager.status(), CoreStatus::Running);
+        assert_eq!(notices.load(Ordering::SeqCst), 1);
+        manager.set_options(CoreOptions {
+            readiness_timeout_secs: 30,
+            ..CoreOptions::default()
+        });
+        let shared = manager.shared.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let obsolete = std::thread::spawn(move || {
+            probe_external_core(shared, pid, 18080, "old-start".into());
+            done_tx.send(()).unwrap();
+        });
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("obsolete probe must cancel promptly");
+        obsolete.join().unwrap();
+        assert_eq!(manager.status(), CoreStatus::Running);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(notices.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn service_probe_timeout_preserves_lease_when_service_stop_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(std::env::current_exe().unwrap(), dir.path().into());
+        let pid = std::process::id();
+        record_test_external_start(&manager, pid, 18080, "current-start");
+        let descriptor = std::fs::read(Shared::descriptor_path(dir.path())).unwrap();
+        manager.set_service_stop_hook(|| Err("service stop failed".into()));
+        finish_external_probe(
+            &manager.shared,
+            pid,
+            &ControllerProbe {
+                port: 18080,
+                secret: "current-start".into(),
+            },
+            false,
+        );
+        assert!(matches!(manager.status(), CoreStatus::Crashed(_)));
+        assert_eq!(manager.pid(), Some(pid));
+        assert_eq!(
+            manager.shared.inner.lock().unwrap().external_binary,
+            Some(manager.shared.binary_path.clone())
+        );
+        assert_eq!(
+            std::fs::read(Shared::descriptor_path(dir.path())).unwrap(),
+            descriptor
+        );
+    }
+
+    #[test]
+    fn service_probe_cleanup_finishes_before_stop_and_replacement_start() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(std::env::current_exe().unwrap(), dir.path().into());
+        let pid = exited_test_pid();
+        record_test_external_start(&manager, pid, 18080, "old-start");
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let calls = AtomicUsize::new(0);
+        manager.set_service_stop_hook(move || {
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                entered_tx.send(()).unwrap();
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+            }
+            Ok(())
+        });
+        let shared = manager.shared.clone();
+        let cleanup = std::thread::spawn(move || {
+            finish_external_probe(
+                &shared,
+                pid,
+                &ControllerProbe {
+                    port: 18080,
+                    secret: "old-start".into(),
+                },
+                false,
+            );
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let replacement = manager.clone();
+        let (attempted_tx, attempted_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let restart = std::thread::spawn(move || {
+            attempted_tx.send(()).unwrap();
+            assert!(replacement.stop());
+            let result = replacement.start_with_spawner(
+                "proxies: []\nrules: ['MATCH,DIRECT']\n",
+                &RuntimeConfig {
+                    mixed_port: free_port().unwrap(),
+                    ..RuntimeConfig::default()
+                },
+                Box::new(move |_, _| Ok(pid)),
+            );
+            done_tx.send(()).unwrap();
+            result
+        });
+        attempted_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let waited_for_cleanup = matches!(
+            done_rx.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
+        // 先放行再断言，回归失败时也不会把测试线程挂在服务替身里。
+        release_tx.send(()).unwrap();
+        cleanup.join().unwrap();
+        restart.join().unwrap().unwrap();
+        assert!(
+            waited_for_cleanup,
+            "stop/start bypassed in-flight service cleanup"
+        );
+        assert_eq!(manager.status(), CoreStatus::Starting);
+        assert_eq!(manager.pid(), Some(pid));
+        let descriptor = Shared::read_descriptor(dir.path())
+            .expect("new descriptor must survive old cleanup");
+        assert_eq!(descriptor.pid, pid);
+        assert_ne!(descriptor.secret, "old-start");
+        assert_eq!(
+            manager.controller(),
+            Some((descriptor.port, descriptor.secret))
+        );
+        assert!(manager.stop());
     }
 
     /// #343 的标准回归：服务托管租约没有二进制身份时，再次启动必须先请服务停。
